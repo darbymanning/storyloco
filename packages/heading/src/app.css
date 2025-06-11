@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+:root {
+  --color-dark-gray: #242429;
+  --color-black: #000;
+  --color-white: #fff;
+
+  --text-color: var(--color-black);
+
+  --input-border-color: rgba(0, 0, 0, 0.23);
+  --input-border-color-focus: rgb(5, 128, 127);
+  --input-border-color-hover: var(--input-border-color);
+  --input-background-color: var(--color-white);
+
+  --border-radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-color: var(--color-white);
+
+    --input-border-color: var(--color-white);
+    --input-background-color: var(--color-dark-gray);
+  }
+}
+
+html {
+  overflow: auto;
+  height: 100%;
+  color: var(--text-color);
+  font-family: 'Roboto', sans-serif;
+  font-weight: 400;
+}
+
+input,
+select {
+  height: 44px;
+  outline: none;
+  border: 1px solid var(--input-border-color);
+  border-radius: var(--border-radius);
+  background-color: var(--input-background-color);
+
+  &:hover {
+    border-color: var(--input-border-color-hover);
+  }
+
+  &:focus {
+    border-color: var(--input-border-color-focus);
+  }
+}
+
+input {
+  padding: 12px 14px;
+}
+
+select {
+  display: flex;
+  align-items: center;
+  padding: 0 30px 0 14px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.53125rem center;
+  background-size: 1rem;
+  appearance: none;
+  color: var(--text-color);
+}
+
+@media (prefers-color-scheme: dark) {
+  select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  }
+}
