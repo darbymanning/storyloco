@@ -1,0 +1,20 @@
+{
+  "options": [
+    {
+      "name": "Rose",
+      "value": "#da452b"
+    },
+    {
+      "name": "Pollen",
+      "value": "#ecc155"
+    },
+    {
+      "name": "Dark",
+      "value": "#111111"
+    },
+    {
+      "name": "Light",
+      "value": "#f8f1e4"
+    }
+  ]
+}
