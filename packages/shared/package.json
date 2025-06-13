@@ -3,6 +3,9 @@
 	"version": "0.0.0",
 	"private": true,
 	"exports": {
-		"./app.css": "./app.css"
+		"./global.css": "./global.css"
+	},
+	"dependencies": {
+		"tailwindcss": "4.1.10"
 	}
 }

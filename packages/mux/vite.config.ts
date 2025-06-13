@@ -27,7 +27,4 @@ export default defineConfig({
       'shared/global.css': path.resolve(__dirname, '../shared/global.css'),
     },
   },
-  optimizeDeps: {
-    include: ['shared/global.css'],
-  },
 })

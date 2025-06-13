@@ -1,0 +1,28 @@
+{
+  "name": "mux-field",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@lucide/svelte": "0.514.0",
+    "@mux/mux-node": "11.1.0",
+    "@mux/mux-player": "3.4.0",
+    "@mux/mux-uploader": "1.2.0",
+    "@storyblok/field-plugin": "1.6.0",
+    "@sveltejs/vite-plugin-svelte": "5.1.0",
+    "@tailwindcss/vite": "4.1.10",
+    "@tsconfig/svelte": "5.0.4",
+    "shared": "../shared",
+    "svelte": "5.33.18",
+    "svelte-check": "4.2.1",
+    "typescript": "5.8.3",
+    "vite": "6.3.5",
+    "vite-plugin-css-injected-by-js": "3.5.2"
+  },
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --name heading-field --skipPrompts --scope my-plugins"
+  },
+  "type": "module"
+}
