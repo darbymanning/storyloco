@@ -22,6 +22,8 @@
         "@storyblok/field-plugin": "1.6.0",
         "@sveltejs/vite-plugin-svelte": "5.1.0",
         "@tsconfig/svelte": "5.0.4",
+        "prettier": "3.5.3",
+        "prettier-plugin-svelte": "3.4.0",
         "shared": "../shared",
         "svelte": "5.33.18",
         "svelte-check": "4.2.1",
@@ -42,6 +44,7 @@
         "@sveltejs/vite-plugin-svelte": "5.1.0",
         "@tailwindcss/vite": "4.1.10",
         "@tsconfig/svelte": "5.0.4",
+        "prettier": "3.5.3",
         "prettier-plugin-svelte": "3.4.0",
         "shared": "../shared",
         "svelte": "5.33.18",
@@ -93,6 +96,8 @@
         "@storyblok/field-plugin": "1.6.0",
         "@sveltejs/vite-plugin-svelte": "5.1.0",
         "@tsconfig/svelte": "5.0.4",
+        "prettier": "3.5.3",
+        "prettier-plugin-svelte": "3.4.0",
         "radashi": "12.5.1",
         "shared": "../shared",
         "svelte": "5.33.18",
@@ -856,8 +861,6 @@
 
     "fast-glob/glob-parent": ["glob-parent@5.1.2", "", { "dependencies": { "is-glob": "^4.0.1" } }, "sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow=="],
 
-    "heading-field/shared": ["shared@file:packages/shared", { "dependencies": { "tailwindcss": "4.1.10" } }],
-
     "micromatch/picomatch": ["picomatch@2.3.1", "", {}, "sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA=="],
 
     "shared/@lucide/svelte": ["@lucide/svelte@0.515.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-CEAyqcZmNBfYzVgaRmK2RFJP5tnbXxekRyDk0XX/eZQRfsJmkDvmQwXNX8C869BgNeryzmrRyjHhUL6g9ZOHNA=="],
@@ -867,8 +870,6 @@
     "shared/svelte": ["svelte@5.34.1", "", { "dependencies": { "@ampproject/remapping": "^2.3.0", "@jridgewell/sourcemap-codec": "^1.5.0", "@sveltejs/acorn-typescript": "^1.0.5", "@types/estree": "^1.0.5", "acorn": "^8.12.1", "aria-query": "^5.3.1", "axobject-query": "^4.1.0", "clsx": "^2.1.1", "esm-env": "^1.2.1", "esrap": "^1.4.8", "is-reference": "^3.0.3", "locate-character": "^3.0.0", "magic-string": "^0.30.11", "zimmerframe": "^1.1.2" } }, "sha512-jWNnN2hZFNtnzKPptCcJHBWrD9CtbHPDwIRIODufOYaWkR0kLmAIlM384lMt4ucwuIRX4hCJwD2D8ZtEcGJQ0Q=="],
 
     "tailwind-variants/tailwind-merge": ["tailwind-merge@3.0.2", "", {}, "sha512-l7z+OYZ7mu3DTqrL88RiKrKIqO3NcpEO8V/Od04bNpvk0kiIFndGEoqfuzvj4yuhRkHKjRkII2z+KS2HfPcSxw=="],
-
-    "theme-field/shared": ["shared@file:packages/shared", { "dependencies": { "tailwindcss": "4.1.10" } }],
 
     "@mux/mux-node/@types/node/undici-types": ["undici-types@5.26.5", "", {}, "sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA=="],
 

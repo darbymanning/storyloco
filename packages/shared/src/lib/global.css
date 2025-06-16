@@ -5,8 +5,9 @@
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 :root {
+	--white: oklch(1 0 0);
 	--radius: 0.5rem;
-	--background: oklch(1 0 0);
+	--background: oklch(97.015% 0.00011 271.152);
 	--foreground: oklch(0.129 0.042 264.695);
 	--card: oklch(1 0 0);
 	--card-foreground: oklch(0.129 0.042 264.695);
@@ -23,7 +24,7 @@
 	--destructive: oklch(0.577 0.245 27.325);
 	--border: oklch(0.929 0.013 255.508);
 	--input: oklch(0.929 0.013 255.508);
-	--ring: oklch(0.704 0.04 256.788);
+	--ring: var(--primary);
 	--chart-1: oklch(0.646 0.222 41.116);
 	--chart-2: oklch(0.6 0.118 184.704);
 	--chart-3: oklch(0.398 0.07 227.392);
@@ -64,7 +65,7 @@
 	--destructive: oklch(0.704 0.191 22.216);
 	--border: oklch(1 0 0 / 10%);
 	--input: oklch(1 0 0 / 15%);
-	--ring: oklch(0.551 0.027 264.364);
+	--ring: var(--primary);
 	--chart-1: oklch(0.488 0.243 264.376);
 	--chart-2: oklch(0.696 0.17 162.48);
 	--chart-3: oklch(0.769 0.188 70.08);
@@ -132,5 +133,23 @@
 	}
 	button {
 		cursor: pointer;
+	}
+
+	select {
+		display: flex;
+		align-items: center;
+		padding: 0 30px 0 14px;
+		background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 0.53125rem center;
+		background-size: 1rem;
+		appearance: none;
+		color: var(--text-color);
+	}
+
+	[data-theme='dark'] {
+		select {
+			background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+		}
 	}
 }

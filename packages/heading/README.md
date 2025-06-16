@@ -36,12 +36,12 @@ The options list within the file `field-plugin.config.json` should consist of ke
 
 ```json
 {
-  "options": [
-    {
-      "name": "myPluginInitialValue",
-      "value": 100
-    }
-  ]
+	"options": [
+		{
+			"name": "myPluginInitialValue",
+			"value": 100
+		}
+	]
 }
 ```
 
