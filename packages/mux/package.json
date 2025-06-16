@@ -24,7 +24,7 @@
 		"dev": "vite",
 		"build": "vite build",
 		"check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-		"deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --name heading-field --skipPrompts --scope my-plugins",
+		"deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --name mux-field --skipPrompts --scope my-plugins",
 		"format": "prettier . --write"
 	},
 	"type": "module"

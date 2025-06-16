@@ -153,3 +153,9 @@
 		}
 	}
 }
+
+@layer utilities {
+	.rounded {
+		border-radius: var(--radius);
+	}
+}
