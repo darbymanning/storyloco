@@ -17,13 +17,33 @@
 	} from '@lucide/svelte'
 	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
-	import { Skeleton } from 'shared'
+	import { Label, Skeleton, Switch } from 'shared'
 
-	type Video = Mux.Video.Assets.Asset | null
+	interface Video {
+		mux_video?: Mux.Video.Assets.Asset
+		playback_id?: string
+		title?: string
+		autoplay: boolean
+		muted: boolean
+		loop: boolean
+		playsinline: boolean
+		controls: boolean
+		preload: boolean
+	}
+
+	type MuxAsset = Mux.Video.Assets.Asset
 	type Plugin = FieldPluginResponse<Video | null>
 
+	let content: Video = $state({
+		autoplay: false,
+		muted: false,
+		loop: false,
+		playsinline: false,
+		controls: false,
+		preload: false,
+	})
 	let plugin: Plugin | null = $state(null)
-	let assets: Array<Mux.Video.Assets.Asset> | null = $state(null)
+	let assets: Array<MuxAsset> | null = $state(null)
 	let open_actions: string | null = $state(null)
 	let timeout: NodeJS.Timeout | null = $state(null)
 	let video_options_open = $state(false)
@@ -31,12 +51,15 @@
 	onMount(() => {
 		createFieldPlugin({
 			enablePortalModal: true,
-			validateContent: (content) => {
-				if (typeof content !== 'object' || content === null) {
+			validateContent: (c) => {
+				if (typeof c !== 'object' || c === null) {
 					return { content: null }
 				}
 
-				return { content }
+				// Update local state
+				content = c as Video
+
+				return { content: c }
 			},
 			onUpdateState: (state) => {
 				plugin = state as Plugin
@@ -58,6 +81,30 @@
 	})
 
 	const actions = {
+		update(c?: Partial<Video>) {
+			if (plugin?.type !== 'loaded') return
+			const state = $state.snapshot({ ...content, ...c })
+			plugin.actions.setContent(state)
+		},
+		set_video(video: MuxAsset | null) {
+			if (!video) {
+				delete content.playback_id
+				delete content.title
+				delete content.mux_video
+
+				actions.update()
+				return
+			}
+
+			content = {
+				...content,
+				playback_id: video.playback_ids?.[0]?.id!,
+				title: video.meta?.title,
+				mux_video: video,
+			}
+
+			actions.update()
+		},
 		async list() {
 			if (!mux) throw new Error('Mux not initialised')
 
@@ -78,7 +125,7 @@
 			await mux.video.assets.delete(id)
 
 			// Update content if the deleted video was the current one
-			if (plugin?.data.content?.id === id) plugin.actions.setContent(null)
+			if (content.mux_video?.id === id) actions.set_video(null)
 
 			// Refresh the list
 			await actions.list()
@@ -99,6 +146,18 @@
 		toggle_actions(id: string) {
 			open_actions = open_actions === id ? null : id
 		},
+		async set_title(title: string, id: string) {
+			if (timeout) clearTimeout(timeout)
+
+			timeout = setTimeout(async () => {
+				if (!mux) return
+				await mux.video.assets.update(id, {
+					meta: {
+						title,
+					},
+				})
+			}, 1000)
+		},
 	}
 
 	function format_duration(seconds: number): string {
@@ -116,18 +175,6 @@
 	function date(date: string): string {
 		const d = new Date(Number(date) * 1000)
 		return format_elapse(d) || format_date('{MMM} {d}, {YYYY}', d)
-	}
-
-	async function update_title(title: string, video: NonNullable<Video>) {
-		if (timeout) clearTimeout(timeout)
-
-		timeout = setTimeout(async () => {
-			await mux!.video.assets.update(video.id, {
-				meta: {
-					title,
-				},
-			})
-		}, 1000)
 	}
 
 	const is_modal_open = $derived.by(() => plugin?.type === 'loaded' && plugin.data.isModalOpen)
@@ -164,9 +211,9 @@
 	</ol>
 {/snippet}
 
-{#snippet asset_preview(video?: NonNullable<Video>)}
+{#snippet asset_preview(video?: MuxAsset)}
 	{@const playback_id = video?.playback_ids?.[0]?.id}
-	{@const is_selected = plugin?.data?.content?.id === video?.id}
+	{@const is_selected = content.mux_video?.id === video?.id}
 
 	<figure
 		class={cn([
@@ -193,7 +240,7 @@
 	</figure>
 {/snippet}
 
-{#snippet asset_meta(video: NonNullable<Video>)}
+{#snippet asset_meta(video: MuxAsset)}
 	<input
 		class="font-medium truncate text-dark-blue-950 focus:px-2 transition-[padding] placeholder:font-normal"
 		placeholder="Video title…"
@@ -201,20 +248,20 @@
 		oninput={(event) => {
 			if (!event.target || !(event.target instanceof HTMLInputElement)) return
 
-			update_title(event.target.value, video)
+			actions.set_title(event.target.value, video.id)
 		}}
 	/>
 	<span class="justify-between flex text-muted-foreground text-xs">
-		{#if video.status === 'errored'}
-			{video.errors?.messages}
-		{:else if video.status === 'preparing'}
+		{#if content.mux_video?.status === 'errored'}
+			{content.mux_video.errors?.messages}
+		{:else if content.mux_video?.status === 'preparing'}
 			Preparing...
-		{:else if video.duration}
+		{:else if content.mux_video?.duration}
 			<span>
-				{format_duration(video.duration)}
+				{format_duration(content.mux_video.duration)}
 			</span>
-			<time datetime={video.created_at}>
-				{date(video.created_at)}
+			<time datetime={content.mux_video.created_at}>
+				{date(content.mux_video.created_at)}
 			</time>
 		{/if}
 	</span>
@@ -279,7 +326,7 @@
 													class="p-3 w-full text-start hover:bg-muted transition-colors"
 													onclick={() => {
 														plugin?.actions?.setModalOpen(false)
-														plugin?.actions?.setContent($state.snapshot(video))
+														actions.set_video(video)
 													}}
 												>
 													Select
@@ -299,8 +346,8 @@
 								<div class="grid gap-1 rounded hover:bg-muted transition-colors p-3 w-full">
 									<button
 										onclick={() => {
+											actions.set_video(video)
 											plugin?.actions?.setModalOpen(false)
-											plugin?.actions?.setContent($state.snapshot(video))
 										}}
 									>
 										{@render asset_preview(video)}
@@ -315,12 +362,12 @@
 				An error occurred while loading videos.
 			{/await}
 		</div>
-	{:else if plugin.data.content}
+	{:else if content.mux_video}
 		<div
 			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 font-medium group"
 		>
-			{@render asset_preview(plugin.data.content)}
-			<div>{@render asset_meta(plugin.data.content)}</div>
+			{@render asset_preview(content.mux_video)}
+			<div>{@render asset_meta(content.mux_video)}</div>
 			<ul
 				class="
           absolute
@@ -374,7 +421,7 @@
 				</li>
 				<li>
 					<button
-						onclick={() => plugin?.actions?.setContent(null)}
+						onclick={() => actions.set_video(null)}
 						title="Remove video"
 						aria-label="Remove video"
 					>
@@ -383,24 +430,47 @@
 				</li>
 			</ul>
 			{#if video_options_open}
-				<div class="grid gap-2 mt-5" transition:slide={{ duration: 300 }}>
-					<h2 class="text-lg font-medium">Video settings</h2>
-					<label class="flex items-center gap-2">
-						<input type="checkbox" />
-						Autoplay
-					</label>
-					<label class="flex items-center gap-2">
-						<input type="checkbox" />
-						Playsinline
-					</label>
-					<label class="flex items-center gap-2">
-						<input type="checkbox" />
-						Muted
-					</label>
-					<label class="flex items-center gap-2">
-						<input type="checkbox" />
-						Loop
-					</label>
+				<div class="grid gap-4 mt-5" transition:slide={{ duration: 300 }}>
+					<div class="flex items-center space-x-2">
+						<Switch
+							id="autoplay"
+							checked={content.autoplay}
+							onCheckedChange={(autoplay) => actions.update({ autoplay })}
+						/>
+						<Label for="autoplay">Autoplay</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<Switch
+							id="playsinline"
+							checked={content.playsinline}
+							onCheckedChange={(playsinline) => actions.update({ playsinline })}
+						/>
+						<Label for="playsinline">Playsinline</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<Switch
+							id="muted"
+							checked={content.muted}
+							onCheckedChange={(muted) => actions.update({ muted })}
+						/>
+						<Label for="muted">Muted</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<Switch
+							id="loop"
+							checked={content.loop}
+							onCheckedChange={(loop) => actions.update({ loop })}
+						/>
+						<Label for="loop">Loop</Label>
+					</div>
+					<div class="flex items-center space-x-2">
+						<Switch
+							id="preload"
+							checked={content.preload}
+							onCheckedChange={(preload) => actions.update({ preload })}
+						/>
+						<Label for="preload">Preload</Label>
+					</div>
 				</div>
 			{/if}
 		</div>
