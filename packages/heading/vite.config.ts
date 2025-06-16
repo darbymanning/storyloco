@@ -25,9 +25,7 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       'shared/global.css': path.resolve(__dirname, '../shared/global.css'),
+      'shared/utils': path.resolve(__dirname, '../shared/utils.ts'),
     },
-  },
-  optimizeDeps: {
-    include: ['shared/global.css'],
   },
 })

@@ -1,7 +1,6 @@
 import { mount } from 'svelte'
 import app from './app.svelte'
 import 'shared/global.css'
-import 'kitto/reset'
 
 let target: HTMLDivElement | null = document.querySelector('#app')
 

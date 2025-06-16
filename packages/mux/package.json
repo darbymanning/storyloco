@@ -10,6 +10,7 @@
     "@sveltejs/vite-plugin-svelte": "5.1.0",
     "@tailwindcss/vite": "4.1.10",
     "@tsconfig/svelte": "5.0.4",
+    "prettier-plugin-svelte": "3.4.0",
     "shared": "../shared",
     "svelte": "5.33.18",
     "svelte-check": "4.2.1",
