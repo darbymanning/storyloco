@@ -17,7 +17,7 @@
 	} from '@lucide/svelte'
 	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
-	import Skeleton from './skeleton.svelte'
+	import { Skeleton } from 'shared'
 
 	type Video = Mux.Video.Assets.Asset | null
 	type Plugin = FieldPluginResponse<Video | null>
@@ -130,7 +130,11 @@
 		}, 1000)
 	}
 
-	$inspect(video_options_open)
+	const is_modal_open = $derived.by(() => plugin?.type === 'loaded' && plugin.data.isModalOpen)
+
+	$effect(() => {
+		document.documentElement.setAttribute('data-modal-open', is_modal_open ? 'true' : 'false')
+	})
 </script>
 
 <svelte:window
@@ -166,8 +170,8 @@
 
 	<figure
 		class={cn([
-			'flex items-center justify-center [&>svg]:absolute [&>svg]:text-secondary [&>svg]:size-5 bg-gray-50 rounded w-full aspect-video relative',
-			{ 'bg-primary [&>svg]:text-white': video && is_selected },
+			'flex items-center justify-center [&>svg]:absolute [&>svg]:size-5 bg-muted text-muted-foreground rounded w-full aspect-video relative border',
+			{ 'bg-primary [&>svg]:text-primary-foreground': video && is_selected },
 		])}
 	>
 		{#if playback_id && video.status === 'ready'}
@@ -200,7 +204,7 @@
 			update_title(event.target.value, video)
 		}}
 	/>
-	<span class="justify-between flex text-dark-blue-500 text-xs">
+	<span class="justify-between flex text-muted-foreground text-xs">
 		{#if video.status === 'errored'}
 			{video.errors?.messages}
 		{:else if video.status === 'preparing'}
@@ -224,7 +228,7 @@
 				{@render skeleton()}
 			{:then}
 				{#if !assets || assets.length === 0}
-					<p class="text-muted">No videos found</p>
+					<p class="text-muted-foreground">No videos found</p>
 				{:else}
 					<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
 						{#each assets as video (video.id)}
@@ -242,7 +246,8 @@
                       absolute
                       top-6
                       right-6
-                      bg-gray-100
+                      bg-muted
+                      text-muted-foreground
                       rounded
                       p-1
                       z-10
@@ -266,12 +271,12 @@
 									</button>
 									{#if actions_open}
 										<ol
-											class="absolute top-14 w-full bg-card rounded shadow-md z-10"
+											class="absolute top-14 w-full bg-card text-card-foreground rounded shadow-md z-10 border"
 											transition:fly={{ y: 20, duration: 300, delay: 100 }}
 										>
 											<li>
 												<button
-													class="p-3 w-full text-start hover:bg-gray-50 transition-colors"
+													class="p-3 w-full text-start hover:bg-muted transition-colors"
 													onclick={() => {
 														plugin?.actions?.setModalOpen(false)
 														plugin?.actions?.setContent($state.snapshot(video))
@@ -282,7 +287,7 @@
 											</li>
 											<li>
 												<button
-													class="p-3 w-full text-start hover:bg-gray-50 transition-colors"
+													class="p-3 w-full text-start hover:bg-muted transition-colors"
 													onclick={() => actions.delete(video.id)}
 												>
 													Delete
@@ -291,10 +296,7 @@
 										</ol>
 									{/if}
 								{/if}
-								<div
-									class="grid gap-1 rounded hover:bg-gray-50 transition-colors p-3 w-full"
-									class:selected={video.id === plugin.data.content?.id}
-								>
+								<div class="grid gap-1 rounded hover:bg-muted transition-colors p-3 w-full">
 									<button
 										onclick={() => {
 											plugin?.actions?.setModalOpen(false)
@@ -315,7 +317,7 @@
 		</div>
 	{:else if plugin.data.content}
 		<div
-			class="p-4 grid grid-cols-[140px_1fr] w-full border border-border-gray rounded hover:border-primary transition-colors bg-card items-center gap-x-5 font-medium group"
+			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 font-medium group"
 		>
 			{@render asset_preview(plugin.data.content)}
 			<div>{@render asset_meta(plugin.data.content)}</div>
@@ -327,6 +329,7 @@
           flex
           items-center
           bg-card
+          text-card-foreground
           border
           rounded
           divide-x
@@ -338,9 +341,9 @@
 
           [&>li]:flex
           [&_button]:p-2
-          [&_button]:hover:bg-gray-50
+          [&_button]:hover:bg-muted
           [&_button]:outline-none
-          [&_button]:focus:bg-gray-50
+          [&_button]:focus:bg-muted
 
           group-hover:opacity-100
           group-hover:pointer-events-auto
@@ -403,7 +406,7 @@
 		</div>
 	{:else}
 		<button
-			class="p-4 grid grid-cols-[140px_1fr] w-full border border-border-gray rounded hover:border-primary transition-colors bg-card items-center justify-items-start gap-5 font-medium"
+			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center justify-items-start gap-5 font-medium"
 			onclick={() => plugin?.actions?.setModalOpen(true)}
 			title="Add video"
 			aria-label="Add video"

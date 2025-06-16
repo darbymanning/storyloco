@@ -1,1 +1,1 @@
-// Reexport your entry components here
+export { Skeleton } from './components/ui/skeleton/index.js';
