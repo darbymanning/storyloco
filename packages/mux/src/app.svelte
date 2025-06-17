@@ -17,7 +17,7 @@
 	} from '@lucide/svelte'
 	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
-	import { Label, Skeleton, Switch } from 'shared'
+	import { Input, Label, Skeleton, Switch } from 'shared'
 
 	interface Video {
 		mux_video?: Mux.Video.Assets.Asset
@@ -157,6 +157,8 @@
 		async set_title(title: string, id: string) {
 			if (timeout) clearTimeout(timeout)
 
+			actions.update({ title })
+
 			timeout = setTimeout(async () => {
 				if (!mux) return
 				await mux.video.assets.update(id, {
@@ -164,7 +166,6 @@
 						title,
 					},
 				})
-				actions.update({ title })
 			}, 1000)
 		},
 		async select_poster() {
@@ -297,17 +298,10 @@
 	</figure>
 {/snippet}
 
-{#snippet asset_meta(video: MuxAsset)}
-	<input
-		class="font-medium truncate text-dark-blue-950 focus:px-2 transition-[padding] placeholder:font-normal w-full max-w-[calc(100%-120px)]"
-		placeholder="Video title…"
-		value={video.meta?.title}
-		oninput={(event) => {
-			if (!event.target || !(event.target instanceof HTMLInputElement)) return
-
-			actions.set_title(event.target.value, video.id)
-		}}
-	/>
+{#snippet asset_meta()}
+	<p class="font-medium truncate">
+		{content?.title}
+	</p>
 	<span class="justify-between flex text-muted-foreground text-xs">
 		{#if content?.mux_video?.status === 'errored'}
 			{content.mux_video.errors?.messages}
@@ -409,7 +403,7 @@
 									>
 										{@render asset_preview(video)}
 									</button>
-									{@render asset_meta(video)}
+									{@render asset_meta()}
 								</div>
 							</li>
 						{/each}
@@ -424,7 +418,7 @@
 			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
 			{@render asset_preview(content.mux_video)}
-			<div>{@render asset_meta(content.mux_video)}</div>
+			<div class="grid">{@render asset_meta()}</div>
 			<ul class={actions_menu_classes}>
 				<li>
 					<button
@@ -456,6 +450,20 @@
 			</ul>
 			{#if video_options_open}
 				<div class="grid gap-5 mt-5 col-span-full" transition:slide={{ duration: 300 }}>
+					<div class="grid gap-2">
+						<Label for="title">Title</Label>
+						<Input
+							id="title"
+							placeholder="Video title…"
+							value={content.mux_video.meta?.title}
+							oninput={(event) => {
+								if (!event.target || !(event.target instanceof HTMLInputElement)) return
+								if (!content?.mux_video) return
+
+								actions.set_title(event.target.value, content.mux_video.id)
+							}}
+						/>
+					</div>
 					<div class="flex items-center space-x-2">
 						<Switch
 							id="autoplay"
