@@ -24,11 +24,11 @@
 		playback_id?: string
 		m3u8_url?: string
 		title?: string
-		autoplay: boolean
-		muted: boolean
-		loop: boolean
-		playsinline: boolean
-		controls: boolean
+		autoplay?: boolean
+		muted?: boolean
+		loop?: boolean
+		playsinline?: boolean
+		controls?: boolean
 		preload?: 'auto' | 'metadata' | 'none'
 		poster?: string
 	}
@@ -36,24 +36,18 @@
 	type MuxAsset = Mux.Video.Assets.Asset
 	type Plugin = FieldPluginResponse<Video | null>
 
-	let content: Video = $state({
-		autoplay: false,
-		muted: false,
-		loop: false,
-		playsinline: false,
-		controls: false,
-	})
+	let content: Video | null = $state(null)
 	let plugin: Plugin | null = $state(null)
 	let assets: Array<MuxAsset> | null = $state(null)
 	let open_actions: string | null = $state(null)
 	let timeout: NodeJS.Timeout | null = $state(null)
 	let video_options_open = $state(true)
 
-	const is_mux_poster = $derived(content.poster?.startsWith('https://image.mux.com/'))
+	const is_mux_poster = $derived.by(() => content?.poster?.startsWith('https://image.mux.com/'))
 	const poster = $derived.by(() => {
-		if (is_mux_poster) return `${content.poster}?width=558&height=314&fit_mode=smartcrop`
-		if (content.poster?.endsWith('.svg')) return content.poster
-		return `${content.poster}/m/558x314/smart`
+		if (is_mux_poster) return `${content?.poster}?width=558&height=314&fit_mode=smartcrop`
+		if (content?.poster?.endsWith('.svg')) return content.poster
+		return `${content?.poster}/m/558x314/smart`
 	})
 
 	onMount(() => {
@@ -101,11 +95,7 @@
 		},
 		set_video(video: MuxAsset | null) {
 			if (!video) {
-				delete content.playback_id
-				delete content.title
-				delete content.mux_video
-				delete content.m3u8_url
-				delete content.poster
+				content = null
 				actions.update()
 				return
 			}
@@ -143,7 +133,7 @@
 			await mux.video.assets.delete(id)
 
 			// Update content if the deleted video was the current one
-			if (content.mux_video?.id === id) actions.set_video(null)
+			if (content?.mux_video?.id === id) actions.set_video(null)
 
 			// Refresh the list
 			await actions.list()
@@ -178,14 +168,14 @@
 			}, 1000)
 		},
 		async select_poster() {
-			if (!content.mux_video) return
+			if (!content?.mux_video) return
 			const asset = await plugin?.actions?.selectAsset()
 
 			if (!asset) actions.update({ poster: get_poster(content.mux_video) })
 			else actions.update({ poster: asset.filename })
 		},
 		async delete_poster() {
-			if (!content.mux_video) return
+			if (!content?.mux_video) return
 			actions.update({ poster: get_poster(content.mux_video) })
 		},
 	}
@@ -275,7 +265,7 @@
 
 {#snippet asset_preview(video?: MuxAsset)}
 	{@const playback_id = video?.playback_ids?.[0]?.id}
-	{@const is_selected = content.mux_video?.id === video?.id}
+	{@const is_selected = content?.mux_video?.id === video?.id}
 
 	<figure
 		class={cn([
@@ -319,11 +309,11 @@
 		}}
 	/>
 	<span class="justify-between flex text-muted-foreground text-xs">
-		{#if content.mux_video?.status === 'errored'}
+		{#if content?.mux_video?.status === 'errored'}
 			{content.mux_video.errors?.messages}
-		{:else if content.mux_video?.status === 'preparing'}
+		{:else if content?.mux_video?.status === 'preparing'}
 			Preparing...
-		{:else if content.mux_video?.duration}
+		{:else if content?.mux_video?.duration}
 			<span>
 				{format_duration(content.mux_video.duration)}
 			</span>
@@ -429,8 +419,7 @@
 				An error occurred while loading videos.
 			{/await}
 		</div>
-	{:else if content.mux_video}
-		{@const playback_id = content.mux_video.playback_ids?.[0]?.id}
+	{:else if content?.mux_video}
 		<div
 			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
