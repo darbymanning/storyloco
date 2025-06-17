@@ -22,13 +22,15 @@
 	interface Video {
 		mux_video?: Mux.Video.Assets.Asset
 		playback_id?: string
+		m3u8_url?: string
 		title?: string
 		autoplay: boolean
 		muted: boolean
 		loop: boolean
 		playsinline: boolean
 		controls: boolean
-		preload: boolean
+		preload?: 'auto' | 'metadata' | 'none'
+		poster?: string
 	}
 
 	type MuxAsset = Mux.Video.Assets.Asset
@@ -40,13 +42,19 @@
 		loop: false,
 		playsinline: false,
 		controls: false,
-		preload: false,
 	})
 	let plugin: Plugin | null = $state(null)
 	let assets: Array<MuxAsset> | null = $state(null)
 	let open_actions: string | null = $state(null)
 	let timeout: NodeJS.Timeout | null = $state(null)
-	let video_options_open = $state(false)
+	let video_options_open = $state(true)
+
+	const is_mux_poster = $derived(content.poster?.startsWith('https://image.mux.com/'))
+	const poster = $derived.by(() => {
+		if (is_mux_poster) return `${content.poster}?width=558&height=314&fit_mode=smartcrop`
+		if (content.poster?.endsWith('.svg')) return content.poster
+		return `${content.poster}/m/558/314/smartcrop`
+	})
 
 	onMount(() => {
 		createFieldPlugin({
@@ -80,6 +88,11 @@
 		})
 	})
 
+	function get_poster(video: MuxAsset) {
+		const playback_id = video.playback_ids?.[0]?.id
+		return playback_id ? `https://image.mux.com/${playback_id}/thumbnail.jpg` : undefined
+	}
+
 	const actions = {
 		update(c?: Partial<Video>) {
 			if (plugin?.type !== 'loaded') return
@@ -91,15 +104,20 @@
 				delete content.playback_id
 				delete content.title
 				delete content.mux_video
-
+				delete content.m3u8_url
+				delete content.poster
 				actions.update()
 				return
 			}
 
+			const playback_id = video.playback_ids?.[0]?.id
+
 			content = {
 				...content,
-				playback_id: video.playback_ids?.[0]?.id!,
+				playback_id,
 				title: video.meta?.title,
+				m3u8_url: playback_id ? `https://stream.mux.com/${playback_id}.m3u8` : undefined,
+				poster: get_poster(video),
 				mux_video: video,
 			}
 
@@ -156,7 +174,19 @@
 						title,
 					},
 				})
+				actions.update({ title })
 			}, 1000)
+		},
+		async select_poster() {
+			if (!content.mux_video) return
+			const asset = await plugin?.actions?.selectAsset()
+
+			if (!asset) actions.update({ poster: get_poster(content.mux_video) })
+			else actions.update({ poster: asset.filename })
+		},
+		async delete_poster() {
+			if (!content.mux_video) return
+			actions.update({ poster: get_poster(content.mux_video) })
 		},
 	}
 
@@ -182,6 +212,38 @@
 	$effect(() => {
 		document.documentElement.setAttribute('data-modal-open', is_modal_open ? 'true' : 'false')
 	})
+
+	const actions_menu_classes = `
+      absolute
+      right-4
+      top-4
+      flex
+      items-center
+      bg-card
+      text-card-foreground
+      border
+      rounded
+      divide-x
+      opacity-0
+      pointer-events-none
+      -translate-y-10
+      transition-[translate,opacity]
+      overflow-hidden
+
+      [&>li]:flex
+      [&_button]:p-2
+      [&_button]:hover:bg-muted
+      [&_button]:outline-none
+      [&_button]:focus:bg-muted
+
+      group-hover:opacity-100
+      group-hover:pointer-events-auto
+      group-hover:translate-y-0
+
+      group-focus-within:opacity-100
+      group-focus-within:pointer-events-auto
+      group-focus-within:translate-y-0
+   `
 </script>
 
 <svelte:window
@@ -227,6 +289,11 @@
 				src="https://image.mux.com/{playback_id}/thumbnail.jpg?width=240&height=135&fit_mode=smartcrop"
 				alt={video.meta?.title}
 			/>
+			<img
+				class="rounded shrink-0 size-full absolute cover hover:opacity-100 transition-opacity opacity-0"
+				src="https://image.mux.com/{playback_id}/animated.gif?width=240&height=135&fit_mode=smartcrop"
+				alt={video.meta?.title}
+			/>
 		{/if}
 		{#if !video}
 			<VideoIcon />
@@ -242,7 +309,7 @@
 
 {#snippet asset_meta(video: MuxAsset)}
 	<input
-		class="font-medium truncate text-dark-blue-950 focus:px-2 transition-[padding] placeholder:font-normal"
+		class="font-medium truncate text-dark-blue-950 focus:px-2 transition-[padding] placeholder:font-normal w-full max-w-[calc(100%-120px)]"
 		placeholder="Video title…"
 		value={video.meta?.title}
 		oninput={(event) => {
@@ -287,31 +354,31 @@
 								in:fly={{ y: 20, duration: 300, delay: 100 }}
 								out:fade={{ duration: 200 }}
 							>
-								{#if video.status === 'ready'}
+								{#if video.id}
 									<button
 										class="
-                      absolute
-                      top-6
-                      right-6
-                      bg-muted
-                      text-muted-foreground
-                      rounded
-                      p-1
-                      z-10
+                                 absolute
+                                 top-6
+                                 right-6
+                                 bg-muted
+                                 text-muted-foreground
+                                 rounded
+                                 p-1
+                                 z-10
 
-                      opacity-0
-                      pointer-events-none
-                      -translate-y-10
-                      transition-[translate,opacity]
+                                 opacity-0
+                                 pointer-events-none
+                                 -translate-y-10
+                                 transition-[translate,opacity]
 
-                      group-hover:opacity-100
-                      group-hover:pointer-events-auto
-                      group-hover:translate-y-0
+                                 group-hover:opacity-100
+                                 group-hover:pointer-events-auto
+                                 group-hover:translate-y-0
 
-                      group-focus-within:opacity-100
-                      group-focus-within:pointer-events-auto
-                      group-focus-within:translate-y-0
-                    "
+                                 group-focus-within:opacity-100
+                                 group-focus-within:pointer-events-auto
+                                 group-focus-within:translate-y-0
+                              "
 										onclick={() => actions.toggle_actions(video.id)}
 									>
 										<EllipsisIcon size={18} />
@@ -363,44 +430,13 @@
 			{/await}
 		</div>
 	{:else if content.mux_video}
+		{@const playback_id = content.mux_video.playback_ids?.[0]?.id}
 		<div
-			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 font-medium group"
+			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
 			{@render asset_preview(content.mux_video)}
 			<div>{@render asset_meta(content.mux_video)}</div>
-			<ul
-				class="
-          absolute
-          right-4
-          top-4
-          flex
-          items-center
-          bg-card
-          text-card-foreground
-          border
-          rounded
-          divide-x
-          opacity-0
-          pointer-events-none
-          -translate-y-10
-          transition-[translate,opacity]
-          overflow-hidden
-
-          [&>li]:flex
-          [&_button]:p-2
-          [&_button]:hover:bg-muted
-          [&_button]:outline-none
-          [&_button]:focus:bg-muted
-
-          group-hover:opacity-100
-          group-hover:pointer-events-auto
-          group-hover:translate-y-0
-
-          group-focus-within:opacity-100
-          group-focus-within:pointer-events-auto
-          group-focus-within:translate-y-0
-        "
-			>
+			<ul class={actions_menu_classes}>
 				<li>
 					<button
 						onclick={() => plugin?.actions?.setModalOpen(true)}
@@ -430,7 +466,7 @@
 				</li>
 			</ul>
 			{#if video_options_open}
-				<div class="grid gap-4 mt-5" transition:slide={{ duration: 300 }}>
+				<div class="grid gap-5 mt-5 col-span-full" transition:slide={{ duration: 300 }}>
 					<div class="flex items-center space-x-2">
 						<Switch
 							id="autoplay"
@@ -463,13 +499,66 @@
 						/>
 						<Label for="loop">Loop</Label>
 					</div>
-					<div class="flex items-center space-x-2">
-						<Switch
-							id="preload"
-							checked={content.preload}
-							onCheckedChange={(preload) => actions.update({ preload })}
-						/>
+					<div class="grid gap-2">
 						<Label for="preload">Preload</Label>
+						<select
+							class="bg-background border rounded min-h-10 outline-none focus-visible:border-ring transition-colors w-full"
+							bind:value={content.preload}
+							onchange={(event) => {
+								if (!event.target || !(event.target instanceof HTMLSelectElement)) return
+								actions.update({ preload: event.target.value as 'auto' | 'metadata' | 'none' })
+							}}
+							id="preload"
+						>
+							<option disabled selected value={undefined}>Select preload…</option>
+							<option value="auto">Auto</option>
+							<option value="metadata">Metadata (default)</option>
+							<option value="none">None</option>
+						</select>
+						<p class="text-muted-foreground text-xs">
+							Note: The preload attribute is ignored if autoplay is present.
+						</p>
+					</div>
+					<div class="grid gap-2">
+						<Label for="poster">Poster</Label>
+						<figure class="relative rounded overflow-hidden border">
+							<ul class={actions_menu_classes}>
+								<li>
+									<button
+										onclick={actions.select_poster}
+										title="Select poster"
+										aria-label="Select poster"
+									>
+										<RefreshCwIcon size={18} />
+									</button>
+								</li>
+								{#if !is_mux_poster}
+									<li>
+										<button
+											onclick={actions.delete_poster}
+											title="Delete poster"
+											aria-label="Delete poster"
+										>
+											<Trash2Icon size={18} />
+										</button>
+									</li>
+								{/if}
+							</ul>
+							<img
+								class="shrink-0 aspect-video object-contain"
+								src={poster}
+								width={558}
+								height={314}
+								alt={content.mux_video.meta?.title}
+							/>
+							{#if is_mux_poster}
+								<figcaption
+									class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4 h-20 flex items-end text-muted-foreground text-xs"
+								>
+									Auto-generated poster from video source
+								</figcaption>
+							{/if}
+						</figure>
 					</div>
 				</div>
 			{/if}
