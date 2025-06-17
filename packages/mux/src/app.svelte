@@ -53,7 +53,7 @@
 	const poster = $derived.by(() => {
 		if (is_mux_poster) return `${content.poster}?width=558&height=314&fit_mode=smartcrop`
 		if (content.poster?.endsWith('.svg')) return content.poster
-		return `${content.poster}/m/558/314/smartcrop`
+		return `${content.poster}/m/558x314/smart`
 	})
 
 	onMount(() => {
