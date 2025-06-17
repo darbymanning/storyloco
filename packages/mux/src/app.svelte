@@ -41,7 +41,7 @@
 	let assets: Array<MuxAsset> | null = $state(null)
 	let open_actions: string | null = $state(null)
 	let timeout: NodeJS.Timeout | null = $state(null)
-	let video_options_open = $state(true)
+	let video_options_open = $state(false)
 
 	const is_mux_poster = $derived.by(() => content?.poster?.startsWith('https://image.mux.com/'))
 	const poster = $derived.by(() => {
