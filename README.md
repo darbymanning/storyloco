@@ -22,11 +22,7 @@ A comprehensive UI component library built with:
 ## 📦 Installation
 
 ```bash
-# Install as a workspace dependency
-npm install storyloco@workspace:*
-
-# Or if published to npm
-npm install storyloco
+bun add storyloco
 ```
 
 ## 🎯 Usage
@@ -191,8 +187,8 @@ bun run build
 ## 🛠️ Tech Stack
 
 - **Framework**: Svelte 5 with TypeScript
-- **Styling**: Tailwind CSS 4
-- **Components**: Bits UI primitives
+- **Styling**: Tailwind CSS
+- **Components**: Shadcn Svelte, Bits UI primitives
 - **Build Tool**: Vite
 - **Package Manager**: Bun (recommended)
 - **Linting**: ESLint + Prettier

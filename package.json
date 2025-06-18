@@ -1,8 +1,30 @@
 {
 	"name": "storyloco",
-	"version": "0.0.0",
+	"version": "1.0.0",
+	"description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
+	"keywords": [
+		"storyblok",
+		"field-plugin",
+		"svelte",
+		"typescript",
+		"tailwind",
+		"cms",
+		"headless"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/darbymanning/storyloco.git"
+	},
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
+	"files": [
+		"src",
+		"packages/mux/src/app.svelte",
+		"packages/heading/src/app.svelte",
+		"packages/theme/src/app.svelte",
+		"packages/shared/dist"
+	],
 	"exports": {
 		".": {
 			"types": "./src/index.ts",
@@ -15,6 +37,18 @@
 		"./heading": {
 			"types": "./packages/heading/src/app.svelte",
 			"import": "./packages/heading/src/app.svelte"
+		},
+		"./theme": {
+			"types": "./packages/theme/src/app.svelte",
+			"import": "./packages/theme/src/app.svelte"
+		},
+		"./shared": {
+			"types": "./packages/shared/dist/index.d.ts",
+			"svelte": "./packages/shared/dist/index.js"
+		},
+		"./shared/utils": {
+			"types": "./packages/shared/dist/utils.d.ts",
+			"svelte": "./packages/shared/dist/utils.js"
 		}
 	},
 	"devDependencies": {
