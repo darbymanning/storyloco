@@ -18,20 +18,7 @@
 	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
 	import { Input, Label, Skeleton, Switch } from 'shared'
-
-	export interface Video {
-		mux_video?: Mux.Video.Assets.Asset
-		playback_id?: string
-		m3u8_url?: string
-		title?: string
-		autoplay?: boolean
-		muted?: boolean
-		loop?: boolean
-		playsinline?: boolean
-		controls?: boolean
-		preload?: 'auto' | 'metadata' | 'none'
-		poster?: string
-	}
+	import type { Video } from '../types.js'
 
 	type MuxAsset = Mux.Video.Assets.Asset
 	type Plugin = FieldPluginResponse<Video | null>

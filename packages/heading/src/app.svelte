@@ -1,14 +1,8 @@
-<script module lang="ts">
-	export interface Heading {
-		text: string
-		level: 1 | 2 | 3 | 4 | 5 | 6
-	}
-</script>
-
 <script lang="ts">
 	import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 	import { onMount } from 'svelte'
 	import { Input } from 'shared'
+	import type { Heading } from '../types.js'
 
 	type Plugin = FieldPluginResponse<Heading | null>
 
