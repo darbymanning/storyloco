@@ -1,4 +1,4 @@
-<script lang="ts">
+<script module lang="ts">
 	import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 	import { onMount } from 'svelte'
 	import { flip } from 'svelte/animate'
@@ -19,7 +19,7 @@
 	import { cn } from 'shared/utils'
 	import { Input, Label, Skeleton, Switch } from 'shared'
 
-	interface Video {
+	export interface Video {
 		mux_video?: Mux.Video.Assets.Asset
 		playback_id?: string
 		m3u8_url?: string
@@ -35,7 +35,9 @@
 
 	type MuxAsset = Mux.Video.Assets.Asset
 	type Plugin = FieldPluginResponse<Video | null>
+</script>
 
+<script lang="ts">
 	let content: Video | null = $state(null)
 	let plugin: Plugin | null = $state(null)
 	let assets: Array<MuxAsset> | null = $state(null)
