@@ -90,12 +90,13 @@ storyloco/
 
 2. **Export types** in your plugin:
 
-   ```svelte
-   <script module lang="ts">
-     export interface YourType {
-       // your interface here
-     }
-   </script>
+   Create a `types.ts` file in your plugin package:
+
+   ```typescript
+   // packages/your-plugin/types.ts
+   export interface YourType {
+   	// your interface here
+   }
    ```
 
 3. **Add to root exports** in `package.json`:
@@ -104,7 +105,7 @@ storyloco/
    {
    	"exports": {
    		"./your-plugin": {
-   			"types": "./packages/your-plugin/src/app.svelte",
+   			"types": "./packages/your-plugin/types.ts",
    			"import": "./packages/your-plugin/src/app.svelte"
    		}
    	}
@@ -113,7 +114,7 @@ storyloco/
 
 4. **Re-export in `src/index.ts`**:
    ```typescript
-   export type { YourType } from '../packages/your-plugin/src/app.svelte'
+   export type { YourType } from '../packages/your-plugin/types'
    ```
 
 ## 🎨 Shared Components
