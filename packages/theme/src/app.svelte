@@ -17,16 +17,9 @@
 	let content: string | undefined = $state()
 
 	onMount(() => {
-		createFieldPlugin({
+		createFieldPlugin<string>({
 			enablePortalModal: true,
-			validateContent: (content) => {
-				if (content === null || typeof content !== 'string') {
-					return { content: undefined }
-				}
-
-				return { content }
-			},
-			async onUpdateState(state) {
+			onUpdateState(state) {
 				plugin = state as Plugin
 			},
 		})

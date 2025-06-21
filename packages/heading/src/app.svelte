@@ -10,22 +10,22 @@
 	let content: Heading = $state({ text: '', level: 1 })
 
 	onMount(() => {
-		createFieldPlugin({
+		createFieldPlugin<Heading>({
 			enablePortalModal: true,
 			validateContent: (content) => {
 				if (typeof content !== 'object' || content === null) {
-					return { content: { text: '', level: 1 } as Heading }
+					return { content: { text: '', level: 1 } }
 				}
 
 				const validated = content as Heading
+
 				// ensure level is one of the allowed values
 				if (![1, 2, 3, 4, 5, 6].includes(validated.level)) {
 					validated.level = 1
 				}
+
 				// ensure text is a string
-				if (typeof validated.text !== 'string') {
-					validated.text = ''
-				}
+				if (typeof validated.text !== 'string') validated.text = ''
 
 				return { content: validated }
 			},
@@ -46,7 +46,7 @@
 	<fieldset class="flex gap-2">
 		<Input class="flex-1" bind:value={content.text} oninput={update} />
 		<select
-			class="rounded outline-none focus-visible:border-ring border-input bg-white border dark:bg-input/30"
+			class="rounded outline-none focus-visible:border-ring border-input bg-white border dark:bg-input/30 min-h-11.5"
 			bind:value={() => content.level, (v) => (content.level = Number(v) as Heading['level'])}
 			onchange={update}
 		>

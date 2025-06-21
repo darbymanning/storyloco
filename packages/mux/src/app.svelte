@@ -22,9 +22,7 @@
 
 	type MuxAsset = Mux.Video.Assets.Asset
 	type Plugin = FieldPluginResponse<Video | null>
-</script>
 
-<script lang="ts">
 	let content: Video | null = $state(null)
 	let plugin: Plugin | null = $state(null)
 	let assets: Array<MuxAsset> | null = $state(null)
@@ -40,18 +38,8 @@
 	})
 
 	onMount(() => {
-		createFieldPlugin({
+		createFieldPlugin<Video>({
 			enablePortalModal: true,
-			validateContent: (c) => {
-				if (typeof c !== 'object' || c === null) {
-					return { content: null }
-				}
-
-				// Update local state
-				content = c as Video
-
-				return { content: c }
-			},
 			onUpdateState: (state) => {
 				plugin = state as Plugin
 			},
@@ -184,7 +172,7 @@
 
 	function date(date: string): string {
 		const d = new Date(Number(date) * 1000)
-		return format_elapse(d) || format_date('{MMM} {d}, {YYYY}', d)
+		return format_elapse(d) || format_date('{MMM} {D}, {YYYY}', d)
 	}
 
 	const is_modal_open = $derived.by(() => plugin?.type === 'loaded' && plugin.data.isModalOpen)
@@ -488,7 +476,7 @@
 					<div class="grid gap-2">
 						<Label for="preload">Preload</Label>
 						<select
-							class="bg-background border rounded min-h-10 outline-none focus-visible:border-ring transition-colors w-full"
+							class="bg-background border rounded min-h-11.5 outline-none focus-visible:border-ring transition-colors w-full"
 							bind:value={content.preload}
 							onchange={(event) => {
 								if (!event.target || !(event.target instanceof HTMLSelectElement)) return

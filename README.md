@@ -9,6 +9,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **🎬 Mux Video** - Upload, manage, and configure videos with Mux integration
 - **📝 Heading** - Simple heading editor with level selection (H1-H6)
 - **🎨 Theme** - Color theme selector with visual previews
+- **🔗 Link** - Link editor with support for internal, external, email, and asset links
 
 ### Shared Components
 
@@ -33,15 +34,16 @@ bun add storyloco
 // Import specific plugin types
 import type { Video } from 'storyloco/mux'
 import type { Heading } from 'storyloco/heading'
+import type { Link } from 'storyloco/link'
 
 // Or import everything
-import type { Video, Heading } from 'storyloco'
+import type { Video, Heading, Link } from 'storyloco'
 ```
 
 ### Use Shared Components
 
 ```typescript
-import { Input, Label, Switch, Skeleton } from 'storyloco/shared'
+import { Input, Label, Switch, Skeleton, Select, Separator } from 'storyloco/shared'
 import { cn } from 'storyloco/shared/utils'
 ```
 
@@ -74,6 +76,7 @@ storyloco/
 │   ├── mux/          # Video upload & management plugin
 │   ├── heading/      # Heading editor plugin
 │   ├── theme/        # Theme selector plugin
+│   ├── link/         # Link editor plugin
 │   └── shared/       # UI component library
 ├── src/
 │   └── index.ts      # Type exports
@@ -126,6 +129,8 @@ The shared package provides a comprehensive set of UI components:
 - `Input` - Text input with proper styling
 - `Label` - Accessible form labels
 - `Switch` - Toggle switch component
+- `Select` - Select component
+- `Separator` - Separator component
 
 ### Display Components
 
