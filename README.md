@@ -11,6 +11,10 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **🎨 Theme** - Color theme selector with visual previews
 - **🔗 Link** - Link editor with support for internal, external, email, and asset links
 
+### Vite Plugins
+
+- **📋 Storyblok Schema** - Automatically generate TypeScript types from your Storyblok components
+
 ### Shared Components
 
 A comprehensive UI component library built with:
@@ -46,6 +50,41 @@ import type { Video, Heading, Link } from 'storyloco'
 import { Input, Label, Switch, Skeleton, Select, Separator } from 'storyloco/shared'
 import { cn } from 'storyloco/shared/utils'
 ```
+
+### Vite Plugins
+
+#### Storyblok Schema Plugin
+
+Automatically generate TypeScript types from your Storyblok components during development:
+
+```typescript
+// vite.config.ts
+import { storyblok_schema } from 'storyloco/vite'
+
+export default defineConfig({
+	plugins: [
+		storyblok_schema({
+			output_path: 'src/lib/storyblok',
+			interval_ms: 60000 // regenerate every minute
+		})
+	]
+})
+```
+
+**Options:**
+
+- `storyblok_personal_access_token` - Your Storyblok personal access token (defaults to `STORYBLOK_PERSONAL_ACCESS_TOKEN` env var)
+- `storyblok_space_id` - Your Storyblok space ID (defaults to `STORYBLOK_SPACE_ID` env var)
+- `output_path` - Where to output generated files (defaults to `src/lib`)
+- `interval_ms` - How often to regenerate types (defaults to 60000ms)
+
+The plugin will:
+
+- Pull your component schema from Storyblok
+- Generate TypeScript definitions
+- Format the output with Prettier
+- Lock the generated file to prevent manual edits
+- Regenerate automatically when components change
 
 ## 🔧 Development
 

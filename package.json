@@ -1,75 +1,81 @@
 {
-	"name": "storyloco",
-	"version": "1.1.0",
-	"description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
-	"keywords": [
-		"storyblok",
-		"field-plugin",
-		"svelte",
-		"typescript",
-		"tailwind",
-		"cms",
-		"headless"
-	],
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/darbymanning/storyloco.git"
-	},
-	"main": "./src/index.ts",
-	"types": "./src/index.ts",
-	"files": [
-		"src",
-		"packages/mux/src/app.svelte",
-		"packages/mux/types.ts",
-		"packages/heading/src/app.svelte",
-		"packages/heading/types.ts",
-		"packages/theme/src/app.svelte",
-		"packages/shared/dist"
-	],
-	"exports": {
-		".": {
-			"types": "./src/index.ts",
-			"import": "./src/index.ts"
-		},
-		"./mux": {
-			"types": "./packages/mux/types.ts",
-			"import": "./packages/mux/src/app.svelte"
-		},
-		"./heading": {
-			"types": "./packages/heading/types.ts",
-			"import": "./packages/heading/src/app.svelte"
-		},
-		"./shared": {
-			"types": "./packages/shared/dist/index.d.ts",
-			"svelte": "./packages/shared/dist/index.js"
-		},
-		"./shared/utils": {
-			"types": "./packages/shared/dist/utils.d.ts",
-			"svelte": "./packages/shared/dist/utils.js"
-		}
-	},
-	"devDependencies": {
-		"@types/node": "24.0.0",
-		"@typescript-eslint/eslint-plugin": "8.34.0",
-		"@typescript-eslint/parser": "8.34.0",
-		"eslint": "9.28.0",
-		"eslint-plugin-prettier": "5.4.1",
-		"kitto": "1.0.0-rc.12",
-		"prettier": "3.5.3",
-		"typescript": "5.8.3",
-		"vite": "6.3.5"
-	},
-	"scripts": {
-		"add-plugin": "npx @storyblok/field-plugin-cli@latest add --dir \"./packages\" --structure monorepo",
-		"lint": "eslint --ext .js .",
-		"format": "prettier . --write"
-	},
-	"type": "module",
-	"workspaces": [
-		"packages/*"
-	],
-	"dependencies": {
-		"color": "5.0.0"
-	}
+  "name": "storyloco",
+  "version": "1.1.0",
+  "description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
+  "keywords": [
+    "storyblok",
+    "field-plugin",
+    "svelte",
+    "typescript",
+    "tailwind",
+    "cms",
+    "headless"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darbymanning/storyloco.git"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "src",
+    "packages/mux/src/app.svelte",
+    "packages/mux/types.ts",
+    "packages/heading/src/app.svelte",
+    "packages/heading/types.ts",
+    "packages/theme/src/app.svelte",
+    "packages/shared/dist",
+    "packages/vite/dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./mux": {
+      "types": "./packages/mux/types.ts",
+      "import": "./packages/mux/src/app.svelte"
+    },
+    "./heading": {
+      "types": "./packages/heading/types.ts",
+      "import": "./packages/heading/src/app.svelte"
+    },
+    "./shared": {
+      "types": "./packages/shared/dist/index.d.ts",
+      "svelte": "./packages/shared/dist/index.js"
+    },
+    "./shared/utils": {
+      "types": "./packages/shared/dist/utils.d.ts",
+      "svelte": "./packages/shared/dist/utils.js"
+    },
+    "./vite": {
+      "types": "./packages/vite/dist/index.d.ts",
+      "import": "./packages/vite/dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "24.0.0",
+    "@typescript-eslint/eslint-plugin": "8.34.0",
+    "@typescript-eslint/parser": "8.34.0",
+    "eslint": "9.28.0",
+    "eslint-plugin-prettier": "5.4.1",
+    "kitto": "1.0.0-rc.12",
+    "prettier": "3.5.3",
+    "typescript": "5.8.3",
+    "vite": "6.3.5"
+  },
+  "scripts": {
+    "add-plugin": "npx @storyblok/field-plugin-cli@latest add --dir \"./packages\" --structure monorepo",
+    "build": "cd packages/vite && npm run build && cd ../../packages/shared && npm run build",
+    "lint": "eslint --ext .js .",
+    "format": "prettier . --write"
+  },
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "color": "5.0.0"
+  }
 }
