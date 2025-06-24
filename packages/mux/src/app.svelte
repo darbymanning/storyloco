@@ -1,4 +1,4 @@
-<script module lang="ts">
+<script lang="ts">
 	import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 	import { onMount } from 'svelte'
 	import { flip } from 'svelte/animate'
@@ -539,7 +539,7 @@
 		</div>
 	{:else}
 		<button
-			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center justify-items-start gap-5 font-medium"
+			class="p-4 grid grid-cols-[140px_1fr] w-full border border-input rounded hover:border-primary transition-colors bg-input-background text-card-foreground items-center justify-items-start gap-5 font-medium"
 			onclick={() => plugin?.actions?.setModalOpen(true)}
 			title="Add video"
 			aria-label="Add video"

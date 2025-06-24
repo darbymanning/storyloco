@@ -46,7 +46,7 @@
 	<fieldset class="flex gap-2">
 		<Input class="flex-1" bind:value={content.text} oninput={update} />
 		<select
-			class="rounded outline-none focus-visible:border-ring border-input bg-white border dark:bg-input/30 min-h-11.5"
+			class="rounded outline-none focus-visible:border-ring border-input bg-white border bg-input-background min-h-11.5"
 			bind:value={() => content.level, (v) => (content.level = Number(v) as Heading['level'])}
 			onchange={update}
 		>

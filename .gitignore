@@ -1,35 +1,26 @@
-.DS_Store
 node_modules
 
-# env files except for .env.local.example
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
 .env
 .env.*
-!.env.local.example
+!.env.example
+!.env.test
 
-# Log files
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Editor directories and files
-.idea
-.vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw*
-
-# Yarn (https://yarnpkg.com/getting-started/qa#which-files-should-be-gitignored)
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
 packages/vite/src/lib/components.schema.json
 packages/vite/src/lib/components.schema.ts

@@ -4,7 +4,6 @@
 	import { Input, Label, Skeleton, Select } from 'shared'
 	import {
 		link_types,
-		rel_options,
 		target_options,
 		type AssetLink,
 		type EmailLink,
@@ -363,7 +362,7 @@
 			bind:value={content.target}
 			onchange={update}
 			id="target"
-			class="rounded outline-none focus-visible:border-ring border-input bg-white border dark:bg-input/30 min-h-11.5"
+			class="rounded outline-none focus-visible:border-ring border-input bg-input-background border min-h-11.5 hover:border-primary transition-colors"
 		>
 			<option disabled selected value={undefined}>Select target…</option>
 			{#each target_options as target}
@@ -504,7 +503,7 @@
 			{/if}
 		</div>
 	{:else}
-		<fieldset class="grid gap-5">
+		<fieldset class="grid gap-5 p-4 rounded border border-input bg-input-background/50">
 			<div class="grid gap-2">
 				<Label for="text">Text</Label>
 				<Input bind:value={content.text} oninput={update} id="text" />
@@ -512,7 +511,7 @@
 			<div class="grid gap-2">
 				<Label for="link">Link</Label>
 				<div
-					class="flex gap-2 items-center border rounded border-input bg-white dark:bg-input/30 focus-within:border-ring h-11.5 px-3 py-1"
+					class="flex gap-2 items-center border rounded border-input bg-input-background focus-within:border-ring h-11.5 px-3 py-1 hover:border-primary transition-colors"
 				>
 					<div class="relative flex items-center gap-1">
 						<select
@@ -531,7 +530,7 @@
 								<option value={type}>{title_case(type)}</option>
 							{/each}
 						</select>
-						<figure class="peer-hover:opacity-50 pointer-events-none">
+						<figure class="peer-hover:opacity-50 pointer-events-none transition-opacity">
 							<Icon size={16} />
 						</figure>
 						<ChevronDownIcon size={16} />
@@ -577,7 +576,7 @@
 				<div class="grid gap-2">
 					<Label for="body">Body</Label>
 					<textarea
-						class="field-sizing-content p-3 border border-input rounded bg-white dark:bg-input/30 min-h-11.5 text-start outline-none focus-visible:border-ring resize-none"
+						class="field-sizing-content p-3 border border-input rounded bg-input-background min-h-11.5 text-start outline-none focus-visible:border-ring resize-none hover:border-primary transition-colors"
 						bind:value={content.body}
 						oninput={actions.update_email}
 						id="body"
@@ -598,7 +597,7 @@
 					<Label for="rel">Rel</Label>
 					<div class="grid">
 						<button
-							class="border border-input rounded p-1 px-3.5 bg-white dark:bg-input/30 min-h-11.5 text-start outline-none focus-visible:border-ring flex items-center justify-between"
+							class="border border-input rounded p-1 px-3.5 bg-input-background min-h-11.5 text-start outline-none focus-visible:border-ring flex items-center justify-between hover:border-primary transition-colors"
 							onclick={() => (rel_open = !rel_open)}
 						>
 							<span class:text-muted-foreground={!content.rel}>{content.rel || 'Select rel…'}</span>
@@ -609,7 +608,7 @@
 						</button>
 						{#if rel_open}
 							<ol
-								class="bg-white dark:bg-input/30 border border-input rounded grid text-xs divide-y mt-1 overflow-hidden"
+								class="bg-input-background border border-input rounded grid text-xs divide-y mt-1 overflow-hidden"
 								transition:slide
 							>
 								{#each rel_checkboxes as rel_option}

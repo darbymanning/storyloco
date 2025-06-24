@@ -1,20 +1,36 @@
 {
-	"options": [
-		{
-			"name": "Rose",
-			"value": "#da452b"
-		},
-		{
-			"name": "Pollen",
-			"value": "#ecc155"
-		},
-		{
-			"name": "Dark",
-			"value": "#111111"
-		},
-		{
-			"name": "Light",
-			"value": "#f8f1e4"
-		}
-	]
+  "options": [
+    {
+      "name": "Rose on Vellum",
+      "value": "hsl(9 70% 51%), hsl(39 56% 89%)"
+    },
+    {
+      "name": "Rose",
+      "value": "#da452b"
+    },
+    {
+      "name": "Pollen",
+      "value": "#ecc155"
+    },
+    {
+      "name": "Dark",
+      "value": "#111111"
+    },
+    {
+      "name": "Light",
+      "value": "#f8f1e4"
+    },
+    {
+      "name": "Rose on Light Vellum",
+      "value": "hsl(9 70% 51%), hsl(39 59% 93%)"
+    },
+    {
+      "name": "Rose on White",
+      "value": "hsl(9 70% 51%), hsl(0 0% 100%)"
+    },
+    {
+      "name": "Canopy on Forget Me Not",
+      "value": "hsl(150 37% 18%), hsl(199 21% 79%)"
+    }
+  ]
 }

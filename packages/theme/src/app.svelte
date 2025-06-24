@@ -1,26 +1,38 @@
 <script lang="ts">
 	import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 	import { onMount } from 'svelte'
-	import { snake } from 'radashi'
-	import Color from 'color'
+	import { dash } from 'radashi'
+	import { ChevronDownIcon } from '@lucide/svelte'
 	import { cn } from 'shared/utils'
+	import { slide } from 'svelte/transition'
 
 	type Theme = {
 		name: string
-		hex: string
+		primary: string
 		value: string
+		secondary?: string
+		tertiary?: string
 	}
 
-	type Plugin = FieldPluginResponse<string | undefined>
+	type Plugin = FieldPluginResponse<Content>
+	type Content = string | null
 
 	let plugin: Plugin | null = $state(null)
-	let content: string | undefined = $state()
+	let content: Content = $state(null)
+	let open = $state(false)
 
 	onMount(() => {
-		createFieldPlugin<string>({
-			enablePortalModal: true,
+		createFieldPlugin<Content>({
+			validateContent(content) {
+				if (typeof content !== 'string' || content === 'none') {
+					return { content: null }
+				}
+
+				return { content }
+			},
 			onUpdateState(state) {
 				plugin = state as Plugin
+				if (plugin?.type === 'loaded') content = plugin.data.content
 			},
 		})
 	})
@@ -28,80 +40,103 @@
 	function update() {
 		if (plugin?.type !== 'loaded') return
 		const state = $state.snapshot(content)
-		plugin.actions.setContent(state)
+		plugin.actions.setContent(state === 'none' ? null : state)
 	}
 
 	const themes: Array<Theme> = $derived.by(() => {
 		if (plugin?.type !== 'loaded') return []
 
 		return Object.entries(plugin.data.options).map(([key, value]) => {
+			const [primary, secondary, tertiary] = value.split(',')
 			return {
 				name: key,
-				hex: value,
-				value: snake(key),
+				value: `theme-${dash(key)}`,
+				primary,
+				secondary,
+				tertiary,
 			}
 		})
 	})
 
-	function is_light(hex: string): boolean {
-		try {
-			return Color(hex).isLight()
-		} catch {
-			return false
-		}
-	}
+	const selected = $derived.by(() => {
+		if (plugin?.type !== 'loaded') return
+
+		return themes.find((theme) => theme.value === content)
+	})
 </script>
 
-{#if themes?.length}
-	<fieldset class="flex items-center gap-2">
-		{#each themes as { value, name, hex }, index}
-			{#snippet label(value: string)}
-				<input
-					class="sr-only [&:checked+label]:border-[var(--color)] [&:checked+label]:bg-[var(--color-hover)]/10"
-					id={value}
-					type="radio"
-					{value}
-					bind:group={content}
-					onchange={update}
-				/>
-				<label
-					for={value}
-					class={cn([
-						'flex items-center gap-2 p-3 px-4 border rounded relative border-transparent transition-colors cursor-pointer',
-						{
-							'bg-muted-foreground/10 hover:bg-[var(--color-hover)]/10': value !== 'none',
-						},
-					])}
-					class:selected={content === value}
-					style={value === 'none'
-						? ''
-						: `
-                     --color: ${hex};
-                     --color-hover: ${is_light(hex) ? Color(hex).darken(0.8).hex() : hex};
-               `}
-				>
-					{#if value === 'none'}
-						None
-					{:else}
-						<svg
-							class="size-4"
-							viewBox="0 0 183 184"
-							fill="none"
-							xmlns="http://www.w3.org/2000/svg"
+<div class="@container">
+	{#if themes?.length}
+		<button
+			class="border border-input rounded p-1 px-3.5 bg-input-background min-h-11.5 text-start outline-none focus-visible:border-ring flex items-center justify-between w-full hover:border-primary"
+			onclick={() => (open = !open)}
+		>
+			<span class:text-muted-foreground={!selected}>{selected?.name || 'Select a theme…'}</span>
+			<ChevronDownIcon size={16} class={cn({ 'rotate-180': open }, 'transition-transform')} />
+		</button>
+		{#if open}
+			<fieldset
+				class="bg-input-background border border-input rounded grid @xs:grid-cols-2 @sm:grid-cols-3 divide-y mt-1 overflow-hidden p-3 gap-3 max-h-54 @xl:max-h-58 overflow-y-auto"
+				transition:slide
+			>
+				{#each themes as { value, name, primary, secondary, tertiary }, index}
+					{#snippet label(value: string)}
+						<input
+							class={cn(
+								'sr-only',
+								`
+                dark:[&:checked+label]:text-background
+                [&:checked+label]:border-primary
+                [&:checked+label]:bg-white
+
+                focus-visible:[&:checked+label]:outline-primary
+                focus-visible:[&:checked+label]:outline-2
+                focus-visible:[&:checked+label]:outline-offset-2
+                `,
+								{
+									'dark:[&:checked+label_figure_span]:border-background': value === 'none',
+								}
+							)}
+							id={value}
+							type="radio"
+							value={value === 'none' ? null : value}
+							bind:group={content}
+							onchange={update}
+						/>
+						<label
+							for={value}
+							class="grid justify-center text-xs text-center items-center gap-2 p-3 border rounded relative transition-colors cursor-pointer justify-between hover:bg-primary/10 border-input bg-secondary hover:border-primary transition-colors"
 						>
-							<path
-								d="M133.476 6.95414C111.783 -4.24286 86.6097 0.589255 78.855 15.6182L78.816 15.6571C66.9435 3.6288 40.6656 6.34363 23.3116 23.5158C5.97051 40.675 4.10002 65.8488 16.0244 77.8772L15.9855 77.9161C0.865623 85.502 -4.40814 111.871 6.58103 133.693C17.5442 155.49 40.6527 164.492 55.7465 156.88L55.6426 156.984C59.7733 170.623 78.9849 184.483 100.794 183.638C125.189 182.677 145.725 160.14 143.166 143.423C159.858 146.137 178.082 130.017 182.031 105.909C185.967 81.813 174.12 58.8994 157.416 56.1456L157.455 56.1066C165.21 41.0777 155.208 18.1122 133.502 6.92815"
-								fill="var(--color)"
-							/>
-						</svg>
-						{name}
+							<figure
+								class={cn(
+									'flex justify-center [&>span]:size-10 @xl:[&>span]:size-12 [&>span]:border-white [&>span]:rounded-full [&>span]:border-2 [&>span:not(:first-child)]:-ml-[25%] [&>span]:relative isolate',
+									{ '[&>span]:border-foreground': value === 'none' }
+								)}
+							>
+								{#if value === 'none'}
+									<span></span>
+								{:else}
+									<span class="z-30" title={primary} style="background-color: {primary}"></span>
+									{#if secondary}
+										<span class="z-10" title={secondary} style="background-color: {secondary}"
+										></span>
+									{/if}
+									{#if tertiary}
+										<span class="z-10" title={tertiary} style="background-color: {tertiary}"></span>
+									{/if}
+								{/if}
+							</figure>
+							<span class="truncate" title={value}>
+								{value === 'none' ? 'Default' : name}
+							</span>
+						</label>
+					{/snippet}
+					{#if index === 0}
+						{@render label('none')}
 					{/if}
-				</label>
-			{/snippet}
-			{#if index === 0}
-				{@render label('none')}
-			{/if}
-			{@render label(value)}
-		{/each}
-	</fieldset>
-{/if}
+					{@render label(value)}
+				{/each}
+			</fieldset>
+		{/if}
+	{/if}
+</div>
