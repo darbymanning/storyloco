@@ -47,7 +47,7 @@
     },
     "./link": {
       "types": "./packages/link/types.ts",
-      "import": "./packages/link/src/app.svelte"
+      "import": "./packages/link/types.ts"
     },
     "./shared/utils": {
       "types": "./packages/shared/dist/utils.d.ts",
@@ -71,6 +71,7 @@
   },
   "peerDependencies": {
     "@storyblok/svelte": "^5.0.0",
+    "@storyblok/field-plugin": "^1.6.0",
     "svelte": "^5.0.0"
   },
   "scripts": {
