@@ -95,22 +95,16 @@ export default function storyblok_schema({
           }
 
           // Log in to Storyblok and pull components
-          logger.start("Preparing to pull components...")
-
           await $`chmod u+w ${components_file}`.quiet().nothrow()
           await $`${x} storyblok logout`.quiet().nothrow()
           await $`${x} storyblok login --token ${storyblok_personal_access_token} --region eu`.quiet()
           await $`${x} storyblok pull-components --space=${storyblok_space_id} -p ${output_path}/ -f schema`.quiet()
-          logger.succeed("Components pulled successfully.")
 
           // Read the new components file
           const new_components = await readFile(components_file, "utf-8")
 
           // Compare existing and new components
-          if (existing_components === new_components) {
-            logger.info("No changes detected in components. Skipping type generation.")
-            return
-          }
+          if (existing_components === new_components) return
 
           // Generate types
           logger.start("Generating TypeScript definitions...")
