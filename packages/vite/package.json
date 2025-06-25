@@ -35,7 +35,7 @@
     "storyblok-generate-ts": "^1.0.0"
   },
   "peerDependencies": {
-    "@storyblok/svelte": "^4.0.0",
+    "@storyblok/svelte": "^5.0.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
