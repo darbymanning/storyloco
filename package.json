@@ -45,6 +45,10 @@
       "types": "./packages/shared/dist/index.d.ts",
       "svelte": "./packages/shared/dist/index.js"
     },
+    "./link": {
+      "types": "./packages/link/types.ts",
+      "import": "./packages/link/src/app.svelte"
+    },
     "./shared/utils": {
       "types": "./packages/shared/dist/utils.d.ts",
       "svelte": "./packages/shared/dist/utils.js"
