@@ -22,8 +22,8 @@
     "src",
     "packages/mux/types.ts",
     "packages/heading/types.ts",
-    "packages/plans/index.ts",
     "packages/plans/types.ts",
+    "packages/link/types.ts",
     "packages/theme/src/app.svelte",
     "packages/shared/dist",
     "packages/vite/dist"
@@ -40,7 +40,7 @@
       "types": "./packages/heading/types.ts"
     },
     "./plans": {
-      "types": "./packages/plans/index.ts"
+      "types": "./packages/plans/types.ts"
     },
     "./shared": {
       "types": "./packages/shared/dist/index.d.ts",
