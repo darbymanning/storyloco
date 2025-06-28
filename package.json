@@ -59,15 +59,15 @@
     }
   },
   "devDependencies": {
-    "@types/node": "24.0.0",
-    "@typescript-eslint/eslint-plugin": "8.34.0",
-    "@typescript-eslint/parser": "8.34.0",
-    "eslint": "9.28.0",
-    "eslint-plugin-prettier": "5.4.1",
+    "@types/node": "24.0.4",
+    "@typescript-eslint/eslint-plugin": "8.35.0",
+    "@typescript-eslint/parser": "8.35.0",
+    "eslint": "9.29.0",
+    "eslint-plugin-prettier": "5.5.1",
     "kitto": "1.0.0-rc.12",
-    "prettier": "3.5.3",
+    "prettier": "3.6.1",
     "typescript": "5.8.3",
-    "vite": "6.3.5"
+    "vite": "7.0.0"
   },
   "peerDependencies": {
     "@storyblok/svelte": "^5.0.0",
@@ -87,6 +87,6 @@
   "dependencies": {
     "chalk": "5.4.1",
     "ora": "8.2.0",
-    "storyblok-generate-ts": "^1.0.0"
+    "storyblok-generate-ts": "^2.2.0"
   }
 }

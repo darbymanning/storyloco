@@ -6,6 +6,8 @@
 
 :root {
 	--white: oklch(1 0 0);
+	--teal-muted: oklch(54.32% 0.09196 193.854);
+
 	--radius: 0.5rem;
 	--background: oklch(97.015% 0.00011 271.152);
 	--foreground: oklch(0.129 0.042 264.695);
@@ -49,6 +51,7 @@
 }
 
 [data-theme='dark'] {
+	--teal-muted: oklch(74.591% 0.11569 187.182);
 	--background: oklch(0.32 0 0);
 	--foreground: oklch(0.984 0.003 247.858);
 	--card: oklch(26.239% 0.00928 285.704);
@@ -93,6 +96,7 @@
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
 	--radius-xl: calc(var(--radius) + 4px);
+	--color-teal-muted: var(--teal-muted);
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
 	--color-card: var(--card);
@@ -156,6 +160,15 @@
 		select {
 			background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 		}
+	}
+
+	svg:not([fill]) {
+		fill: currentColor;
+	}
+
+	svg:not([width]):not([height]) {
+		width: 1em;
+		height: 1em;
 	}
 }
 

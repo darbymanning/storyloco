@@ -3,7 +3,7 @@ import { twMerge } from 'tailwind-merge'
 import { format_date, format_elapse } from 'kitto'
 
 export function cn(...inputs: ClassValue[]) {
-   return twMerge(clsx(inputs))
+	return twMerge(clsx(inputs))
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
