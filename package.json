@@ -20,10 +20,9 @@
   "types": "./src/index.ts",
   "files": [
     "src",
-    "packages/mux/src/app.svelte",
     "packages/mux/types.ts",
-    "packages/heading/src/app.svelte",
     "packages/heading/types.ts",
+    "packages/plans/index.ts",
     "packages/plans/types.ts",
     "packages/theme/src/app.svelte",
     "packages/shared/dist",
@@ -36,15 +35,15 @@
     },
     "./mux": {
       "types": "./packages/mux/types.ts",
-      "import": "./packages/mux/src/app.svelte"
+      "import": "./packages/mux/types.ts"
     },
     "./heading": {
       "types": "./packages/heading/types.ts",
-      "import": "./packages/heading/src/app.svelte"
+      "import": "./packages/heading/types.ts"
     },
     "./plans": {
-      "types": "./packages/plans/types.ts",
-      "import": "./packages/plans/types.ts"
+      "types": "./packages/plans/index.ts",
+      "import": "./packages/plans/index.ts"
     },
     "./shared": {
       "types": "./packages/shared/dist/index.d.ts",
