@@ -34,24 +34,20 @@
       "import": "./src/index.ts"
     },
     "./mux": {
-      "types": "./packages/mux/types.ts",
-      "import": "./packages/mux/types.ts"
+      "types": "./packages/mux/types.ts"
     },
     "./heading": {
-      "types": "./packages/heading/types.ts",
-      "import": "./packages/heading/types.ts"
+      "types": "./packages/heading/types.ts"
     },
     "./plans": {
-      "types": "./packages/plans/index.ts",
-      "import": "./packages/plans/index.ts"
+      "types": "./packages/plans/index.ts"
     },
     "./shared": {
       "types": "./packages/shared/dist/index.d.ts",
       "svelte": "./packages/shared/dist/index.js"
     },
     "./link": {
-      "types": "./packages/link/types.ts",
-      "import": "./packages/link/types.ts"
+      "types": "./packages/link/types.ts"
     },
     "./shared/utils": {
       "types": "./packages/shared/dist/utils.d.ts",
