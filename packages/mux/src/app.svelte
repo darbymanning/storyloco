@@ -38,10 +38,16 @@
 	})
 
 	onMount(() => {
-		createFieldPlugin<Video>({
+		createFieldPlugin<Video | null>({
 			enablePortalModal: true,
+			validateContent(content) {
+				if (typeof content !== 'object') return { content: null }
+
+				return { content: content as Video }
+			},
 			onUpdateState: (state) => {
 				plugin = state as Plugin
+				if (plugin.data?.content) content = plugin.data.content
 			},
 		})
 	})
