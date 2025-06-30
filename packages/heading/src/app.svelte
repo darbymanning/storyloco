@@ -1,53 +1,22 @@
 <script lang="ts">
-	import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
-	import { onMount } from 'svelte'
 	import { Input } from 'shared'
 	import type { Heading } from '../types.js'
+	import { HeadingManager } from './app.svelte.js'
 
-	type Plugin = FieldPluginResponse<Heading | null>
+	const manager = new HeadingManager()
 
-	let plugin: Plugin | null = $state(null)
-	let content: Heading = $state({ text: '', level: 1 })
-
-	onMount(() => {
-		createFieldPlugin<Heading>({
-			validateContent: (content) => {
-				if (typeof content !== 'object' || content === null) {
-					return { content: { text: '', level: 1 } }
-				}
-
-				const validated = content as Heading
-
-				// ensure level is one of the allowed values
-				if (![1, 2, 3, 4, 5, 6].includes(validated.level)) {
-					validated.level = 1
-				}
-
-				// ensure text is a string
-				if (typeof validated.text !== 'string') validated.text = ''
-
-				return { content: validated }
-			},
-			onUpdateState: (state) => {
-				plugin = state as Plugin
-			},
-		})
-	})
-
-	function update() {
-		if (plugin?.type !== 'loaded') return
-		const state = $state.snapshot(content)
-		plugin.actions.setContent(state)
-	}
+	const loaded = $derived(manager.plugin?.type === 'loaded')
 </script>
 
-{#if plugin?.type === 'loaded'}
+{#if loaded}
 	<fieldset class="flex gap-2">
-		<Input class="flex-1" bind:value={content.text} oninput={update} />
+		<Input class="flex-1" bind:value={manager.content.text} oninput={manager.update} />
 		<select
 			class="rounded outline-none focus-visible:border-ring border-input border bg-input-background min-h-11.5"
-			bind:value={() => content.level, (v) => (content.level = Number(v) as Heading['level'])}
-			onchange={update}
+			bind:value={
+				() => manager.content.level, (v) => (manager.content.level = Number(v) as Heading['level'])
+			}
+			onchange={manager.update}
 		>
 			{#each [1, 2, 3, 4, 5, 6] as level}
 				<option value={level}>H{level}</option>

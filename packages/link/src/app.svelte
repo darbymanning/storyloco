@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
-	import { onMount, type Component } from 'svelte'
 	import { Input, Label, Skeleton, Select } from 'shared'
 	import {
 		link_types,
@@ -12,255 +10,38 @@
 		type LinkType,
 		type Rel,
 		type StoryLink,
-		type Target,
 	} from '../types.js'
 	import {
-		type IconProps,
-		LinkIcon,
-		ExternalLinkIcon,
-		MailIcon,
-		ImageIcon,
 		ChevronDownIcon,
 		ChevronLeftIcon,
 		ChevronRightIcon,
 		SlidersHorizontalIcon,
 		CircleXIcon,
 	} from '@lucide/svelte'
-	import type { ISbStories } from '@storyblok/js'
-	import { format_date, format_elapse } from 'kitto'
 	import PublishedIcon from './published.svelte'
 	import DraftIcon from './draft.svelte'
 	import { cn } from 'shared/utils'
 	import Spinner from './spinner.svelte'
 	import NoResults from './no_results.svelte'
 	import { slide } from 'svelte/transition'
+	import { LinkManager } from './app.svelte.js'
 
-	type Plugin = FieldPluginResponse<Link | null>
-
-	let plugin_state: Plugin | null = $state(null)
-
-	const plugin = $derived.by(() =>
-		plugin_state?.type === 'loaded' &&
-		(!!plugin_state.data.token || window.location.hostname !== 'hostname')
-			? plugin_state
-			: null
-	)
-
-	const token = $derived.by(() => {
-		return plugin?.data.token || import.meta.env.VITE_STORYBLOK_API_TOKEN
-	})
-
-	let content: Link = $state({
-		type: 'internal',
-	})
-
-	let stories: ISbStories['data']['stories'] = $state([])
-	let timeout: NodeJS.Timeout | null = $state(null)
-	let loading = $state(false)
-
-	// Pagination
-	const per_page = 10
-	let page = $state(1)
-	let total = $state(0)
-	const next = $derived(page < Math.ceil(total / per_page))
-	const prev = $derived(page > 1)
-
-	let filter_content_types = $state(new Set<string>(['page']))
+	const manager = new LinkManager()
 
 	// generate skeleton widths once
-	const skeleton_widths = Array.from({ length: 20 }, () => Math.floor(Math.random() * 100 + 10))
+	const skeleton_widths = Array.from({ length: 20 }, () => Math.floor(Math.random() * 60 + 10))
 
-	const rel_checkboxes = $state(new Set<Rel>(['noopener', 'noreferrer', 'nofollow']))
-	let rel = $state<Array<Rel>>([])
-	let rel_open = $state(false)
-
-	const icon_map = new Map<LinkType, Component<IconProps, {}, ''>>([
-		['asset', ImageIcon],
-		['external', ExternalLinkIcon],
-		['email', MailIcon],
-		['internal', LinkIcon],
-	])
-
-	const target_map = new Map<Target, string>([
-		['_self', 'Self'],
-		['_blank', 'Blank'],
-		['_parent', 'Parent'],
-		['_top', 'Top'],
-		['_new', 'New'],
-	])
-
-	const Icon = $derived(icon_map.get(content.type))
-
-	function title_case(str: string) {
-		return str.charAt(0).toUpperCase() + str.slice(1)
-	}
-
-	function date(date?: string | null): string {
-		if (!date) return 'N/A'
-		return format_elapse(date) || format_date('{MMM} {D}, {YYYY} at {h}:{mm} {A}', date)
-	}
-
-	onMount(() => {
-		createFieldPlugin<Link>({
-			enablePortalModal: true,
-			onUpdateState: (state) => {
-				plugin_state = state as Plugin
-
-				// Maintain state when rerendering after selecting a story
-				if (state.data?.content && Object.keys(state.data.content).length > 1) {
-					content = state.data.content
-				}
-			},
-		})
-	})
-
-	function update() {
-		if (!plugin) return
-		const state = $state.snapshot(content)
-		plugin.actions.setContent(state)
-	}
-
-	type GetStoriesParams = {
-		search_term?: string
-		page?: number
-	}
-
-	const actions = {
-		clear() {
-			delete content.url
-
-			switch (content.type) {
-				case 'internal':
-					delete content.story
-					delete content.target
-					delete content.suffix
-					break
-
-				case 'asset':
-					delete content.asset
-					delete content.target
-					break
-
-				case 'external':
-					delete content.target
-					delete content.rel
-					break
-
-				case 'email':
-					delete content.email
-					delete content.subject
-					delete content.body
-					delete content.cc
-					delete content.bcc
-					break
-			}
-
-			update()
-		},
-		select_story(story: ISbStories['data']['stories'][number]) {
-			if (!plugin) return
-
-			content = {
-				type: 'internal',
-				text: content.text || story.name,
-				url: '/' + story.full_slug,
-				story: {
-					name: story.name,
-					published_at: story.published_at,
-				},
-			}
-
-			update()
-			plugin.actions.setModalOpen(false)
-		},
-		async search(event: Event) {
-			const input = event.target as HTMLInputElement
-
-			if (timeout) clearTimeout(timeout)
-
-			timeout = setTimeout(async () => {
-				loading = true
-				await actions.get_stories({ search_term: input.value })
-				loading = false
-			}, 500)
-		},
-		async get_stories(params: GetStoriesParams = {}): Promise<void> {
-			if (!plugin || !token) throw new Error('Plugin not loaded')
-
-			const url = new URL('https://api.storyblok.com/v2/cdn/stories')
-
-			url.searchParams.set('token', token)
-			url.searchParams.set('per_page', per_page.toString())
-			url.searchParams.set('version', 'draft')
-			if (!params.search_term) url.searchParams.set('sort_by', 'name:asc')
-			url.searchParams.set('cv', Date.now().toString())
-			url.searchParams.set('page', params.page?.toString() || '1')
-			url.searchParams.set(
-				'filter_query[component][in]',
-				Array.from(filter_content_types).join(',')
-			)
-
-			if (params.search_term) url.searchParams.set('search_term', params.search_term)
-
-			const result = await fetch(url.toString())
-			const data = (await result.json()) as ISbStories['data']
-
-			// Update pagination state
-			total = Number(result.headers.get('total'))
-			if (params.page) page = params.page
-
-			stories = data.stories
-		},
-		async get_content_types(): Promise<Set<string>> {
-			if (!plugin || !token) throw new Error('Plugin not loaded')
-
-			const url = new URL('https://api.storyblok.com/v2/cdn/stories')
-
-			url.searchParams.set('token', token)
-			url.searchParams.set('per_page', '-1')
-			url.searchParams.set('version', 'draft')
-			url.searchParams.set('cv', Date.now().toString())
-
-			const result = await fetch(url.toString())
-			const data = (await result.json()) as ISbStories['data']
-
-			return new Set(
-				data.stories.map((story) => story.content.component).filter(Boolean) as Array<string>
-			)
-		},
-		update_email() {
-			if (!plugin || content.type !== 'email') return
-			if (!content.subject) delete content.subject
-			if (!content.body) delete content.body
-			if (!content.cc) delete content.cc
-			if (!content.bcc) delete content.bcc
-
-			if (!content.email) {
-				delete content.email
-				delete content.url
-			}
-
-			if (content.email) {
-				const url = new URL(`mailto:${content.email}`)
-				if (content.subject) url.searchParams.set('subject', content.subject)
-				if (content.body) url.searchParams.set('body', content.body)
-				if (content.cc) url.searchParams.set('cc', content.cc)
-				if (content.bcc) url.searchParams.set('bcc', content.bcc)
-				content.url = url.toString()
-			}
-
-			update()
-		},
-	}
+	// derived state
+	const loaded = $derived(manager.plugin?.type === 'loaded')
 </script>
 
 {#snippet thead()}
 	<thead>
 		<tr class="[&>th]:text-start [&>th]:py-2 [&>th]:px-4">
 			<th class="w-full">Name</th>
-			<th class="min-w-44">Type</th>
-			<th class="min-w-44">Published</th>
-			<th class="min-w-44">Updated</th>
+			<th class="min-w-52">Type</th>
+			<th class="min-w-52">Published</th>
+			<th class="min-w-52">Updated</th>
 		</tr>
 	</thead>
 {/snippet}
@@ -271,11 +52,11 @@
 
 	{#snippet column(index: number)}
 		<td style="--width: {skeleton_widths[index]}%">
-			<Skeleton class="dark:bg-muted-foreground w-[var(--width)] min-w-7 h-4" />
+			<Skeleton class="dark:bg-muted-foreground w-[var(--width)] min-w-7 h-7" />
 		</td>
 	{/snippet}
 
-	<table class="w-full table-auto border-collapse text-xs">
+	<table class="w-full table-auto border-collapse">
 		{@render thead()}
 		<tbody>
 			{#each Array(rows) as _row, row_index}
@@ -303,7 +84,7 @@
 	<button
 		class={cn('w-full text-start', { 'text-muted-foreground': !content.story?.name })}
 		onclick={() => {
-			plugin?.actions.setModalOpen(true, { height: '400px', width: '800px' })
+			manager.set_modal_open(true)
 		}}
 	>
 		{#if content.story?.name}
@@ -317,7 +98,7 @@
 			aria-label="Unassign story"
 			title="Unassign story"
 			class="text-muted-foreground"
-			onclick={actions.clear}
+			onclick={manager.clear}
 		>
 			<CircleXIcon size={18} />
 		</button>
@@ -327,15 +108,7 @@
 {#snippet asset_select(content: AssetLink)}
 	<button
 		class={cn('w-full text-start', { 'text-muted-foreground': !content.asset?.name })}
-		onclick={async () => {
-			const asset = await plugin?.actions.selectAsset()
-
-			if (!asset) return
-
-			content.url = asset.filename
-			content.asset = asset
-			update()
-		}}
+		onclick={manager.select_asset}
 	>
 		{#if content.asset}
 			{content.asset.name || content.asset.filename.split('/').pop()}
@@ -348,7 +121,7 @@
 			aria-label="Unassign asset"
 			title="Unassign asset"
 			class="text-muted-foreground"
-			onclick={actions.clear}
+			onclick={manager.clear}
 		>
 			<CircleXIcon size={18} />
 		</button>
@@ -360,13 +133,18 @@
 		<Label for="target">Target</Label>
 		<select
 			bind:value={content.target}
-			onchange={update}
+			onchange={manager.update}
 			id="target"
-			class="rounded outline-none focus-visible:border-ring border-input bg-input-background border min-h-11.5 hover:border-primary transition-colors"
+			class={cn(
+				'rounded outline-none focus-visible:border-ring border-input bg-input-background border min-h-11.5 hover:border-primary transition-colors',
+				{
+					'text-muted-foreground': !content.target,
+				}
+			)}
 		>
 			<option disabled selected value={undefined}>Select target…</option>
 			{#each target_options as target}
-				<option value={target}>{target_map.get(target)}</option>
+				<option value={target}>{manager.target_map.get(target)}</option>
 			{/each}
 		</select>
 	</div>
@@ -376,7 +154,7 @@
 	<input
 		class="w-full outline-none"
 		bind:value={content.url}
-		oninput={update}
+		oninput={manager.update}
 		placeholder="https://example.com"
 		type="url"
 	/>
@@ -386,18 +164,19 @@
 	<input
 		class="w-full outline-none"
 		bind:value={content.email}
-		oninput={actions.update_email}
+		oninput={manager.update_email}
 		placeholder="example@example.com"
 		type="email"
 	/>
 {/snippet}
 
-{#if plugin}
-	{#if plugin.data.isModalOpen}
+{#if loaded}
+	<!-- DEBUG: manager.loaded is true -->
+	{#if manager.is_modal_open}
 		<div class="p-8 grid gap-4">
 			<header class="flex items-center gap-2">
 				<Input
-					oninput={actions.search}
+					oninput={manager.search}
 					id="search"
 					type="search"
 					placeholder="Search for a story…"
@@ -405,7 +184,8 @@
 				<Select.Root
 					type="multiple"
 					bind:value={
-						() => Array.from(filter_content_types), (v) => (filter_content_types = new Set(v))
+						() => Array.from(manager.filter_content_types),
+						(v) => (manager.filter_content_types = new Set(v))
 					}
 				>
 					<Select.Trigger title="Filter by content type" aria-label="Filter by content type">
@@ -414,11 +194,11 @@
 					<Select.Content>
 						<Select.Group>
 							<Select.Label>Content Types</Select.Label>
-							{#await actions.get_content_types()}
+							{#await manager.get_content_types()}
 								<Spinner class="mx-auto my-4" />
 							{:then content_types}
 								{#each content_types as content_type}
-									<Select.Item value={content_type}>{title_case(content_type)}</Select.Item>
+									<Select.Item value={content_type}>{manager.title_case(content_type)}</Select.Item>
 								{/each}
 							{/await}
 						</Select.Group>
@@ -426,40 +206,40 @@
 				</Select.Root>
 			</header>
 
-			{#await actions.get_stories()}
+			{#await manager.get_stories()}
 				{@render skeleton()}
 			{:then}
-				{#if loading}
+				{#if manager.loading}
 					{@render skeleton()}
 				{/if}
-				{#if stories.length}
-					<table class="w-full table-auto border-collapse text-xs">
+				{#if manager.stories.length}
+					<table class="w-full table-auto border-collapse">
 						{@render thead()}
 						<tbody>
-							{#each stories as story}
+							{#each manager.stories as story}
 								<tr class="[&>td]:py-2 [&>td]:px-4 [&>td]:border-b">
 									<td class="pl-0!">
 										<button
-											class="flex items-center gap-2 transition-colors hover:bg-muted-foreground/10 w-full outline-none focus-visible:ring-2 focus-visible:ring-ring rounded p-2 focus-visible:bg-muted-foreground/10 relative"
-											onclick={() => actions.select_story(story)}
+											class="grid text-start gap-1 transition-colors hover:bg-muted-foreground/10 w-full outline-none focus-visible:ring-2 focus-visible:ring-ring rounded p-2 focus-visible:bg-muted-foreground/10 relative"
+											onclick={() => manager.select_story(story)}
 										>
 											{@render story_with_status(story)}
-											<code class="text-[10px] text-muted-foreground">/{story.full_slug}</code>
+											<code class="text-xs text-muted-foreground">/{story.full_slug}</code>
 										</button>
 									</td>
 									<td>
-										<code class="text-xs text-muted-foreground">{story.content.component}</code>
+										<code class="text-muted-foreground">{story.content.component}</code>
 									</td>
 									<td>
 										{#if story.published_at}
-											<time datetime={story.published_at}>{date(story.published_at)}</time>
+											<time datetime={story.published_at}>{manager.date(story.published_at)}</time>
 										{:else}
 											<span class="text-muted-foreground">N/A</span>
 										{/if}
 									</td>
 									<td>
 										{#if story.updated_at}
-											<time datetime={story.updated_at}>{date(story.updated_at)}</time>
+											<time datetime={story.updated_at}>{manager.date(story.updated_at)}</time>
 										{:else}
 											<span class="text-muted-foreground">N/A</span>
 										{/if}
@@ -476,25 +256,25 @@
 				{/if}
 			{/await}
 
-			{#if total > per_page}
-				<nav class="flex gap-2 justify-between text-xs">
+			{#if manager.total > manager.per_page}
+				<nav class="flex gap-2 justify-between">
 					<button
 						class="disabled:opacity-20 disabled:cursor-not-allowed flex items-center gap-1 p-1 py-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring transition-opacity hover:opacity-70 pr-2"
-						disabled={!prev}
-						onclick={() => actions.get_stories({ page: page - 1 })}
+						disabled={!manager.prev}
+						onclick={() => manager.get_stories({ page: manager.page - 1 })}
 					>
 						<ChevronLeftIcon size={20} />
 						Previous
 					</button>
-					{#if total > per_page}
+					{#if manager.total > manager.per_page}
 						<div class="text-muted-foreground">
-							{page} of {Math.ceil(total / per_page)}
+							{manager.page} of {Math.ceil(manager.total / manager.per_page)}
 						</div>
 					{/if}
 					<button
 						class="disabled:opacity-20 disabled:cursor-not-allowed flex items-center gap-1 p-1 py-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring transition-opacity hover:opacity-70 pl-2"
-						disabled={!next}
-						onclick={() => actions.get_stories({ page: page + 1 })}
+						disabled={!manager.next}
+						onclick={() => manager.get_stories({ page: manager.page + 1 })}
 					>
 						Next
 						<ChevronRightIcon size={20} />
@@ -506,7 +286,7 @@
 		<fieldset class="grid gap-5 p-4 rounded border border-input bg-input-background/50">
 			<div class="grid gap-2">
 				<Label for="text">Text</Label>
-				<Input bind:value={content.text} oninput={update} id="text" />
+				<Input bind:value={manager.content.text} oninput={manager.update} id="text" />
 			</div>
 			<div class="grid gap-2">
 				<Label for="link">Link</Label>
@@ -517,58 +297,59 @@
 						<select
 							title="Select link type…"
 							class="absolute inset-0 opacity-0 cursor-pointer peer"
-							bind:value={content.type}
+							bind:value={manager.content.type}
 							oninput={(event) => {
 								if (!event.target || !(event.target instanceof HTMLSelectElement)) return
-								actions.clear()
-								content.type = event.target.value as LinkType
-								update()
+								manager.clear()
+								manager.content.type = event.target.value as LinkType
+								manager.update()
 							}}
 							id="type"
 						>
 							{#each link_types as type}
-								<option value={type}>{title_case(type)}</option>
+								<option value={type}>{manager.title_case(type)}</option>
 							{/each}
 						</select>
 						<figure class="peer-hover:opacity-50 pointer-events-none transition-opacity">
-							<Icon size={16} />
+							<manager.Icon size={16} />
 						</figure>
 						<ChevronDownIcon size={16} />
 					</div>
 
-					{#if content.type === 'internal'}
-						{@render story_select(content)}
-					{:else if content.type === 'asset'}
-						{@render asset_select(content)}
-					{:else if content.type === 'external'}
-						{@render external_input(content)}
-					{:else if content.type === 'email'}
-						{@render email_input(content)}
+					{#if manager.content.type === 'internal'}
+						{@render story_select(manager.content)}
+					{:else if manager.content.type === 'asset'}
+						{@render asset_select(manager.content)}
+					{:else if manager.content.type === 'external'}
+						{@render external_input(manager.content)}
+					{:else if manager.content.type === 'email'}
+						{@render email_input(manager.content)}
 					{/if}
 				</div>
 			</div>
-			{#if content.type === 'internal'}
+			{#if manager.content.type === 'internal'}
 				<div class="grid gap-2">
 					<Label for="suffix">Suffix</Label>
 					<Input
 						bind:value={
-							() => content.type === 'internal' && content.suffix,
-							(v) => content.type === 'internal' && (content.suffix = v || undefined)
+							() => manager.content.type === 'internal' && manager.content.suffix,
+							(v) =>
+								manager.content.type === 'internal' && (manager.content.suffix = v || undefined)
 						}
-						oninput={update}
+						oninput={manager.update}
 						id="suffix"
 						placeholder="e.g. ?search=value"
 					/>
 				</div>
-				{@render target_select(content)}
-			{:else if ['asset', 'external'].includes(content.type)}
-				{@render target_select(content)}
-			{:else if content.type === 'email'}
+				{@render target_select(manager.content)}
+			{:else if ['asset', 'external'].includes(manager.content.type)}
+				{@render target_select(manager.content)}
+			{:else if manager.content.type === 'email'}
 				<div class="grid gap-2">
 					<Label for="subject">Subject</Label>
 					<Input
-						bind:value={content.subject}
-						oninput={actions.update_email}
+						bind:value={manager.content.subject}
+						oninput={manager.update_email}
 						id="subject"
 						placeholder="Subject to use on the email"
 					/>
@@ -577,52 +358,54 @@
 					<Label for="body">Body</Label>
 					<textarea
 						class="field-sizing-content p-3 border border-input rounded bg-input-background min-h-11.5 text-start outline-none focus-visible:border-ring resize-none hover:border-primary transition-colors"
-						bind:value={content.body}
-						oninput={actions.update_email}
+						bind:value={manager.content.body}
+						oninput={manager.update_email}
 						id="body"
 						placeholder="Body to use on the email"
 					></textarea>
 				</div>
 				<div class="grid gap-2">
 					<Label for="cc">CC</Label>
-					<Input bind:value={content.cc} oninput={actions.update_email} id="cc" />
+					<Input bind:value={manager.content.cc} oninput={manager.update_email} id="cc" />
 				</div>
 				<div class="grid gap-2">
 					<Label for="bcc">BCC</Label>
-					<Input bind:value={content.bcc} oninput={actions.update_email} id="bcc" />
+					<Input bind:value={manager.content.bcc} oninput={manager.update_email} id="bcc" />
 				</div>
 			{/if}
-			{#if content.type === 'external'}
+			{#if manager.content.type === 'external'}
 				<div class="grid gap-2">
 					<Label for="rel">Rel</Label>
 					<div class="grid">
 						<button
 							class="border border-input rounded p-1 px-3.5 bg-input-background min-h-11.5 text-start outline-none focus-visible:border-ring flex items-center justify-between hover:border-primary transition-colors"
-							onclick={() => (rel_open = !rel_open)}
+							onclick={() => (manager.rel_open = !manager.rel_open)}
 						>
-							<span class:text-muted-foreground={!content.rel}>{content.rel || 'Select rel…'}</span>
+							<span class:text-muted-foreground={!manager.content.rel}
+								>{manager.content.rel || 'Select rel…'}</span
+							>
 							<ChevronDownIcon
 								size={16}
-								class={cn({ 'rotate-180': rel_open }, 'transition-transform')}
+								class={cn({ 'rotate-180': manager.rel_open }, 'transition-transform')}
 							/>
 						</button>
-						{#if rel_open}
+						{#if manager.rel_open}
 							<ol
-								class="bg-input-background border border-input rounded grid text-xs divide-y mt-1 overflow-hidden"
+								class="bg-input-background border border-input rounded grid divide-y mt-1 overflow-hidden"
 								transition:slide
 							>
-								{#each rel_checkboxes as rel_option}
+								{#each manager.rel_checkboxes as rel_option}
 									<li class="flex items-center gap-2 p-3 relative">
 										<input
 											type="checkbox"
 											id="rel-{rel_option}"
 											value={rel_option}
-											bind:group={rel}
+											bind:group={manager.rel}
 											onchange={() => {
-												if (content.type !== 'external') return
-												content.rel = rel.join(' ') as Rel
-												if (!rel.length) delete content.rel
-												update()
+												if (manager.content.type !== 'external') return
+												manager.content.rel = manager.rel.join(' ') as Rel
+												if (!manager.rel.length) delete manager.content.rel
+												manager.update()
 											}}
 										/>
 										<label
