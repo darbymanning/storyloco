@@ -1,3 +1,4 @@
 {
-	"tailwindCSS.experimental.configFile": "./packages/shared/global.css"
+	"tailwindCSS.experimental.configFile": "./packages/shared/src/lib/global.css",
+	"editor.tabSize": 3
 }
