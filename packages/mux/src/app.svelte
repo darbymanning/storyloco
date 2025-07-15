@@ -13,7 +13,7 @@
 	} from '@lucide/svelte'
 	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
-	import { Input, Label, Skeleton, Switch } from 'shared'
+	import { Input, Label, Skeleton as SkeletonComponent, Switch } from 'shared'
 	import { MuxManager } from './app.svelte.js'
 	import type { MuxAsset } from './app.svelte.js'
 
@@ -65,15 +65,15 @@
 	}}
 />
 
-{#snippet skeleton()}
+{#snippet Skeleton()}
 	<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
 		{#each Array(12)}
 			<li>
 				<div class="p-3 grid gap-2">
-					<Skeleton class="aspect-video size-full" />
+					<SkeletonComponent class="aspect-video size-full" />
 					<div class="flex gap-2 justify-between">
-						<Skeleton class="w-24 h-4" />
-						<Skeleton class="w-16 h-4" />
+						<SkeletonComponent class="w-24 h-4" />
+						<SkeletonComponent class="w-16 h-4" />
 					</div>
 				</div>
 			</li>
@@ -81,7 +81,7 @@
 	</ol>
 {/snippet}
 
-{#snippet asset_preview(video?: MuxAsset)}
+{#snippet AssetPreview(video?: MuxAsset)}
 	{@const playback_id = video?.playback_ids?.[0]?.id}
 	{@const is_selected = manager.content?.mux_video?.id === video?.id}
 
@@ -115,7 +115,7 @@
 	</figure>
 {/snippet}
 
-{#snippet asset_meta()}
+{#snippet AssetMeta()}
 	<p class="font-medium truncate">
 		{manager.content?.title}
 	</p>
@@ -140,7 +140,7 @@
 		<div class="p-8 grid gap-8">
 			<mux-uploader onsuccess={manager.list} endpoint={manager.get_upload_endpoint}></mux-uploader>
 			{#await manager.list()}
-				{@render skeleton()}
+				{@render Skeleton()}
 			{:then}
 				{#if !manager.assets || manager.assets.length === 0}
 					<p class="text-muted-foreground">No videos found</p>
@@ -218,9 +218,9 @@
 											manager.plugin?.actions?.setModalOpen(false)
 										}}
 									>
-										{@render asset_preview(video)}
+										{@render AssetPreview(video)}
 									</button>
-									{@render asset_meta()}
+									{@render AssetMeta()}
 								</div>
 							</li>
 						{/each}
@@ -234,8 +234,8 @@
 		<div
 			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
-			{@render asset_preview(manager.content.mux_video)}
-			<div class="grid">{@render asset_meta()}</div>
+			{@render AssetPreview(manager.content.mux_video)}
+			<div class="grid">{@render AssetMeta()}</div>
 			<ul class={actions_menu_classes}>
 				<li>
 					<button
@@ -384,7 +384,7 @@
 			title="Add video"
 			aria-label="Add video"
 		>
-			{@render asset_preview()}
+			{@render AssetPreview()}
 			+ Add Video
 		</button>
 	{/if}

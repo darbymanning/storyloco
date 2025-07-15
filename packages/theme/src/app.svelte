@@ -76,23 +76,23 @@
 		</button>
 		{#if open}
 			<fieldset
-				class="bg-input-background border border-input rounded grid @xs:grid-cols-2 @sm:grid-cols-3 divide-y mt-1 overflow-hidden p-3 gap-3 max-h-54 @xl:max-h-58 overflow-y-auto"
+				class="bg-input-background border border-input rounded grid @[250px]:grid-cols-2 @sm:grid-cols-3 divide-y mt-1 overflow-hidden p-3 gap-3 max-h-54 @xl:max-h-58 overflow-y-auto"
 				transition:slide
 			>
 				{#each themes as { value, name, primary, secondary, tertiary }, index}
-					{#snippet label(value: string)}
+					{#snippet Label(value: string)}
 						<input
 							class={cn(
 								'sr-only',
 								`
-                dark:[&:checked+label]:text-background
-                [&:checked+label]:border-primary
-                [&:checked+label]:bg-white
+                        dark:[&:checked+label]:text-background
+                        [&:checked+label]:border-primary
+                        [&:checked+label]:bg-white
 
-                focus-visible:[&:checked+label]:outline-primary
-                focus-visible:[&:checked+label]:outline-2
-                focus-visible:[&:checked+label]:outline-offset-2
-                `,
+                        focus-visible:[&:checked+label]:outline-primary
+                        focus-visible:[&:checked+label]:outline-2
+                        focus-visible:[&:checked+label]:outline-offset-2
+                        `,
 								{
 									'dark:[&:checked+label_figure_span]:border-background': value === 'none',
 								}
@@ -105,7 +105,7 @@
 						/>
 						<label
 							for={value}
-							class="grid justify-center text-xs text-center items-center gap-2 p-3 border rounded relative transition-colors cursor-pointer justify-between hover:bg-primary/10 border-input bg-secondary hover:border-primary transition-colors"
+							class="grid text-xs text-center items-center gap-2 p-3 border rounded relative cursor-pointer justify-center hover:bg-primary/10 border-input bg-secondary hover:border-primary transition-colors"
 						>
 							<figure
 								class={cn(
@@ -132,9 +132,9 @@
 						</label>
 					{/snippet}
 					{#if index === 0}
-						{@render label('none')}
+						{@render Label('none')}
 					{/if}
-					{@render label(value)}
+					{@render Label(value)}
 				{/each}
 			</fieldset>
 		{/if}

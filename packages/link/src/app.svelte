@@ -35,7 +35,7 @@
 	const loaded = $derived(manager.plugin?.type === 'loaded')
 </script>
 
-{#snippet thead()}
+{#snippet THead()}
 	<thead>
 		<tr class="[&>th]:text-start [&>th]:py-2 [&>th]:px-4">
 			<th class="w-full">Name</th>
@@ -46,23 +46,23 @@
 	</thead>
 {/snippet}
 
-{#snippet skeleton()}
+{#snippet Skeleton()}
 	{@const rows = 4}
 	{@const columns = 4}
 
-	{#snippet column(index: number)}
+	{#snippet Column(index: number)}
 		<td style="--width: {skeleton_widths[index]}%">
 			<Skeleton class="dark:bg-muted-foreground w-[var(--width)] min-w-7 h-7" />
 		</td>
 	{/snippet}
 
 	<table class="w-full table-auto border-collapse">
-		{@render thead()}
+		{@render THead()}
 		<tbody>
 			{#each Array(rows) as _row, row_index}
 				<tr class="[&>td]:py-2 [&>td]:px-4 [&>td]:border-b">
 					{#each Array(columns) as _column, column_index}
-						{@render column(row_index * columns + column_index)}
+						{@render Column(row_index * columns + column_index)}
 					{/each}
 				</tr>
 			{/each}
@@ -70,7 +70,7 @@
 	</table>
 {/snippet}
 
-{#snippet story_with_status(story: { name: string; published_at: string | null })}
+{#snippet StoryWithStatus(story: { name: string; published_at: string | null })}
 	{@const StatusIcon = story.published_at ? PublishedIcon : DraftIcon}
 	<div class="flex items-center gap-1">
 		<StatusIcon
@@ -80,7 +80,7 @@
 	</div>
 {/snippet}
 
-{#snippet story_select(content: StoryLink)}
+{#snippet StorySelect(content: StoryLink)}
 	<button
 		class={cn('w-full text-start', { 'text-muted-foreground': !content.story?.name })}
 		onclick={() => {
@@ -88,7 +88,7 @@
 		}}
 	>
 		{#if content.story?.name}
-			{@render story_with_status(content.story)}
+			{@render StoryWithStatus(content.story)}
 		{:else}
 			Select a story…
 		{/if}
@@ -105,7 +105,7 @@
 	{/if}
 {/snippet}
 
-{#snippet asset_select(content: AssetLink)}
+{#snippet AssetSelect(content: AssetLink)}
 	<button
 		class={cn('w-full text-start', { 'text-muted-foreground': !content.asset?.name })}
 		onclick={manager.select_asset}
@@ -128,7 +128,7 @@
 	{/if}
 {/snippet}
 
-{#snippet target_select(content: Link)}
+{#snippet TargetSelect(content: Link)}
 	<div class="grid gap-2">
 		<Label for="target">Target</Label>
 		<select
@@ -150,7 +150,7 @@
 	</div>
 {/snippet}
 
-{#snippet external_input(content: ExternalLink)}
+{#snippet ExternalInput(content: ExternalLink)}
 	<input
 		class="w-full outline-none"
 		bind:value={content.url}
@@ -160,7 +160,7 @@
 	/>
 {/snippet}
 
-{#snippet email_input(content: EmailLink)}
+{#snippet EmailInput(content: EmailLink)}
 	<input
 		class="w-full outline-none"
 		bind:value={content.email}
@@ -171,7 +171,6 @@
 {/snippet}
 
 {#if loaded}
-	<!-- DEBUG: manager.loaded is true -->
 	{#if manager.is_modal_open}
 		<div class="p-8 grid gap-4">
 			<header class="flex items-center gap-2">
@@ -207,14 +206,14 @@
 			</header>
 
 			{#await manager.get_stories()}
-				{@render skeleton()}
+				{@render Skeleton()}
 			{:then}
 				{#if manager.loading}
-					{@render skeleton()}
+					{@render Skeleton()}
 				{/if}
 				{#if manager.stories.length}
 					<table class="w-full table-auto border-collapse">
-						{@render thead()}
+						{@render THead()}
 						<tbody>
 							{#each manager.stories as story}
 								<tr class="[&>td]:py-2 [&>td]:px-4 [&>td]:border-b">
@@ -223,7 +222,7 @@
 											class="grid text-start gap-1 transition-colors hover:bg-muted-foreground/10 w-full outline-none focus-visible:ring-2 focus-visible:ring-ring rounded p-2 focus-visible:bg-muted-foreground/10 relative"
 											onclick={() => manager.select_story(story)}
 										>
-											{@render story_with_status(story)}
+											{@render StoryWithStatus(story)}
 											<code class="text-xs text-muted-foreground">/{story.full_slug}</code>
 										</button>
 									</td>
@@ -317,13 +316,13 @@
 					</div>
 
 					{#if manager.content.type === 'internal'}
-						{@render story_select(manager.content)}
+						{@render StorySelect(manager.content)}
 					{:else if manager.content.type === 'asset'}
-						{@render asset_select(manager.content)}
+						{@render AssetSelect(manager.content)}
 					{:else if manager.content.type === 'external'}
-						{@render external_input(manager.content)}
+						{@render ExternalInput(manager.content)}
 					{:else if manager.content.type === 'email'}
-						{@render email_input(manager.content)}
+						{@render EmailInput(manager.content)}
 					{/if}
 				</div>
 			</div>
@@ -341,9 +340,9 @@
 						placeholder="e.g. ?search=value"
 					/>
 				</div>
-				{@render target_select(manager.content)}
+				{@render TargetSelect(manager.content)}
 			{:else if ['asset', 'external'].includes(manager.content.type)}
-				{@render target_select(manager.content)}
+				{@render TargetSelect(manager.content)}
 			{:else if manager.content.type === 'email'}
 				<div class="grid gap-2">
 					<Label for="subject">Subject</Label>

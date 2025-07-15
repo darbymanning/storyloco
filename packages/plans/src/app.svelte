@@ -10,7 +10,7 @@
 	const content = $derived(floor_plan_manager.content)
 </script>
 
-{#snippet $type(type: Type)}
+{#snippet Type(type: Type)}
 	<div class="grid gap-2">
 		<Label for="type-name">Type Name</Label>
 		<Input
@@ -23,7 +23,7 @@
 	</div>
 {/snippet}
 
-{#snippet $floors(type: Type)}
+{#snippet Floors(type: Type)}
 	{@const [sortable] = dnd(type.floors, {
 		onDragEnd: floor_plan_manager.update,
 		direction: 'horizontal',
@@ -63,13 +63,13 @@
 		{#each type.floors as floor (floor.id)}
 			<Tabs.Content value={floor.id}>
 				<div class="grid gap-2">
-					{@render $floor(floor)}
+					{@render Floor(floor)}
 				</div>
 			</Tabs.Content>
 		{/each}
 	</Tabs.Root>
 
-	{#snippet $floor(floor: Floor)}
+	{#snippet Floor(floor: Floor)}
 		<Card.Root>
 			<Card.Content class="grid gap-6">
 				<div class="grid gap-2">
@@ -100,7 +100,7 @@
 					{/if}
 				</Button>
 
-				{@render $plot_dimensions()}
+				{@render PlotDimensions()}
 
 				{#if type.floors.length > 1}
 					<Button
@@ -115,7 +115,7 @@
 			</Card.Content>
 		</Card.Root>
 
-		{#snippet $plot_dimensions()}
+		{#snippet PlotDimensions()}
 			{@const [sortable] = dnd(floor.plot_dimensions, {
 				onDragEnd: floor_plan_manager.update,
 				handlerSelector: '.handle',
@@ -155,7 +155,7 @@
 											</Accordion.Trigger>
 										</div>
 										<Accordion.Content class="grid gap-6 py-6">
-											{@render $plot_dimension(plot_dimension)}
+											{@render PlotDimension(plot_dimension)}
 										</Accordion.Content>
 									</Accordion.Item>
 								{/each}
@@ -163,7 +163,7 @@
 						</Accordion.Root>
 					</Card.Content>
 
-					{#snippet $plot_dimension(plot_dimension: PlotDimension)}
+					{#snippet PlotDimension(plot_dimension: PlotDimension)}
 						<div class="grid gap-2 ml-7 mr-14.5">
 							<Label for="plot-number-{plot_dimension.id}">Plot Number</Label>
 							<Input
@@ -179,7 +179,7 @@
 						</div>
 
 						<div class="grid gap-2">
-							{@render $rooms(plot_dimension)}
+							{@render Rooms(plot_dimension)}
 							<Button
 								class="ml-7 mr-14.5"
 								variant="outline"
@@ -195,7 +195,7 @@
 							</Button>
 						</div>
 
-						{#snippet $rooms(plot_dimension: PlotDimension)}
+						{#snippet Rooms(plot_dimension: PlotDimension)}
 							{@const [sortable] = dnd(plot_dimension.rooms, {
 								onDragEnd: floor_plan_manager.update,
 								handlerSelector: '.handle',
@@ -281,7 +281,7 @@
 	{/snippet}
 {/snippet}
 
-{#snippet $modal()}
+{#snippet Modal()}
 	{@const [sortable] = dnd(content.types, {
 		onDragEnd: floor_plan_manager.update,
 		handlerSelector: '.handle',
@@ -339,8 +339,8 @@
 			{#each content.types as type (type.id)}
 				<Tabs.Content value={type.id}>
 					<div class="grid gap-6">
-						{@render $type(type)}
-						{@render $floors(type)}
+						{@render Type(type)}
+						{@render Floors(type)}
 					</div>
 				</Tabs.Content>
 			{/each}
@@ -350,7 +350,7 @@
 
 {#if floor_plan_manager.loaded}
 	{#if floor_plan_manager.is_modal_open}
-		{@render $modal()}
+		{@render Modal()}
 	{:else}
 		<div class="grid gap-2">
 			{#each content.types as type (type.id)}

@@ -128,7 +128,7 @@ export class LinkManager {
 		this.content = {
 			type: 'internal',
 			text: this.content.text || story.name,
-			url: '/' + story.full_slug,
+			url: story.path || '/' + story.full_slug,
 			story: {
 				name: story.name,
 				published_at: story.published_at,
