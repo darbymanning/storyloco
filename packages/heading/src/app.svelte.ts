@@ -7,7 +7,7 @@ type Plugin = FieldPluginResponse<Heading | null>
 
 export class HeadingManager {
 	plugin = $state<Plugin | null>(null)
-	content = $state<Heading>({ text: '', level: 1 })
+	content = $state<Heading>({ text: '', level: null, tag: null })
 
 	constructor() {
 		this.initialize_plugin()
@@ -17,20 +17,28 @@ export class HeadingManager {
 		createFieldPlugin<Heading>({
 			validateContent: (content) => {
 				if (typeof content !== 'object' || content === null) {
-					return { content: { text: '', level: 1 } }
+					return { content: { text: '', level: null, tag: null } }
 				}
 
-				const validated = content as Heading
+				let validated = content
 
 				// ensure level is one of the allowed values
-				if (![1, 2, 3, 4, 5, 6].includes(validated.level)) {
-					validated.level = 1
+				if ('level' in validated) {
+					if (typeof validated.level !== 'number') {
+						validated.level = null
+					} else if (![1, 2, 3, 4, 5, 6].includes(validated.level)) {
+						validated.level = 1
+					}
+
+					Object.assign(validated, { tag: validated.level ? `h${validated.level}` : null })
 				}
 
 				// ensure text is a string
-				if (typeof validated.text !== 'string') validated.text = ''
+				if ('text' in validated && typeof validated.text !== 'string') {
+					validated.text = ''
+				}
 
-				return { content: validated }
+				return { content: validated as Heading }
 			},
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
