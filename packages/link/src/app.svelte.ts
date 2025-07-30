@@ -48,6 +48,9 @@ export class LinkManager {
 		['_new', 'New'],
 	])
 
+	// view state
+	show_options = $state(false)
+
 	// derived state
 	is_modal_open = $derived(this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen)
 	loaded = $derived(this.plugin?.type === 'loaded')
