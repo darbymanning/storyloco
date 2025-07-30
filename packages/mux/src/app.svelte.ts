@@ -15,7 +15,15 @@ export class MuxManager {
 	timeout = $state<NodeJS.Timeout | null>(null)
 	video_options_open = $state(false)
 
-	private initial = $state(true)
+	#initial = $state(true)
+	#secret = $derived.by(() => {
+		if (this.plugin?.type !== 'loaded') return null
+
+		const deprecated = this.plugin.data.options.MOXY_SECRET_ID
+		if (deprecated) console.warn('MOXY_SECRET_ID is deprecated, use MOXY_MUX_SECRET_ID instead')
+
+		return this.plugin.data.options.MOXY_MUX_SECRET_ID || deprecated
+	})
 
 	constructor() {
 		this.initialize_plugin()
@@ -37,22 +45,21 @@ export class MuxManager {
 			},
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
-				if (this.initial && this.plugin.data?.content) {
+				if (this.plugin.data?.content) {
 					this.content = this.plugin.data.content
-					this.initial = false
+					if (this.#initial) this.#initial = false
 				}
 			},
 		})
 	}
 
 	get mux() {
-		if (this.plugin?.type !== 'loaded' || !this.plugin.data.options.MOXY_SECRET_ID) return null
 		return new Mux({
-			baseURL: 'https://moxy.admin-54b.workers.dev/api/',
+			baseURL: 'https://moxy.admin-54b.workers.dev/api/mux/',
 			tokenId: '',
 			tokenSecret: '',
 			defaultHeaders: {
-				authorization: `Bearer ${this.plugin.data.options.MOXY_SECRET_ID}`,
+				authorization: `Bearer ${this.#secret}`,
 			},
 		})
 	}
@@ -64,11 +71,13 @@ export class MuxManager {
 
 	update(c?: Partial<Video>) {
 		if (this.plugin?.type !== 'loaded') return
-		const state = $state.snapshot({ ...this.content, ...c })
+		const existing_content = this.content || {}
+		const state = $state.snapshot({ ...existing_content, ...c })
+		this.content = state
 		this.plugin.actions.setContent(state)
 	}
 
-	set_video(video: MuxAsset | null) {
+	set_video = (video: MuxAsset | null) => {
 		if (!video) {
 			this.content = null
 			this.update()
@@ -87,12 +96,12 @@ export class MuxManager {
 		this.plugin?.actions?.setModalOpen(false)
 	}
 
-	async list() {
+	list = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
 		this.assets = (await this.mux.video.assets.list()).data
 	}
 
-	async delete(id: string) {
+	delete = async (id: string) => {
 		if (this.plugin?.type !== 'loaded' || !this.plugin.data.options.MOXY_SECRET_ID || !this.mux)
 			throw new Error('Mux not initialised')
 		const confirm = window.confirm('Are you sure you want to delete this video?')
@@ -103,8 +112,9 @@ export class MuxManager {
 		await this.list()
 	}
 
-	async get_upload_endpoint() {
+	get_upload_endpoint = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
+
 		return (
 			await this.mux.video.uploads.create({
 				cors_origin: 'https://storyblok.com',

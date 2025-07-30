@@ -1,8 +1,8 @@
 {
-	"options": [
-		{
-			"name": "MOXY_SECRET_ID",
-			"value": "77a38c1e-182e-458e-92ab-6cb7f5a6cf35"
-		}
-	]
+   "options": [
+      {
+         "name": "MOXY_MUX_SECRET_ID",
+         "value": "bab2cb10-21cf-4a98-90fb-cf28672a3e6c"
+      }
+   ]
 }

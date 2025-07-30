@@ -115,21 +115,21 @@
 	</figure>
 {/snippet}
 
-{#snippet AssetMeta()}
+{#snippet AssetMeta(video: MuxAsset)}
 	<p class="font-medium truncate">
-		{manager.content?.title}
+		{video.meta?.title}
 	</p>
 	<span class="justify-between flex text-muted-foreground text-xs">
-		{#if manager.content?.mux_video?.status === 'errored'}
-			{manager.content.mux_video.errors?.messages}
-		{:else if manager.content?.mux_video?.status === 'preparing'}
+		{#if video.status === 'errored'}
+			{video.errors?.messages}
+		{:else if video.status === 'preparing'}
 			Preparing...
-		{:else if manager.content?.mux_video?.duration}
+		{:else if video.duration}
 			<span>
-				{manager.format_duration(manager.content.mux_video.duration)}
+				{manager.format_duration(video.duration)}
 			</span>
-			<time datetime={manager.content.mux_video.created_at}>
-				{manager.date(manager.content.mux_video.created_at)}
+			<time datetime={video.created_at}>
+				{manager.date(video.created_at)}
 			</time>
 		{/if}
 	</span>
@@ -220,7 +220,7 @@
 									>
 										{@render AssetPreview(video)}
 									</button>
-									{@render AssetMeta()}
+									{@render AssetMeta(video)}
 								</div>
 							</li>
 						{/each}
@@ -232,10 +232,10 @@
 		</div>
 	{:else if manager.content?.mux_video}
 		<div
-			class="p-4 grid grid-cols-[140px_1fr] w-full border border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
+			class="p-4 grid grid-cols-[140px_1fr] w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
 			{@render AssetPreview(manager.content.mux_video)}
-			<div class="grid">{@render AssetMeta()}</div>
+			<div class="grid">{@render AssetMeta(manager.content.mux_video)}</div>
 			<ul class={actions_menu_classes}>
 				<li>
 					<button
@@ -272,7 +272,7 @@
 						<Input
 							id="title"
 							placeholder="Video title…"
-							value={manager.content.mux_video.meta?.title}
+							value={manager.content.title}
 							oninput={(event) => {
 								if (!event.target || !(event.target instanceof HTMLInputElement)) return
 								if (!manager.content?.mux_video) return
