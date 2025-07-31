@@ -1,4 +1,4 @@
-import { Asset } from '@storyblok/field-plugin'
+import type { Asset } from '@storyblok/field-plugin'
 
 export type UUID = ReturnType<typeof crypto.randomUUID>
 
@@ -12,9 +12,9 @@ export type Types = {
 			id: UUID
 			name: string
 			plan?: Asset
-			plot_dimensions: Array<{
+			dimensions: Array<{
 				id: UUID
-				plot_number: number
+				name: string
 				rooms: Array<{
 					id: UUID
 					name: string
@@ -28,5 +28,5 @@ export type Types = {
 
 export type Type = Types['types'][number]
 export type Floor = Type['floors'][number]
-export type PlotDimension = Floor['plot_dimensions'][number]
-export type Room = PlotDimension['rooms'][number]
+export type Dimension = Floor['dimensions'][number]
+export type Room = Dimension['rooms'][number]

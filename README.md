@@ -10,7 +10,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **📝 Heading** - Simple heading editor with level selection (H1-H6)
 - **🎨 Theme** - Color theme selector with visual previews
 - **🔗 Link** - Link editor with support for internal, external, email, and asset links
-- **🏗️ Plans** - Floor plan manager with drag-and-drop sorting for types, floors, plot dimensions, and rooms
+- **🏗️ Plans** - Floor plan manager with drag-and-drop sorting for types, floors, dimensions, and rooms
 
 ### Vite Plugins
 

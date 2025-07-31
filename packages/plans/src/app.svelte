@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Accordion, Button, Card, Input, Label, Tabs } from 'shared'
-	import type { Floor, PlotDimension, Type, UUID } from '../types.js'
+	import type { Floor, Dimension, Type, UUID } from '../types.js'
 	import { PlusIcon, TrashIcon, GripVerticalIcon } from '@lucide/svelte'
 	import FloorPlanIcon from './floor_plan_icon.svelte'
 	import { FloorPlanManager } from './app.svelte.js'
@@ -100,7 +100,7 @@
 					{/if}
 				</Button>
 
-				{@render PlotDimensions()}
+				{@render Dimensions()}
 
 				{#if type.floors.length > 1}
 					<Button
@@ -115,36 +115,36 @@
 			</Card.Content>
 		</Card.Root>
 
-		{#snippet PlotDimensions()}
-			{@const [sortable] = dnd(floor.plot_dimensions, {
+		{#snippet Dimensions()}
+			{@const [sortable] = dnd(floor.dimensions, {
 				onDragEnd: floor_plan_manager.update,
 				handlerSelector: '.handle',
 			})}
 			<Card.Root>
 				<Card.Header>
-					<Card.Title>Plot Dimensions</Card.Title>
+					<Card.Title>Dimensions</Card.Title>
 				</Card.Header>
 
-				{#if floor.plot_dimensions.length > 0}
+				{#if floor.dimensions.length > 0}
 					<Card.Content>
 						<Accordion.Root type="multiple">
 							<div use:sortable>
-								{#each floor.plot_dimensions as plot_dimension, index (plot_dimension.id)}
-									<Accordion.Item value={plot_dimension.id} data-index={index}>
+								{#each floor.dimensions as dimension, index (dimension.id)}
+									<Accordion.Item value={dimension.id} data-index={index}>
 										<div class="grid grid-cols-[auto_1fr] items-center gap-2 group">
 											<GripVerticalIcon
 												class="handle size-4 opacity-0 group-hover:opacity-100 transition-opacity"
 											/>
 											<Accordion.Trigger class="items-center">
 												<div class="flex items-center gap-2 justify-between w-full">
-													Plot {plot_dimension.plot_number}
+													{dimension.name}
 													<button
 														class="size-9 hover:bg-destructive/10 hover:text-destructive transition-colors rounded-full flex items-center justify-center"
 														onclick={() =>
-															floor_plan_manager.delete_plot_dimension({
+															floor_plan_manager.delete_dimension({
 																type_id: type.id,
 																floor_id: floor.id,
-																plot_dimension_id: plot_dimension.id,
+																dimension_id: dimension.id,
 															})}
 													>
 														<TrashIcon
@@ -155,7 +155,7 @@
 											</Accordion.Trigger>
 										</div>
 										<Accordion.Content class="grid gap-6 py-6">
-											{@render PlotDimension(plot_dimension)}
+											{@render Dimension(dimension)}
 										</Accordion.Content>
 									</Accordion.Item>
 								{/each}
@@ -163,31 +163,27 @@
 						</Accordion.Root>
 					</Card.Content>
 
-					{#snippet PlotDimension(plot_dimension: PlotDimension)}
-						<div class="grid gap-2 ml-7 mr-14.5">
-							<Label for="plot-number-{plot_dimension.id}">Plot Number</Label>
+					{#snippet Dimension(dimension: Dimension)}
+						<div class="grid gap-2 ml-8.5 mr-18">
+							<Label for="name-{dimension.id}">Name</Label>
 							<Input
-								id="plot-number-{plot_dimension.id}"
-								bind:value={
-									() => plot_dimension.plot_number, (v) => (plot_dimension.plot_number = Number(v))
-								}
-								type="number"
-								placeholder="Plot Number"
-								min={1}
+								id="name-{dimension.id}"
+								bind:value={dimension.name}
+								placeholder="Name"
 								oninput={floor_plan_manager.update}
 							/>
 						</div>
 
 						<div class="grid gap-2">
-							{@render Rooms(plot_dimension)}
+							{@render Rooms(dimension)}
 							<Button
-								class="ml-7 mr-14.5"
+								class="ml-8.5 mr-18"
 								variant="outline"
 								onclick={() =>
 									floor_plan_manager.add_room({
 										type_id: type.id,
 										floor_id: floor.id,
-										plot_dimension_id: plot_dimension.id,
+										dimension_id: dimension.id,
 									})}
 							>
 								<PlusIcon class="size-4" />
@@ -195,8 +191,8 @@
 							</Button>
 						</div>
 
-						{#snippet Rooms(plot_dimension: PlotDimension)}
-							{@const [sortable] = dnd(plot_dimension.rooms, {
+						{#snippet Rooms(dimension: Dimension)}
+							{@const [sortable] = dnd(dimension.rooms, {
 								onDragEnd: floor_plan_manager.update,
 								handlerSelector: '.handle',
 							})}
@@ -211,7 +207,7 @@
 									</tr>
 								</thead>
 								<tbody use:sortable>
-									{#each plot_dimension.rooms as room, index (room.id)}
+									{#each dimension.rooms as room, index (room.id)}
 										<tr class="group" data-index={index}>
 											<td>
 												<GripVerticalIcon
@@ -246,7 +242,7 @@
 														floor_plan_manager.delete_room({
 															type_id: type.id,
 															floor_id: floor.id,
-															plot_dimension_id: plot_dimension.id,
+															dimension_id: dimension.id,
 															room_id: room.id,
 														})}
 												>
@@ -267,13 +263,13 @@
 					<Button
 						variant="outline"
 						onclick={() =>
-							floor_plan_manager.add_plot_dimensions({
+							floor_plan_manager.add_dimensions({
 								type_id: type.id,
 								floor_id: floor.id,
 							})}
 					>
 						<PlusIcon class="size-4" />
-						Add Plot Dimension
+						Add Dimension
 					</Button>
 				</Card.Footer>
 			</Card.Root>
