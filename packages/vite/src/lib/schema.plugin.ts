@@ -106,14 +106,15 @@ export default function storyblok_schema({
 					const response = await fetch(url, { headers })
 					const new_components = await response.json()
 
-					// Log in to Storyblok and pull components
+					// Make the file writable
 					await $`chmod u+w ${components_file}`.quiet().nothrow()
+
+					// Compare existing and new components
+					if (JSON.stringify(JSON.parse(existing_components)) === JSON.stringify(new_components))
+						return
 
 					// Write the data to the components file
 					await writeFile(components_file, JSON.stringify(new_components, null, 2))
-
-					// Compare existing and new components
-					if (existing_components === new_components) return
 
 					// Generate types
 					logger.start("Generating TypeScript definitions...")
