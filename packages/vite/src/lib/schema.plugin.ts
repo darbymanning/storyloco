@@ -10,14 +10,14 @@ import chalk from "chalk"
 const name = "vite-storyblok-schema"
 
 const logger = ora({
-  prefixText: chalk.yellow(`[${name}]`)
+	prefixText: chalk.yellow(`[${name}]`),
 })
 
 interface Options {
-  storyblok_personal_access_token?: string
-  storyblok_space_id?: string
-  output_path?: string
-  interval_ms?: number
+	storyblok_personal_access_token?: string
+	storyblok_space_id?: string
+	output_path?: string
+	interval_ms?: number
 }
 
 /**
@@ -52,70 +52,79 @@ interface Options {
  * ```
  */
 export default function storyblok_schema({
-  output_path,
-  interval_ms,
-  storyblok_personal_access_token,
-  storyblok_space_id,
+	output_path,
+	interval_ms,
+	storyblok_personal_access_token,
+	storyblok_space_id,
 }: Options = {}): Plugin {
-  let interval: ReturnType<typeof setInterval> | null = null
+	let interval: ReturnType<typeof setInterval> | null = null
 
-  return {
-    name,
-    async configureServer(server) {
-      const env = loadEnv(server.config.mode, process.cwd(), "")
-      const x = await exec()
+	return {
+		name,
+		async configureServer(server) {
+			const env = loadEnv(server.config.mode, process.cwd(), "")
+			const x = await exec()
 
-      interval_ms = interval_ms ?? 60000 // 1 minute
+			interval_ms = interval_ms ?? 60000 // 1 minute
 
-      // ensure output_path ends with a slash
-      output_path = output_path?.replace(/\/?$/, "/") ?? "src/lib"
-      storyblok_personal_access_token =
-        storyblok_personal_access_token ?? env.STORYBLOK_PERSONAL_ACCESS_TOKEN
-      storyblok_space_id = storyblok_space_id ?? env.STORYBLOK_SPACE_ID
+			// ensure output_path ends with a slash
+			output_path = output_path?.replace(/\/?$/, "/") ?? "src/lib"
+			storyblok_personal_access_token =
+				storyblok_personal_access_token ?? env.STORYBLOK_PERSONAL_ACCESS_TOKEN
+			storyblok_space_id = storyblok_space_id ?? env.STORYBLOK_SPACE_ID
 
-      const components_file = path.join(output_path, "components.schema.json")
-      const schema_ts_file = path.join(output_path, "components.schema.ts")
+			const components_file = path.join(output_path, "components.schema.json")
+			const schema_ts_file = path.join(output_path, "components.schema.ts")
 
-      const seconds = interval_ms / 1000
-      logger.succeed(`Regenerating Storyblok component types every ${seconds} ${seconds === 1 ? "second" : "seconds"}`)
+			const seconds = interval_ms / 1000
+			logger.succeed(
+				`Regenerating Storyblok component types every ${seconds} ${seconds === 1 ? "second" : "seconds"}`
+			)
 
-      generate()
+			generate()
 
-      interval = setInterval(generate, interval_ms)
+			interval = setInterval(generate, interval_ms)
 
-      async function generate() {
-        try {
-          // Check if components file exists
-          let existing_components = ""
-          try {
-            await access(components_file, constants.F_OK)
-            existing_components = await readFile(components_file, "utf-8")
-          } catch {
-            // No existing file, that's fine
-          }
+			async function generate() {
+				if (!storyblok_personal_access_token)
+					throw new Error("Storyblok personal access token is required")
+				if (!storyblok_space_id) throw new Error("Storyblok space ID is required")
 
-          // Log in to Storyblok and pull components
-          await $`chmod u+w ${components_file}`.quiet().nothrow()
-          await $`${x} storyblok logout`.quiet().nothrow()
-          await $`${x} storyblok login --token ${storyblok_personal_access_token} --region eu`.quiet()
-          await $`${x} storyblok pull-components --space=${storyblok_space_id} -p ${output_path}/ -f schema`.quiet()
+				try {
+					// Check if components file exists
+					let existing_components = ""
+					try {
+						await access(components_file, constants.F_OK)
+						existing_components = await readFile(components_file, "utf-8")
+					} catch {
+						// No existing file, that's fine
+					}
 
-          // Read the new components file
-          const new_components = await readFile(components_file, "utf-8")
+					// Fetch the new components
+					const url = `https://mapi.storyblok.com/v1/spaces/${storyblok_space_id}/components`
+					const headers = new Headers({ Authorization: storyblok_personal_access_token })
+					const response = await fetch(url, { headers })
+					const new_components = await response.json()
 
-          // Compare existing and new components
-          if (existing_components === new_components) return
+					// Log in to Storyblok and pull components
+					await $`chmod u+w ${components_file}`.quiet().nothrow()
 
-          // Generate types
-          logger.start("Generating TypeScript definitions...")
-          await $`chmod u+w ${schema_ts_file}`.quiet().nothrow()
-          await $`${x} storyblok-generate-ts source=${components_file} target=${schema_ts_file} compilerOptions.additionalProperties=false compilerOptions.unknownAny=true compilerOptions.format=false`.quiet()
-          logger.succeed("TypeScript definitions generated.")
+					// Write the data to the components file
+					await writeFile(components_file, JSON.stringify(new_components, null, 2))
 
-          // Read the generated file
-          const generated_content = await readFile(schema_ts_file, "utf-8")
+					// Compare existing and new components
+					if (existing_components === new_components) return
 
-          const header = `
+					// Generate types
+					logger.start("Generating TypeScript definitions...")
+					await $`chmod u+w ${schema_ts_file}`.quiet().nothrow()
+					await $`${x} storyblok-generate-ts source=${components_file} target=${schema_ts_file} compilerOptions.additionalProperties=false compilerOptions.unknownAny=true compilerOptions.format=false`.quiet()
+					logger.succeed("TypeScript definitions generated.")
+
+					// Read the generated file
+					const generated_content = await readFile(schema_ts_file, "utf-8")
+
+					const header = `
             /**
              * AUTO-GENERATED FILE. DO NOT EDIT.
              * Generated by ${name} plugin on ${new Date().toISOString()}.
@@ -127,32 +136,34 @@ export default function storyblok_schema({
             export type Blok<T> = SbBlokData & T
           `
 
-          const content = generated_content.replace(
-            "import {StoryblokStory} from 'storyblok-generate-ts'",
-            "export type { StoryblokStory } from 'storyblok-generate-ts'"
-          )
+					const content = generated_content.replace(
+						"import {StoryblokStory} from 'storyblok-generate-ts'",
+						"export type { StoryblokStory } from 'storyblok-generate-ts'"
+					)
 
-          // Write the final file
-          logger.start("Finalising schema file...")
-          await writeFile(schema_ts_file, header + content)
-          logger.succeed(`Schema written to ${schema_ts_file}.`)
+					// Write the final file
+					logger.start("Finalising schema file...")
+					await writeFile(schema_ts_file, header + content)
+					logger.succeed(`Schema written to ${schema_ts_file}.`)
 
-          // Format
-          logger.start("Formatting file...")
-          await $`${x} prettier --write ${schema_ts_file}`.quiet()
-          logger.succeed("File formatted.")
+					// Format
+					logger.start("Formatting file...")
+					await $`${x} prettier --write ${schema_ts_file}`.quiet()
+					logger.succeed("File formatted.")
 
-          // Lock the file
-          await $`chmod a-w ${schema_ts_file}`.quiet()
-          logger.succeed(`Storyblok component types generated successfully to ${chalk.magenta(schema_ts_file)}`)
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "An unknown error occurred."
-          logger.fail(message)
-        }
-      }
-    },
-    closeBundle() {
-      if (interval) clearInterval(interval)
-    },
-  }
+					// Lock the file
+					await $`chmod a-w ${schema_ts_file}`.quiet()
+					logger.succeed(
+						`Storyblok component types generated successfully to ${chalk.magenta(schema_ts_file)}`
+					)
+				} catch (err) {
+					const message = err instanceof Error ? err.message : "An unknown error occurred."
+					logger.fail(message)
+				}
+			}
+		},
+		closeBundle() {
+			if (interval) clearInterval(interval)
+		},
+	}
 }
