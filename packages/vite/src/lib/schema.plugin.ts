@@ -18,6 +18,10 @@ interface Options {
 	storyblok_space_id?: string
 	output_path?: string
 	interval_ms?: number
+	filenames?: {
+		json?: string
+		ts?: string
+	}
 }
 
 /**
@@ -29,6 +33,10 @@ interface Options {
  * @param [options.storyblok_space_id] - The space ID for the Storyblok space. Defaults to the `STORYBLOK_SPACE_ID` environment variable.
  * @param [options.output_path] - The path to output the generated files to. Defaults to 'src/lib'.
  * @param [options.interval_ms] - The interval in milliseconds to regenerate the component types. Defaults to 60000 (1 minute).
+ * @param [options.filenames] - Custom filenames for the generated files.
+ * @param [options.filenames.json] - The filename for the JSON schema file. Defaults to 'components.schema.json'.
+ * @param [options.filenames.ts] - The filename for the TypeScript definitions file. Defaults to 'components.schema.ts'.
+ *
  *
  * @example Default configuration
  * ```ts title=vite.config.ts
@@ -50,12 +58,27 @@ interface Options {
  *   })]
  * })
  * ```
+ *
+ * @example Custom filenames
+ * ```ts title=vite.config.ts
+ * import { storyblok_schema } from 'kitto/vite'
+ *
+ * export default defineConfig({
+ *   plugins: [storyblok_schema({
+ *     filenames: {
+ *       json: 'storyblok-components.json',
+ *       ts: 'storyblok-types.ts'
+ *     }
+ *   })]
+ * })
+ * ```
  */
 export default function storyblok_schema({
 	output_path,
 	interval_ms,
 	storyblok_personal_access_token,
 	storyblok_space_id,
+	filenames,
 }: Options = {}): Plugin {
 	let interval: ReturnType<typeof setInterval> | null = null
 
@@ -73,8 +96,8 @@ export default function storyblok_schema({
 				storyblok_personal_access_token ?? env.STORYBLOK_PERSONAL_ACCESS_TOKEN
 			storyblok_space_id = storyblok_space_id ?? env.STORYBLOK_SPACE_ID
 
-			const components_file = path.join(output_path, "components.schema.json")
-			const schema_ts_file = path.join(output_path, "components.schema.ts")
+			const components_file = path.join(output_path, filenames?.json ?? "components.schema.json")
+			const schema_ts_file = path.join(output_path, filenames?.ts ?? "components.schema.ts")
 
 			const seconds = interval_ms / 1000
 			logger.succeed(
@@ -93,6 +116,7 @@ export default function storyblok_schema({
 				try {
 					// Check if components file exists
 					let existing_components = ""
+
 					try {
 						await access(components_file, constants.F_OK)
 						existing_components = await readFile(components_file, "utf-8")
@@ -110,7 +134,10 @@ export default function storyblok_schema({
 					await $`chmod u+w ${components_file}`.quiet().nothrow()
 
 					// Compare existing and new components
-					if (JSON.stringify(JSON.parse(existing_components)) === JSON.stringify(new_components))
+					if (
+						existing_components &&
+						JSON.stringify(JSON.parse(existing_components)) === JSON.stringify(new_components)
+					)
 						return
 
 					// Write the data to the components file
