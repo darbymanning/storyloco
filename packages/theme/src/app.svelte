@@ -76,7 +76,7 @@
 		</button>
 		{#if open}
 			<fieldset
-				class="bg-input-background border border-input rounded grid @[250px]:grid-cols-2 @sm:grid-cols-3 divide-y mt-1 overflow-hidden p-3 gap-3 max-h-54 @xl:max-h-58 overflow-y-auto"
+				class="bg-input-background border border-input rounded grid @[220px]:grid-cols-2 @sm:grid-cols-3 divide-y mt-1 overflow-hidden p-3 gap-3 max-h-120 overflow-y-auto"
 				transition:slide
 			>
 				{#each themes as { value, name, primary, secondary, tertiary }, index}
@@ -109,7 +109,7 @@
 						>
 							<figure
 								class={cn(
-									'flex justify-center [&>span]:size-10 @xl:[&>span]:size-12 [&>span]:border-white [&>span]:rounded-full [&>span]:border-2 [&>span:not(:first-child)]:-ml-[25%] [&>span]:relative isolate',
+									'flex justify-center [&>span]:size-10 @xl:[&>span]:size-12 [&>span]:border-white [&>span]:rounded-full [&>span]:border-2 [&>span:not(:first-child)]:-ml-[25%] [&>span]:relative isolate m-auto',
 									{ '[&>span]:border-foreground': value === 'none' }
 								)}
 							>
