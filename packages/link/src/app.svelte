@@ -379,19 +379,21 @@
 
 {#snippet Fields()}
 	<section class="grid p-4 rounded border border-input bg-input-background/50">
-		<nav class="flex gap-2 mb-5">
-			<Button
-				variant="secondary"
-				size="sm"
+		<nav class="flex gap-3 mb-5">
+			<button
+				class="font-semibold transition-opacity not-disabled:opacity-50"
 				disabled={!manager.show_options}
-				onclick={() => (manager.show_options = false)}>Link</Button
+				onclick={() => (manager.show_options = false)}
 			>
-			<Button
-				variant="secondary"
-				size="sm"
+				Link
+			</button>
+			<button
+				class="font-semibold transition-opacity not-disabled:opacity-50"
 				disabled={manager.show_options}
-				onclick={() => (manager.show_options = !manager.show_options)}>Options</Button
+				onclick={() => (manager.show_options = !manager.show_options)}
 			>
+				Options
+			</button>
 		</nav>
 
 		{#if manager.show_options}
