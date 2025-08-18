@@ -1,7 +1,8 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import Mux from '@mux/mux-node'
-import type { Video } from '../types.js'
+import type { Video, VimeoVideo } from '../types.js'
 import { format_date, format_elapse } from 'kitto'
+import ky from 'ky'
 
 export type MuxAsset = Mux.Video.Assets.Asset
 
@@ -14,15 +15,17 @@ export class MuxManager {
 	open_actions = $state<string | null>(null)
 	timeout = $state<NodeJS.Timeout | null>(null)
 	video_options_open = $state(false)
+	vimeo_upload_state: null | 'loading' = $state(null)
 
+	#poll: NodeJS.Timeout
 	#initial = $state(true)
-	#secret = $derived.by(() => {
+	#secrets: { mux_secret: string; vimeo_secret?: string } | null = $derived.by(() => {
 		if (this.plugin?.type !== 'loaded') return null
 
-		const deprecated = this.plugin.data.options.MOXY_SECRET_ID
-		if (deprecated) console.warn('MOXY_SECRET_ID is deprecated, use MOXY_MUX_SECRET_ID instead')
+		const mux_secret = this.plugin.data.options.MOXY_MUX_SECRET_ID
+		const vimeo_secret = this.plugin.data.options.MOXY_VIMEO_SECRET_ID
 
-		return this.plugin.data.options.MOXY_MUX_SECRET_ID || deprecated
+		return { mux_secret, vimeo_secret }
 	})
 
 	constructor() {
@@ -59,7 +62,16 @@ export class MuxManager {
 			tokenId: '',
 			tokenSecret: '',
 			defaultHeaders: {
-				authorization: `Bearer ${this.#secret}`,
+				authorization: `Bearer ${this.#secrets?.mux_secret}`,
+			},
+		})
+	}
+
+	get vimeo() {
+		return ky.create({
+			prefixUrl: 'https://moxy.admin-54b.workers.dev/api/vimeo/',
+			headers: {
+				authorization: `Bearer ${this.#secrets?.vimeo_secret}`,
 			},
 		})
 	}
@@ -99,10 +111,16 @@ export class MuxManager {
 	list = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
 		this.assets = (await this.mux.video.assets.list()).data
+
+		const has_preparing = this.assets?.find(({ status }) => status === 'preparing')
+
+		if (has_preparing)
+			this.#poll = setTimeout(this.list, 3000) // 3 seconds
+		else clearTimeout(this.#poll)
 	}
 
 	delete = async (id: string) => {
-		if (this.plugin?.type !== 'loaded' || !this.plugin.data.options.MOXY_SECRET_ID || !this.mux)
+		if (this.plugin?.type !== 'loaded' || !this.plugin.data.options.MOXY_MUX_SECRET_ID || !this.mux)
 			throw new Error('Mux not initialised')
 		const confirm = window.confirm('Are you sure you want to delete this video?')
 		if (!confirm) return
@@ -180,5 +198,50 @@ export class MuxManager {
 
 	get is_modal_open() {
 		return this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen
+	}
+
+	get has_vimeo() {
+		return !!this.#secrets?.vimeo_secret
+	}
+
+	add_vimeo_url = async (e: Event) => {
+		e.preventDefault()
+		const form = e.target
+		if (!(form instanceof HTMLFormElement)) return
+
+		const url = form.vimeo_url.value
+		if (!url) throw new Error('No URL found')
+
+		const video_id = url.split('/').pop()
+		if (!video_id) throw new Error('No video ID found')
+
+		this.vimeo_upload_state = 'loading'
+		const video = await this.vimeo.get<VimeoVideo>(`videos/${video_id}`).json()
+
+		const largest_file = video.files.find(
+			(file) => file.size === Math.max(...video.files.map((file) => file.size))
+		)
+
+		if (!largest_file) {
+			this.vimeo_upload_state = null
+			throw new Error('No largest file found')
+		}
+
+		await this.mux.video.assets.create({
+			inputs: [
+				{
+					url: largest_file.link,
+				},
+			],
+			playback_policy: ['public'],
+			encoding_tier: 'baseline',
+			meta: {
+				title: video.name,
+				external_id: video_id,
+			},
+		})
+
+		await this.list()
+		this.vimeo_upload_state = null
 	}
 }

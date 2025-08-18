@@ -138,7 +138,20 @@
 {#if loaded}
 	{#if manager.is_modal_open}
 		<div class="p-8 grid gap-8">
-			<mux-uploader onsuccess={manager.list} endpoint={manager.get_upload_endpoint}></mux-uploader>
+			<div class="grid gap-6">
+				<mux-uploader class="bg-r" onsuccess={manager.list} endpoint={manager.get_upload_endpoint}>
+				</mux-uploader>
+				{#if manager.has_vimeo}
+					{#if manager.vimeo_upload_state === 'loading'}
+						<p>Uploading from Vimeo...</p>
+					{:else}
+						<form class="grid gap-2" onsubmit={manager.add_vimeo_url}>
+							<Label for="vimeo_url">Or upload from Vimeo</Label>
+							<Input id="vimeo_url" placeholder="https://vimeo.com/123456789" />
+						</form>
+					{/if}
+				{/if}
+			</div>
 			{#await manager.list()}
 				{@render Skeleton()}
 			{:then}
@@ -389,3 +402,13 @@
 		</button>
 	{/if}
 {/if}
+
+<style>
+	@reference './app.css';
+
+	mux-uploader {
+		&::part(drop) {
+			@apply border-input rounded-md border-1;
+		}
+	}
+</style>

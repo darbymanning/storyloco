@@ -73,6 +73,7 @@
         "@sveltejs/vite-plugin-svelte": "5.1.0",
         "@tailwindcss/vite": "4.1.11",
         "@tsconfig/svelte": "5.0.4",
+        "ky": "1.8.2",
         "prettier": "3.6.1",
         "prettier-plugin-svelte": "3.4.0",
         "shared": "../shared",
@@ -158,7 +159,7 @@
     },
     "packages/vite": {
       "name": "vite-storyblok-schema",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "dependencies": {
         "chalk": "5.4.1",
         "ora": "8.2.0",
@@ -789,6 +790,8 @@
     "kleur": ["kleur@4.1.5", "", {}, "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="],
 
     "known-css-properties": ["known-css-properties@0.37.0", "", {}, "sha512-JCDrsP4Z1Sb9JwG0aJ8Eo2r7k4Ou5MwmThS/6lcIe1ICyb7UBJKGRIUUdqc2ASdE/42lgz6zFUnzAIhtXnBVrQ=="],
+
+    "ky": ["ky@1.8.2", "", {}, "sha512-XybQJ3d4Ea1kI27DoelE5ZCT3bSJlibYTtQuMsyzKox3TMyayw1asgQdl54WroAm+fIA3ZCr8zXW2RpR7qWVpA=="],
 
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 
