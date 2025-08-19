@@ -133,6 +133,8 @@ export class LinkManager {
 			text: this.content.text || story.name,
 			url: story.path || '/' + story.full_slug,
 			story: {
+				id: story.id,
+				uuid: story.uuid,
 				name: story.name,
 				published_at: story.published_at,
 			},
