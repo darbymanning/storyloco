@@ -1,7 +1,3 @@
-type DateWithPrice = EventDatesResponse['data'][number] & {
-	price: string
-}
-
 export interface Ticketsource {
 	event: string
 	dates?: Array<{
