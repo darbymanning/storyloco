@@ -17,7 +17,7 @@ export class MuxManager {
 	video_options_open = $state(false)
 	vimeo_upload_state: null | 'loading' = $state(null)
 
-	#poll: NodeJS.Timeout
+	#poll: NodeJS.Timeout | null = $state(null)
 	#initial = $state(true)
 	#secrets: { mux_secret: string; vimeo_secret?: string } | null = $derived.by(() => {
 		if (this.plugin?.type !== 'loaded') return null
@@ -116,7 +116,7 @@ export class MuxManager {
 
 		if (has_preparing)
 			this.#poll = setTimeout(this.list, 3000) // 3 seconds
-		else clearTimeout(this.#poll)
+		else if (this.#poll) clearTimeout(this.#poll)
 	}
 
 	delete = async (id: string) => {
@@ -212,7 +212,14 @@ export class MuxManager {
 		const url = form.vimeo_url.value
 		if (!url) throw new Error('No URL found')
 
-		const video_id = url.split('/').pop()
+		// extract video id from vimeo url using regex - handles all formats:
+		// https://vimeo.com/867092030
+		// https://vimeo.com/867092030/02e4819d25
+		// https://vimeo.com/channels/staffpicks/867092030
+		const vimeo_regex =
+			/vimeo\.com\/(?:channels\/\w+\/|groups\/\w+\/|album\d+\/|video\/)?(\d+)(?:\/[\w-]+)?/
+		const match = url.match(vimeo_regex)
+		const video_id = match?.[1]
 		if (!video_id) throw new Error('No video ID found')
 
 		this.vimeo_upload_state = 'loading'
