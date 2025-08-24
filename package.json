@@ -44,7 +44,8 @@
       "types": "./packages/plans/types.ts"
     },
     "./ticketsource": {
-      "types": "./packages/ticketsource/types.ts"
+      "types": "./packages/ticketsource/types.ts",
+      "svelte": "./packages/ticketsource/src/app.svelte.ts"
     },
     "./shared": {
       "types": "./packages/shared/dist/index.d.ts",

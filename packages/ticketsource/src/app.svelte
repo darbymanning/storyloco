@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Input, Label } from 'shared'
-	import { HeadingManager as TicketSource } from './app.svelte.js'
+	import { TicketSourceManager } from './app.svelte.js'
 
-	const ticketsource = new TicketSource()
+	const ticketsource = new TicketSourceManager()
 </script>
 
 <div class="grid gap-2">
@@ -13,9 +13,9 @@
 		disabled={ticketsource.loading}
 	>
 		<option value="">{ticketsource.loading ? 'Loading events…' : 'Select an event…'}</option>
-		{#if ticketsource.unique_events.length}
+		{#if ticketsource.events?.length}
 			<optgroup label="Events">
-				{#each ticketsource.unique_events as event (event.id)}
+				{#each ticketsource.events as event (event.id)}
 					{#if !event.attributes.archived && event.attributes.activated}
 						<option value={event.id}>
 							{event.attributes.name}
