@@ -105,8 +105,8 @@ export default function storyblok_schema({
 
 			interval_ms = interval_ms ?? 60000 // 1 minute
 
-			// ensure output_path ends with a slash
-			output_path = output_path?.replace(/\/?$/, "/") ?? "src/lib"
+			// ensure output_path does not end with a slash
+			output_path = output_path?.replace(/\/?$/, "") ?? "src/lib"
 			storyblok_personal_access_token =
 				storyblok_personal_access_token ?? env.STORYBLOK_PERSONAL_ACCESS_TOKEN
 			storyblok_space_id = storyblok_space_id ?? env.STORYBLOK_SPACE_ID
@@ -117,7 +117,7 @@ export default function storyblok_schema({
 				"components.json"
 			)
 
-			const schema_ts_file = path.join("src/lib", filename ?? "components.schema.ts")
+			const schema_ts_file = path.join(output_path, filename ?? "components.schema.ts")
 
 			const seconds = interval_ms / 1000
 			logger.info(
@@ -166,10 +166,13 @@ export default function storyblok_schema({
 					// Write the data to the components file
 					await writeFile(components_file, JSON.stringify(new_components, null, 2))
 
+					const here = (str: string) =>
+						path.join("node_modules/storyloco/packages/vite/src/lib", str)
+
 					// Generate types
 					logger.start("Generating TypeScript definitions...")
 					await $`chmod u+w ${schema_ts_file}`.quiet().nothrow()
-					await $`${x} storyblok@4.2.0 ts generate -s ${storyblok_space_id} -p .svelte-kit/storyblok --compiler-options ./src/lib/compiler_options.js --custom-fields-parser ./src/lib/parser.js --strict`.quiet()
+					await $`${x} storyblok@4.2.0 ts generate -s ${storyblok_space_id} -p .svelte-kit/storyblok --compiler-options ${here("compiler_options.js")} --custom-fields-parser ${here("custom_fields_parser.js")} --strict`
 
 					logger.succeed("TypeScript definitions generated.")
 
