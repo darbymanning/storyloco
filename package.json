@@ -1,97 +1,97 @@
 {
-  "name": "storyloco",
-  "version": "1.8.2",
-  "description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
-  "keywords": [
-    "storyblok",
-    "field-plugin",
-    "svelte",
-    "typescript",
-    "tailwind",
-    "cms",
-    "headless"
-  ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/darbymanning/storyloco.git"
-  },
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "files": [
-    "src",
-    "packages/mux/types.ts",
-    "packages/heading/types.ts",
-    "packages/plans/types.ts",
-    "packages/link/types.ts",
-    "packages/theme/types.ts",
-    "packages/shared/dist",
-    "packages/vite/dist",
-    "packages/ticketsource/types.ts"
-  ],
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
-    },
-    "./mux": {
-      "types": "./packages/mux/types.ts"
-    },
-    "./heading": {
-      "types": "./packages/heading/types.ts"
-    },
-    "./plans": {
-      "types": "./packages/plans/types.ts"
-    },
-    "./ticketsource": {
-      "types": "./packages/ticketsource/types.ts",
-      "svelte": "./packages/ticketsource/src/app.svelte.ts"
-    },
-    "./shared": {
-      "types": "./packages/shared/dist/index.d.ts",
-      "svelte": "./packages/shared/dist/index.js"
-    },
-    "./link": {
-      "types": "./packages/link/types.ts"
-    },
-    "./shared/utils": {
-      "types": "./packages/shared/dist/utils.d.ts",
-      "svelte": "./packages/shared/dist/utils.js"
-    },
-    "./vite": {
-      "types": "./packages/vite/dist/index.d.ts",
-      "import": "./packages/vite/dist/index.js"
-    }
-  },
-  "devDependencies": {
-    "@types/node": "24.0.4",
-    "@typescript-eslint/eslint-plugin": "8.35.0",
-    "@typescript-eslint/parser": "8.35.0",
-    "eslint": "9.29.0",
-    "eslint-plugin-prettier": "5.5.1",
-    "kitto": "1.0.0-rc.12",
-    "prettier": "3.6.1",
-    "typescript": "5.8.3",
-    "vite": "7.0.0"
-  },
-  "peerDependencies": {
-    "@storyblok/svelte": "^5.0.0",
-    "@storyblok/field-plugin": "^1.6.0",
-    "svelte": "^5.0.0"
-  },
-  "scripts": {
-    "add-plugin": "npx @storyblok/field-plugin-cli@latest add --dir \"./packages\" --structure monorepo",
-    "build": "cd packages/vite && npm run build && cd ../../packages/shared && npm run build",
-    "lint": "eslint --ext .js .",
-    "format": "prettier . --write"
-  },
-  "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
-  "dependencies": {
-    "chalk": "5.4.1",
-    "ora": "8.2.0",
-    "storyblok-generate-ts": "^2.2.0"
-  }
+   "name": "storyloco",
+   "version": "1.8.2",
+   "description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
+   "keywords": [
+      "storyblok",
+      "field-plugin",
+      "svelte",
+      "typescript",
+      "tailwind",
+      "cms",
+      "headless"
+   ],
+   "license": "MIT",
+   "repository": {
+      "type": "git",
+      "url": "https://github.com/darbymanning/storyloco.git"
+   },
+   "main": "./src/index.ts",
+   "types": "./src/index.ts",
+   "files": [
+      "src",
+      "packages/mux/types.ts",
+      "packages/heading/types.ts",
+      "packages/plans/types.ts",
+      "packages/link/types.ts",
+      "packages/theme/types.ts",
+      "packages/shared/dist",
+      "packages/vite/dist",
+      "packages/ticketsource/types.ts"
+   ],
+   "exports": {
+      ".": {
+         "types": "./src/index.ts",
+         "import": "./src/index.ts"
+      },
+      "./mux": {
+         "types": "./packages/mux/types.ts"
+      },
+      "./heading": {
+         "types": "./packages/heading/types.ts"
+      },
+      "./plans": {
+         "types": "./packages/plans/types.ts"
+      },
+      "./ticketsource": {
+         "types": "./packages/ticketsource/types.ts",
+         "svelte": "./packages/ticketsource/src/app.svelte.ts"
+      },
+      "./shared": {
+         "types": "./packages/shared/dist/index.d.ts",
+         "svelte": "./packages/shared/dist/index.js"
+      },
+      "./link": {
+         "types": "./packages/link/types.ts"
+      },
+      "./shared/utils": {
+         "types": "./packages/shared/dist/utils.d.ts",
+         "svelte": "./packages/shared/dist/utils.js"
+      },
+      "./vite": {
+         "types": "./packages/vite/dist/index.d.ts",
+         "import": "./packages/vite/dist/index.js"
+      }
+   },
+   "devDependencies": {
+      "@types/node": "24.0.4",
+      "@typescript-eslint/eslint-plugin": "8.35.0",
+      "@typescript-eslint/parser": "8.35.0",
+      "eslint": "9.29.0",
+      "eslint-plugin-prettier": "5.5.1",
+      "kitto": "1.0.0-rc.12",
+      "prettier": "3.6.1",
+      "typescript": "5.8.3",
+      "vite": "7.0.0"
+   },
+   "peerDependencies": {
+      "@storyblok/svelte": "^5.2.4",
+      "@storyblok/field-plugin": "^1.6.0",
+      "svelte": "^5.0.0"
+   },
+   "scripts": {
+      "add-plugin": "npx @storyblok/field-plugin-cli@latest add --dir \"./packages\" --structure monorepo",
+      "build": "cd packages/vite && npm run build && cd ../../packages/shared && npm run build",
+      "lint": "eslint --ext .js .",
+      "format": "prettier . --write"
+   },
+   "type": "module",
+   "workspaces": [
+      "packages/*"
+   ],
+   "dependencies": {
+      "chalk": "5.4.1",
+      "ora": "8.2.0",
+      "storyblok-generate-ts": "^2.2.0"
+   }
 }

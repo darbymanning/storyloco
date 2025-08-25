@@ -1,11 +1,11 @@
 import { type Plugin, loadEnv } from "vite"
-import { writeFile, readFile, access } from "node:fs/promises"
-import { constants } from "node:fs"
+import { writeFile, readFile, access, constants, mkdir } from "node:fs/promises"
 import path from "node:path"
 import { $ } from "./shell.js"
 import exec from "./x.js"
 import ora from "ora"
 import chalk from "chalk"
+import * as prettier from "prettier"
 
 const name = "vite-storyblok-schema"
 
@@ -18,10 +18,7 @@ interface Options {
 	storyblok_space_id?: string
 	output_path?: string
 	interval_ms?: number
-	filenames?: {
-		json?: string
-		ts?: string
-	}
+	filename?: string
 }
 
 /**
@@ -33,9 +30,7 @@ interface Options {
  * @param [options.storyblok_space_id] - The space ID for the Storyblok space. Defaults to the `STORYBLOK_SPACE_ID` environment variable.
  * @param [options.output_path] - The path to output the generated files to. Defaults to 'src/lib'.
  * @param [options.interval_ms] - The interval in milliseconds to regenerate the component types. Defaults to 60000 (1 minute).
- * @param [options.filenames] - Custom filenames for the generated files.
- * @param [options.filenames.json] - The filename for the JSON schema file. Defaults to 'components.schema.json'.
- * @param [options.filenames.ts] - The filename for the TypeScript definitions file. Defaults to 'components.schema.ts'.
+ * @param [options.filename] - The filename for the TypeScript definitions file. Defaults to 'components.schema.ts'.
  *
  *
  * @example Default configuration
@@ -53,23 +48,43 @@ interface Options {
  *
  * export default defineConfig({
  *   plugins: [storyblok_schema({
- *     output_path: 'src/lib/storyblok',
- *     interval_ms: 60000 // 1 minute
+ *     output_path: 'src/lib/storyblok'
  *   })]
  * })
  * ```
  *
- * @example Custom filenames
+ * @example Custom filename
  * ```ts title=vite.config.ts
  * import { storyblok_schema } from 'kitto/vite'
  *
  * export default defineConfig({
  *   plugins: [storyblok_schema({
- *     filenames: {
- *       json: 'storyblok-components.json',
- *       ts: 'storyblok-types.ts'
- *     }
+ *     filename: 'storyblok-types.ts'
  *   })]
+ * })
+ *
+ * @example Custom interval
+ * ```ts title=vite.config.ts
+ * import { storyblok_schema } from 'kitto/vite'
+ *
+ * export default defineConfig({
+ *   plugins: [storyblok_schema({
+ *     interval_ms: 10000 // 10 seconds
+ *   })]
+ * })
+ * ```
+ *
+ * @example Field plugin type definitions
+ * ```ts title=vite.config.ts
+ * import { storyblok_schema } from 'kitto/vite'
+ *
+ * export interface StoryblokCustomPlugins {
+ *   "mux-video": { foo: "bar" }
+ *   "heading-field": { foo: "bar" }
+ * }
+ *
+ * export default defineConfig({
+ *   plugins: [storyblok_schema()]
  * })
  * ```
  */
@@ -78,7 +93,7 @@ export default function storyblok_schema({
 	interval_ms,
 	storyblok_personal_access_token,
 	storyblok_space_id,
-	filenames,
+	filename,
 }: Options = {}): Plugin {
 	let interval: ReturnType<typeof setInterval> | null = null
 
@@ -96,11 +111,16 @@ export default function storyblok_schema({
 				storyblok_personal_access_token ?? env.STORYBLOK_PERSONAL_ACCESS_TOKEN
 			storyblok_space_id = storyblok_space_id ?? env.STORYBLOK_SPACE_ID
 
-			const components_file = path.join(output_path, filenames?.json ?? "components.schema.json")
-			const schema_ts_file = path.join(output_path, filenames?.ts ?? "components.schema.ts")
+			const components_file = path.join(
+				".svelte-kit/storyblok/components",
+				storyblok_space_id,
+				"components.json"
+			)
+
+			const schema_ts_file = path.join("src/lib", filename ?? "components.schema.ts")
 
 			const seconds = interval_ms / 1000
-			logger.succeed(
+			logger.info(
 				`Regenerating Storyblok component types every ${seconds} ${seconds === 1 ? "second" : "seconds"}`
 			)
 
@@ -128,7 +148,7 @@ export default function storyblok_schema({
 					const url = `https://mapi.storyblok.com/v1/spaces/${storyblok_space_id}/components`
 					const headers = new Headers({ Authorization: storyblok_personal_access_token })
 					const response = await fetch(url, { headers })
-					const new_components = await response.json()
+					const { components: new_components } = await response.json()
 
 					// Make the file writable
 					await $`chmod u+w ${components_file}`.quiet().nothrow()
@@ -140,44 +160,70 @@ export default function storyblok_schema({
 					)
 						return
 
+					// Create the components directory if it doesn't exist
+					await mkdir(path.dirname(components_file), { recursive: true })
+
 					// Write the data to the components file
 					await writeFile(components_file, JSON.stringify(new_components, null, 2))
 
 					// Generate types
 					logger.start("Generating TypeScript definitions...")
 					await $`chmod u+w ${schema_ts_file}`.quiet().nothrow()
-					await $`${x} storyblok-generate-ts source=${components_file} target=${schema_ts_file} compilerOptions.additionalProperties=false compilerOptions.unknownAny=true compilerOptions.format=false`.quiet()
+					await $`${x} storyblok@4.2.0 ts generate -s ${storyblok_space_id} -p .svelte-kit/storyblok --compiler-options ./src/lib/compiler_options.js --custom-fields-parser ./src/lib/parser.js --strict`.quiet()
+
 					logger.succeed("TypeScript definitions generated.")
 
-					// Read the generated file
-					const generated_content = await readFile(schema_ts_file, "utf-8")
+					// Get generated files
+					const component_types = await readFile(
+						`.svelte-kit/storyblok/types/${storyblok_space_id}/storyblok-components.d.ts`,
+						"utf-8"
+					)
+
+					const general = await readFile(".svelte-kit/storyblok/types/storyblok.d.ts", "utf-8")
+					const general_replaced = general.replace(
+						`// This file was generated by the Storyblok CLI.
+// DO NOT MODIFY THIS FILE BY HAND.
+import type { ISbStoryData } from '@storyblok/js';`,
+						""
+					)
+
+					// determine how many folders are in output_path
+					const output_path_parts = output_path?.split("/") ?? []
+					const import_path = output_path_parts.map(() => `..`).join("/")
 
 					const header = `
-            /**
-             * AUTO-GENERATED FILE. DO NOT EDIT.
-             * Generated by ${name} plugin on ${new Date().toISOString()}.
-             * Any changes will be overwritten.
-             */
+					               /**
+					                * AUTO-GENERATED FILE. DO NOT EDIT.
+					                * Generated by ${name} plugin on ${new Date().toISOString()}.
+					                * Any changes will be overwritten.
+					                */
 
-            import type { SbBlokData } from "@storyblok/svelte"
+					               import type { StoryblokCustomPlugins } from "${import_path}/vite.config.js"
+					               import type { SbBlokData } from "@storyblok/svelte"
 
-            export type Blok<T> = SbBlokData & T
-          `
+					               export type Blok<T> = SbBlokData & T
+					             `
 
-					const content = generated_content.replace(
-						"import {StoryblokStory} from 'storyblok-generate-ts'",
-						"export type { StoryblokStory } from 'storyblok-generate-ts'"
+					let content = component_types.replace(
+						`// This file was generated by the storyblok CLI.
+// DO NOT MODIFY THIS FILE BY HAND.`,
+						header
 					)
+
+					content = content.replace(/^.*\sfrom\s+'\.{2}\/storyblok\.d\.ts';\s*$/gm, "")
+
+					content = content + general_replaced
+					content = content.replace(/\["StoryblokCustomPlugins/g, 'StoryblokCustomPlugins["')
+
+					// Try and use unknown instead of any
+					content = content.replace(/Record<string, any>/g, "Record<string, unknown>")
+					content = content.replace(/any\[]/g, "unknown[]")
+
+					const formatted = await prettier.format(content, { parser: "typescript" })
 
 					// Write the final file
 					logger.start("Finalising schema file...")
-					await writeFile(schema_ts_file, header + content)
-					logger.succeed(`Schema written to ${schema_ts_file}.`)
-
-					// Format
-					logger.start("Formatting file...")
-					await $`${x} prettier --write ${schema_ts_file}`.quiet()
-					logger.succeed("File formatted.")
+					await writeFile(schema_ts_file, formatted)
 
 					// Lock the file
 					await $`chmod a-w ${schema_ts_file}`.quiet()
