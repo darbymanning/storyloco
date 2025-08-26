@@ -224,6 +224,9 @@ import type { ISbStoryData } from '@storyblok/js';`,
 					content = content.replace(/Record<string, any>/g, "Record<string, unknown>")
 					content = content.replace(/any\[]/g, "unknown[]")
 
+					// Make _uid and component optional (helps us reuse Storyblok types for non-storyblok components)
+					content = content.replace(/^([a-zA-Z0-9_]+):/gm, "$1?:")
+
 					const formatted = await prettier.format(content, { parser: "typescript" })
 
 					// Write the final file
