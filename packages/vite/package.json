@@ -1,8 +1,8 @@
 {
    "name": "vite-storyblok-schema",
-   "version": "1.2.1",
+   "version": "1.2.2",
    "scripts": {
-      "dev": "vite dev",
+      "dev": "SCHEMA_DEV=true vite dev",
       "build": "vite build && npm run prepack",
       "preview": "vite preview",
       "prepare": "svelte-kit sync || echo ''",
