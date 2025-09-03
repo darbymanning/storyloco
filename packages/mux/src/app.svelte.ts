@@ -58,7 +58,7 @@ export class MuxManager {
 
 	get mux() {
 		return new Mux({
-			baseURL: 'https://moxy.admin-54b.workers.dev/api/mux/',
+			baseURL: 'https://moxy.uilo.co/api/mux/',
 			tokenId: '',
 			tokenSecret: '',
 			defaultHeaders: {
@@ -69,7 +69,7 @@ export class MuxManager {
 
 	get vimeo() {
 		return ky.create({
-			prefixUrl: 'https://moxy.admin-54b.workers.dev/api/vimeo/',
+			prefixUrl: 'https://moxy.uilo.co/api/vimeo/',
 			headers: {
 				authorization: `Bearer ${this.#secrets?.vimeo_secret}`,
 			},
@@ -110,7 +110,7 @@ export class MuxManager {
 
 	list = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
-		this.assets = (await this.mux.video.assets.list()).data
+		this.assets = (await this.mux.video.assets.list({ limit: 0 })).data
 
 		const has_preparing = this.assets?.find(({ status }) => status === 'preparing')
 

@@ -1,6 +1,6 @@
 {
    "name": "ticketsource-field",
-   "version": "0.1.0",
+   "version": "0.1.1",
    "devDependencies": {
       "@storyblok/field-plugin": "1.7.0",
       "@sveltejs/vite-plugin-svelte": "6.1.3",
