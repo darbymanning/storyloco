@@ -26,6 +26,7 @@ namespace Input {
 		required: boolean
 		disabled: boolean
 		value?: string
+		description?: string
 	}
 
 	export type Placeholderable = Base & {

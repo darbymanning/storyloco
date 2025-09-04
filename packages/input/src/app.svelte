@@ -40,6 +40,11 @@
 			</div>
 		{/if}
 
+		<div class="grid gap-2">
+			<Label for="description">Description/help text</Label>
+			<Textarea bind:value={content.description} oninput={input.update} id="description" />
+		</div>
+
 		{#if content.type === 'file'}
 			<div class="grid gap-2">
 				<Label for="accept">Accept</Label>
