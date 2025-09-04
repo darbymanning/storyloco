@@ -11,6 +11,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **🎨 Theme** - Color theme selector with visual previews
 - **🔗 Link** - Link editor with support for internal, external, email, and asset links
 - **🏗️ Plans** - Floor plan manager with drag-and-drop sorting for types, floors, dimensions, and rooms
+- **📝 Input** - Comprehensive form input field with support for all HTML input types, checkboxes, radio buttons, selects, and textareas
 
 ### Vite Plugins
 
@@ -40,9 +41,10 @@ bun add storyloco
 import type { Video } from 'storyloco/mux'
 import type { Heading } from 'storyloco/heading'
 import type { Link } from 'storyloco/link'
+import type { Input } from 'storyloco/input'
 
 // Or import everything
-import type { Video, Heading, Link } from 'storyloco'
+import type { Video, Heading, Link, Input } from 'storyloco'
 ```
 
 ### Use Shared Components
@@ -117,6 +119,7 @@ storyloco/
 │   ├── heading/      # Heading editor plugin
 │   ├── theme/        # Theme selector plugin
 │   ├── link/         # Link editor plugin
+│   ├── input/        # Form input field plugin
 │   └── shared/       # UI component library
 ├── src/
 │   └── index.ts      # Type exports

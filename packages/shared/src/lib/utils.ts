@@ -1,6 +1,5 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format_date, format_elapse } from 'kitto'
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs))

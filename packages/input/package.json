@@ -1,0 +1,28 @@
+{
+   "name": "input-field",
+   "version": "0.1.0",
+   "devDependencies": {
+      "@lucide/svelte": "0.542.0",
+      "@storyblok/field-plugin": "1.7.0",
+      "@sveltejs/vite-plugin-svelte": "6.1.4",
+      "@tsconfig/svelte": "5.0.5",
+      "fluid-dnd": "2.4.0",
+      "kitto": "1.0.0-rc.15",
+      "prettier": "3.6.2",
+      "prettier-plugin-svelte": "3.4.0",
+      "shared": "../shared",
+      "svelte": "5.38.6",
+      "svelte-check": "4.3.1",
+      "typescript": "5.9.2",
+      "vite": "7.1.4",
+      "vite-plugin-css-injected-by-js": "3.5.2"
+   },
+   "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+      "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --skipPrompts --scope my-plugins",
+      "format": "prettier . --write"
+   },
+   "type": "module"
+}
