@@ -1,3 +1,5 @@
+import { UUID } from 'crypto'
+
 const types = [
 	'text',
 	'email',
@@ -17,7 +19,7 @@ const types = [
 	'hidden',
 ] as const
 
-namespace Field {
+export namespace Field {
 	export type Type = (typeof types)[number]
 
 	export type Base = {
@@ -47,7 +49,7 @@ namespace Field {
 			disabled: boolean
 			selected: boolean
 			label: string
-			_id: string
+			id: UUID
 		}>
 		multiple: boolean
 	}
@@ -60,7 +62,7 @@ namespace Field {
 			disabled: boolean
 			checked: boolean
 			label: string
-			_id: string
+			id: UUID
 		}>
 	}
 
@@ -71,7 +73,7 @@ namespace Field {
 			disabled: boolean
 			checked: boolean
 			label: string
-			_id: string
+			id: UUID
 		}>
 	}
 

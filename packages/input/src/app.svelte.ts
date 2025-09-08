@@ -1,5 +1,5 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
-import type { Input } from '../types.js'
+import type { Input, Field } from '../types.js'
 import { merge } from 'lodash-es'
 import { SvelteSet } from 'svelte/reactivity'
 
@@ -33,7 +33,7 @@ export class InputManager {
 			required?: boolean
 			disabled: boolean
 			checked?: boolean
-			_id: string
+			id: string
 		}>
 	} => {
 		return ['select', 'checkbox', 'radio'].includes(content.type)
@@ -91,7 +91,7 @@ export class InputManager {
 			disabled?: boolean
 			checked?: boolean
 			selected?: boolean
-			_id: string
+			id: string
 		}>
 	} => {
 		return 'options' in content
@@ -149,14 +149,14 @@ export class InputManager {
 								required: false,
 								disabled: false,
 								checked: false,
-								_id: crypto.randomUUID(),
+								id: crypto.randomUUID(),
 							},
 						]
 						break
 
 					case 'radio':
 						this.content.options = [
-							{ value: '', disabled: false, checked: false, label: '', _id: crypto.randomUUID() },
+							{ value: '', disabled: false, checked: false, label: '', id: crypto.randomUUID() },
 						]
 						break
 
@@ -167,7 +167,7 @@ export class InputManager {
 								disabled: false,
 								selected: false,
 								label: '',
-								_id: crypto.randomUUID(),
+								id: crypto.randomUUID(),
 							},
 						]
 						break
@@ -192,7 +192,11 @@ export class InputManager {
 	add_option = (insert: (index: number, item: any) => void) => {
 		if (!this.can_have_options(this.content)) return
 
-		let option
+		let option:
+			| Field.Select['options'][number]
+			| Field.Checkbox['options'][number]
+			| Field.Radio['options'][number]
+			| undefined
 
 		switch (this.content.type) {
 			case 'select':
@@ -201,31 +205,36 @@ export class InputManager {
 					disabled: false,
 					selected: false,
 					label: '',
-					_id: crypto.randomUUID(),
+					id: crypto.randomUUID(),
 				}
-
 				break
 
 			case 'checkbox':
 				option = {
 					value: '',
+					label: '',
 					required: false,
 					disabled: false,
 					checked: false,
-					label: '',
-					_id: crypto.randomUUID(),
+					id: crypto.randomUUID(),
 				}
 				break
 
 			case 'radio':
-				option = { value: '', disabled: false, checked: false, label: '', _id: crypto.randomUUID() }
+				option = {
+					value: '',
+					label: '',
+					disabled: false,
+					checked: false,
+					id: crypto.randomUUID(),
+				}
 				break
 
 			default:
 				break
 		}
 
-		insert(this.content.options.length, option as any)
+		if (option) insert(this.content.options.length, option)
 
 		this.update()
 	}
@@ -234,12 +243,12 @@ export class InputManager {
 		if (!this.has_options(this.content)) return
 
 		const option = this.content.options[index]
-		if (!option || !('_id' in option) || !option._id) return
+		if (!option || !('id' in option) || !option.id) return
 
-		if (this.open_options.has(option._id)) {
-			this.open_options.delete(option._id)
+		if (this.open_options.has(option.id)) {
+			this.open_options.delete(option.id)
 		} else {
-			this.open_options.add(option._id)
+			this.open_options.add(option.id)
 		}
 	}
 }

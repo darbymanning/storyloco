@@ -140,8 +140,8 @@
 					class="border border-input rounded-md divide-y divide-input bg-input-background"
 					use:sortable
 				>
-					{#each content.options as option, index (option._id || index)}
-						{@const options_open = option._id ? input.open_options.has(option._id) : false}
+					{#each content.options as option, index (option.id || index)}
+						{@const options_open = option.id ? input.open_options.has(option.id) : false}
 						<div
 							class="group relative grid grid-cols-[auto_1fr_auto] items-center py-1.5"
 							data-index={index}
@@ -162,7 +162,7 @@
 									(value) => {
 										option.label = value
 
-										if (option._id && !input.unlocked_values.has(option._id)) {
+										if (option.id && !input.unlocked_values.has(option.id)) {
 											option.value = value
 										}
 										input.update()
@@ -205,7 +205,7 @@
 											<Label class="text-xs" for="value_{index}">Value</Label>
 											<fieldset class="relative">
 												<Input
-													disabled={!option._id || !input.unlocked_values.has(option._id)}
+													disabled={!option.id || !input.unlocked_values.has(option.id)}
 													bind:value={option.value}
 													oninput={input.update}
 													id="value_{index}"
@@ -217,11 +217,11 @@
 
 														option.value = option.label
 
-														if (option._id) {
-															if (input.unlocked_values.has(option._id)) {
-																input.unlocked_values.delete(option._id)
+														if (option.id) {
+															if (input.unlocked_values.has(option.id)) {
+																input.unlocked_values.delete(option.id)
 															} else {
-																input.unlocked_values.add(option._id)
+																input.unlocked_values.add(option.id)
 															}
 														}
 
@@ -229,7 +229,7 @@
 													}}
 													id="derive_name_{index}"
 												>
-													{#if option._id && input.unlocked_values.has(option._id)}
+													{#if option.id && input.unlocked_values.has(option.id)}
 														<LockOpenIcon class="size-4" />
 													{:else}
 														<LockKeyhole class="size-4" />
@@ -278,7 +278,7 @@
 														bind:checked={option.selected}
 														onCheckedChange={(checked) => {
 															content.options.forEach((opt) => {
-																opt.selected = opt._id === option._id ? checked : false
+																opt.selected = opt.id === option.id ? checked : false
 															})
 															input.update()
 														}}
