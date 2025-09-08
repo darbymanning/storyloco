@@ -87,10 +87,7 @@ export class InputManager {
 		options: Array<{
 			value: string
 			label: string
-			required?: boolean
-			disabled?: boolean
-			checked?: boolean
-			selected?: boolean
+			disabled: boolean
 			id: string
 		}>
 	} => {
@@ -156,7 +153,13 @@ export class InputManager {
 
 					case 'radio':
 						this.content.options = [
-							{ value: '', disabled: false, checked: false, label: '', id: crypto.randomUUID() },
+							{
+								value: '',
+								disabled: false,
+								checked: false,
+								label: '',
+								id: crypto.randomUUID(),
+							},
 						]
 						break
 
