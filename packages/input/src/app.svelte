@@ -130,7 +130,7 @@
 		{/if}
 
 		{#if input.has_options(content)}
-			{@const [sortable, insert, remove] = dnd(content.options, {
+			{@const [sortable, insert, remove] = dnd(content.options as any, {
 				onDragEnd: input.update,
 				handlerSelector: '.handle',
 			})}

@@ -49,6 +49,8 @@ export namespace Field {
 			disabled: boolean
 			selected: boolean
 			label: string
+			checked?: boolean
+			required?: boolean
 			id: UUID
 		}>
 		multiple: boolean
@@ -62,6 +64,7 @@ export namespace Field {
 			disabled: boolean
 			checked: boolean
 			label: string
+			selected?: boolean
 			id: UUID
 		}>
 	}
@@ -73,6 +76,8 @@ export namespace Field {
 			disabled: boolean
 			checked: boolean
 			label: string
+			selected?: boolean
+			required?: boolean
 			id: UUID
 		}>
 	}

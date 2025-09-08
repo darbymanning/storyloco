@@ -89,6 +89,9 @@ export class InputManager {
 			label: string
 			disabled: boolean
 			id: string
+			checked?: boolean
+			selected?: boolean
+			required?: boolean
 		}>
 	} => {
 		return 'options' in content
