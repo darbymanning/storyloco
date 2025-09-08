@@ -1,6 +1,6 @@
 {
    "name": "storyloco",
-   "version": "1.11.1",
+   "version": "1.11.2",
    "description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
    "keywords": [
       "storyblok",
