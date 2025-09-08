@@ -17,10 +17,11 @@ const types = [
 	'hidden',
 ] as const
 
-namespace Input {
+namespace Field {
 	export type Type = (typeof types)[number]
 
 	export type Base = {
+		label: string
 		name: string
 		type: Type
 		required: boolean
@@ -45,7 +46,7 @@ namespace Input {
 			value: string
 			disabled: boolean
 			selected: boolean
-			name: string
+			label: string
 			_id: string
 		}>
 		multiple: boolean
@@ -58,7 +59,7 @@ namespace Input {
 			required: boolean
 			disabled: boolean
 			checked: boolean
-			name: string
+			label: string
 			_id: string
 		}>
 	}
@@ -69,7 +70,7 @@ namespace Input {
 			value: string
 			disabled: boolean
 			checked: boolean
-			name: string
+			label: string
 			_id: string
 		}>
 	}
@@ -141,7 +142,7 @@ namespace Input {
 		| Hidden
 }
 
-export const types_map = new Map<Input.Type, string>([
+export const types_map = new Map<Field.Type, string>([
 	['text', 'Text'],
 	['email', 'Email'],
 	['number', 'Number'],
@@ -161,4 +162,4 @@ export const types_map = new Map<Input.Type, string>([
 ] as const)
 
 // convenient re-export to keep existing imports working
-export type Input = Input.Input
+export type Input = Field.Input

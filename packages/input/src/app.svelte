@@ -19,14 +19,40 @@
 
 {#snippet Options()}
 	<div class="grid gap-4">
+		<div class="grid gap-2">
+			<Label for="name">Name</Label>
+			<fieldset class="relative">
+				<Input
+					disabled={!input.custom_name}
+					bind:value={content.name}
+					oninput={input.update}
+					id="name"
+				/><button
+					class="absolute right-2 top-1/2 -translate-y-1/2 p-2"
+					onclick={() => {
+						input.custom_name = !input.custom_name
+						if (!input.custom_name) {
+							content.name = content.label
+						}
+						input.update()
+					}}
+				>
+					{#if input.custom_name}
+						<LockOpenIcon class="size-4" />
+					{:else}
+						<LockKeyhole class="size-4" />
+					{/if}
+				</button>
+			</fieldset>
+		</div>
 		{#if input.can_have_value(content)}
 			{@const type = content.type === 'hidden' ? 'text' : content.type}
 			<div class="grid gap-2">
 				<Label for="value">Value</Label>
 				{#if type === 'textarea'}
-					<Textarea bind:value={content.value} onblur={input.update} id="value" />
+					<Textarea bind:value={content.value} oninput={input.update} id="value" />
 				{:else}
-					<Input bind:value={content.value} onblur={input.update} {type} id="value" />
+					<Input bind:value={content.value} oninput={input.update} {type} id="value" />
 				{/if}
 			</div>
 		{/if}
@@ -35,9 +61,9 @@
 			<div class="grid gap-2">
 				<Label for="placeholder">Placeholder</Label>
 				{#if content.type === 'textarea'}
-					<Textarea bind:value={content.placeholder} onblur={input.update} id="placeholder" />
+					<Textarea bind:value={content.placeholder} oninput={input.update} id="placeholder" />
 				{:else}
-					<Input bind:value={content.placeholder} onblur={input.update} id="placeholder" />
+					<Input bind:value={content.placeholder} oninput={input.update} id="placeholder" />
 				{/if}
 			</div>
 		{/if}
@@ -45,14 +71,14 @@
 		{#if content.type !== 'hidden'}
 			<div class="grid gap-2">
 				<Label for="description">Description/help text</Label>
-				<Textarea bind:value={content.description} onblur={input.update} id="description" />
+				<Textarea bind:value={content.description} oninput={input.update} id="description" />
 			</div>
 		{/if}
 
 		{#if content.type === 'file'}
 			<div class="grid gap-2">
 				<Label for="accept">Accept</Label>
-				<Input bind:value={content.accept} onblur={input.update} id="accept" />
+				<Input bind:value={content.accept} oninput={input.update} id="accept" />
 				<small class="text-muted-foreground text-xs">
 					<a
 						href="https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept"
@@ -132,18 +158,17 @@
 							<Input
 								class="border-transparent group-hover:border-input/50 focus:border-input px-2 h-10"
 								bind:value={
-									() => option.value,
+									() => option.label,
 									(value) => {
-										option.value = value
+										option.label = value
 
-										if (option._id && !input.unlocked_names.has(option._id) && 'name' in option) {
-											option.name = value
-											input.update()
+										if (option._id && !input.unlocked_values.has(option._id)) {
+											option.value = value
 										}
+										input.update()
 									}
 								}
-								onblur={input.update}
-								id="options"
+								oninput={input.update}
 							/>
 							<div class="flex items-center gap-1 px-1">
 								<button
@@ -177,26 +202,26 @@
 								<div class="col-span-full grid gap-4 p-3" transition:slide>
 									{#if input.can_have_options(content)}
 										<div class="grid">
-											<Label class="text-xs" for="name_{index}">Name</Label>
+											<Label class="text-xs" for="value_{index}">Value</Label>
 											<fieldset class="relative">
 												<Input
-													disabled={!option._id || !input.unlocked_names.has(option._id)}
-													bind:value={option.name}
-													onblur={input.update}
-													id="name_{index}"
+													disabled={!option._id || !input.unlocked_values.has(option._id)}
+													bind:value={option.value}
+													oninput={input.update}
+													id="value_{index}"
 												/>
 												<button
-													class="absolute right-4 top-1/2 -translate-y-1/2"
+													class="absolute right-2 top-1/2 -translate-y-1/2 p-2"
 													onclick={() => {
-														if (!('name' in option)) return
+														if (!('value' in option)) return
 
-														option.name = option.value
+														option.value = option.label
 
 														if (option._id) {
-															if (input.unlocked_names.has(option._id)) {
-																input.unlocked_names.delete(option._id)
+															if (input.unlocked_values.has(option._id)) {
+																input.unlocked_values.delete(option._id)
 															} else {
-																input.unlocked_names.add(option._id)
+																input.unlocked_values.add(option._id)
 															}
 														}
 
@@ -204,7 +229,7 @@
 													}}
 													id="derive_name_{index}"
 												>
-													{#if option._id && input.unlocked_names.has(option._id)}
+													{#if option._id && input.unlocked_values.has(option._id)}
 														<LockOpenIcon class="size-4" />
 													{:else}
 														<LockKeyhole class="size-4" />
@@ -278,8 +303,17 @@
 	<div class="@container">
 		<div class="grid gap-4 @xs:grid-cols-[1fr_auto]">
 			<div class="grid gap-2">
-				<Label for="name">Name</Label>
-				<Input bind:value={content.name} onblur={input.update} id="name" />
+				<Label for="label">Label</Label>
+				<Input
+					bind:value={content.label}
+					oninput={() => {
+						if (!input.custom_name) {
+							content.name = content.label
+						}
+						input.update()
+					}}
+					id="label"
+				/>
 			</div>
 			<div class="grid gap-2">
 				<Label for="type">Type</Label>

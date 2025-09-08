@@ -9,14 +9,16 @@ export class InputManager {
 	plugin = $state<Plugin | null>(null)
 	content = $state<Input>({
 		name: '',
+		label: '',
 		type: 'text',
 		required: false,
 		disabled: false,
 	})
-
+	custom_name = $state(false)
 	show_options = $state(false)
 	open_options = new SvelteSet<string>()
-	unlocked_names = new SvelteSet<string>()
+	unlocked_values = new SvelteSet<string>()
+	#update_timeout = $state<NodeJS.Timeout | null>(null)
 
 	can_be_multiple = (content: Input): content is Input & { multiple: boolean } => {
 		return ['file', 'select'].includes(content.type)
@@ -27,6 +29,7 @@ export class InputManager {
 	): content is Input & {
 		options: Array<{
 			value: string
+			label: string
 			required?: boolean
 			disabled: boolean
 			checked?: boolean
@@ -83,11 +86,11 @@ export class InputManager {
 	): content is {
 		options: Array<{
 			value: string
+			label: string
 			required?: boolean
 			disabled?: boolean
 			checked?: boolean
 			selected?: boolean
-			name?: string
 			_id: string
 		}>
 	} => {
@@ -114,6 +117,11 @@ export class InputManager {
 	}
 
 	update = () => {
+		if (this.#update_timeout) clearTimeout(this.#update_timeout)
+		this.#update_timeout = setTimeout(this.#update, 1000)
+	}
+
+	#update = () => {
 		if (this.plugin?.type !== 'loaded') return
 
 		// ensure required is not present for checkbox
@@ -137,10 +145,10 @@ export class InputManager {
 						this.content.options = [
 							{
 								value: '',
+								label: '',
 								required: false,
 								disabled: false,
 								checked: false,
-								name: '',
 								_id: crypto.randomUUID(),
 							},
 						]
@@ -148,7 +156,7 @@ export class InputManager {
 
 					case 'radio':
 						this.content.options = [
-							{ value: '', disabled: false, checked: false, name: '', _id: crypto.randomUUID() },
+							{ value: '', disabled: false, checked: false, label: '', _id: crypto.randomUUID() },
 						]
 						break
 
@@ -158,7 +166,7 @@ export class InputManager {
 								value: '',
 								disabled: false,
 								selected: false,
-								name: '',
+								label: '',
 								_id: crypto.randomUUID(),
 							},
 						]
@@ -192,7 +200,7 @@ export class InputManager {
 					value: '',
 					disabled: false,
 					selected: false,
-					name: '',
+					label: '',
 					_id: crypto.randomUUID(),
 				}
 
@@ -204,13 +212,13 @@ export class InputManager {
 					required: false,
 					disabled: false,
 					checked: false,
-					name: '',
+					label: '',
 					_id: crypto.randomUUID(),
 				}
 				break
 
 			case 'radio':
-				option = { value: '', disabled: false, checked: false, name: '', _id: crypto.randomUUID() }
+				option = { value: '', disabled: false, checked: false, label: '', _id: crypto.randomUUID() }
 				break
 
 			default:
@@ -219,20 +227,6 @@ export class InputManager {
 
 		insert(this.content.options.length, option as any)
 
-		this.update()
-	}
-
-	delete_option = (index: number) => {
-		if (!this.has_options(this.content)) return
-
-		const option_to_delete = this.content.options[index]
-		if (option_to_delete && '_id' in option_to_delete && option_to_delete._id) {
-			// remove the deleted option's ID from both sets
-			this.open_options.delete(option_to_delete._id)
-			this.unlocked_names.delete(option_to_delete._id)
-		}
-
-		this.content.options = this.content.options.filter((_, i) => i !== index) as any
 		this.update()
 	}
 
