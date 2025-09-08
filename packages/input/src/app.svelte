@@ -17,9 +17,9 @@
 			<div class="grid gap-2">
 				<Label for="value">Value</Label>
 				{#if type === 'textarea'}
-					<Textarea bind:value={content.value} oninput={input.update} id="value" />
+					<Textarea bind:value={content.value} onblur={input.update} id="value" />
 				{:else}
-					<Input bind:value={content.value} oninput={input.update} {type} id="value" />
+					<Input bind:value={content.value} onblur={input.update} {type} id="value" />
 				{/if}
 			</div>
 		{/if}
@@ -28,12 +28,12 @@
 			<div class="grid gap-2">
 				<Label for="placeholder">Placeholder</Label>
 				{#if content.type === 'textarea'}
-					<Textarea bind:value={content.placeholder} oninput={input.update} id="placeholder" />
+					<Textarea bind:value={content.placeholder} onblur={input.update} id="placeholder" />
 				{:else}
 					<Input
 						bind:value={content.placeholder}
 						type={content.type}
-						oninput={input.update}
+						onblur={input.update}
 						id="placeholder"
 					/>
 				{/if}
@@ -42,13 +42,13 @@
 
 		<div class="grid gap-2">
 			<Label for="description">Description/help text</Label>
-			<Textarea bind:value={content.description} oninput={input.update} id="description" />
+			<Textarea bind:value={content.description} onblur={input.update} id="description" />
 		</div>
 
 		{#if content.type === 'file'}
 			<div class="grid gap-2">
 				<Label for="accept">Accept</Label>
-				<Input bind:value={content.accept} oninput={input.update} id="accept" />
+				<Input bind:value={content.accept} onblur={input.update} id="accept" />
 				<small class="text-muted-foreground text-xs">
 					<a
 						href="https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept"
@@ -129,7 +129,7 @@
 							<Input
 								class="border-transparent group-hover:border-input/50 focus:border-input px-2 h-10"
 								bind:value={content.options[index].value}
-								oninput={input.update}
+								onblur={input.update}
 								id="options"
 							/>
 							<button
@@ -216,7 +216,7 @@
 		<div class="grid gap-4 @xs:grid-cols-[1fr_auto]">
 			<div class="grid gap-2">
 				<Label for="name">Name</Label>
-				<Input bind:value={content.name} oninput={input.update} id="name" />
+				<Input bind:value={content.name} onblur={input.update} id="name" />
 			</div>
 			<div class="grid gap-2">
 				<Label for="type">Type</Label>
