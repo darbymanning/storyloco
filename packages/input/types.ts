@@ -41,18 +41,37 @@ namespace Input {
 
 	export type Select = Placeholderable & {
 		type: 'select'
-		options: Array<{ value: string; disabled: boolean; selected: boolean }>
+		options: Array<{
+			value: string
+			disabled: boolean
+			selected: boolean
+			name: string
+			_id: string
+		}>
 		multiple: boolean
 	}
 
 	export type Checkbox = Omit<Base, 'required' | 'disabled'> & {
 		type: 'checkbox'
-		options: Array<{ value: string; required: boolean; disabled: boolean; checked: boolean }>
+		options: Array<{
+			value: string
+			required: boolean
+			disabled: boolean
+			checked: boolean
+			name: string
+			_id: string
+		}>
 	}
 
 	export type Radio = Base & {
 		type: 'radio'
-		options: Array<{ value: string; disabled: boolean; checked: boolean }>
+		options: Array<{
+			value: string
+			disabled: boolean
+			checked: boolean
+			name: string
+			_id: string
+		}>
 	}
 
 	export type Text = Placeholderable & {

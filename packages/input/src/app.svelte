@@ -1,6 +1,13 @@
 <script lang="ts">
+	import { slide } from 'svelte/transition'
 	import { Button, Checkbox, Input, Label, Switch, Textarea } from 'shared'
-	import { TrashIcon, GripVerticalIcon } from '@lucide/svelte'
+	import {
+		TrashIcon,
+		GripVerticalIcon,
+		Settings2Icon,
+		LockKeyhole,
+		LockOpenIcon,
+	} from '@lucide/svelte'
 	import { InputManager } from './app.svelte.js'
 	import { types_map } from '../types.js'
 	import { useDragAndDrop as dnd } from 'fluid-dnd/svelte'
@@ -30,20 +37,17 @@
 				{#if content.type === 'textarea'}
 					<Textarea bind:value={content.placeholder} onblur={input.update} id="placeholder" />
 				{:else}
-					<Input
-						bind:value={content.placeholder}
-						type={content.type}
-						onblur={input.update}
-						id="placeholder"
-					/>
+					<Input bind:value={content.placeholder} onblur={input.update} id="placeholder" />
 				{/if}
 			</div>
 		{/if}
 
-		<div class="grid gap-2">
-			<Label for="description">Description/help text</Label>
-			<Textarea bind:value={content.description} onblur={input.update} id="description" />
-		</div>
+		{#if content.type !== 'hidden'}
+			<div class="grid gap-2">
+				<Label for="description">Description/help text</Label>
+				<Textarea bind:value={content.description} onblur={input.update} id="description" />
+			</div>
+		{/if}
 
 		{#if content.type === 'file'}
 			<div class="grid gap-2">
@@ -85,11 +89,9 @@
 							onCheckedChange={() => {
 								if (input.has_options(content)) {
 									const first_selected = content.options.find((option) => option.selected)
-
-									content.options = content.options.map((option) => ({
-										...option,
-										selected: option.value === first_selected?.value,
-									}))
+									for (const option of content.options) {
+										option.selected = option.value === first_selected?.value
+									}
 								}
 
 								input.update()
@@ -112,9 +114,10 @@
 					class="border border-input rounded-md divide-y divide-input bg-input-background"
 					use:sortable
 				>
-					{#each content.options as _, index (index)}
+					{#each content.options as option, index (option._id || index)}
+						{@const options_open = option._id ? input.open_options.has(option._id) : false}
 						<div
-							class="group relative grid grid-cols-[auto_1fr_auto] items-center py-1.5 gap-y-2"
+							class="group relative grid grid-cols-[auto_1fr_auto] items-center py-1.5"
 							data-index={index}
 						>
 							<button
@@ -128,80 +131,140 @@
 							</button>
 							<Input
 								class="border-transparent group-hover:border-input/50 focus:border-input px-2 h-10"
-								bind:value={content.options[index].value}
+								bind:value={
+									() => option.value,
+									(value) => {
+										option.value = value
+
+										if (option._id && !input.unlocked_names.has(option._id) && 'name' in option) {
+											option.name = value
+											input.update()
+										}
+									}
+								}
 								onblur={input.update}
 								id="options"
 							/>
-							<button
-								class={cn(
-									'size-9 hover:bg-destructive/10 focus-within:bg-destructive/10 outline-none focus-within:ring-destructive/30 focus-within:text-destructive focus-within:ring hover:text-destructive transition-colors rounded-full flex justify-center items-center mx-2',
-									{
-										'opacity-0 invisible pointer-events-none': content.options.length === 1,
-									}
-								)}
-								onclick={() => {
-									remove(index)
-									input.update()
-								}}
-							>
-								<TrashIcon
-									class="size-4 opacity-0 group-hover:opacity-100 transition-opacity group-focus-within:opacity-100"
-								/>
-							</button>
-							<fieldset
-								class="col-start-2 flex items-center gap-4 [&>div]:flex [&>div]:gap-1 [&>div]:justify-items-center mr-2"
-							>
-								<div>
-									<Label class="text-xs" for="disabled_{index}">Disabled</Label>
-									<Switch
-										bind:checked={content.options[index].disabled}
-										onCheckedChange={input.update}
-										id="disabled_{index}"
+							<div class="flex items-center gap-1 px-1">
+								<button
+									class="size-9 hover:bg-muted/50 focus-within:bg-muted/50 outline-none focus-within:ring-muted/30 focus-within:ring hover:text-foreground transition-colors rounded-full flex justify-center items-center"
+									onclick={() => input.toggle_options(index)}
+									title="Option settings"
+									aria-label="Option settings"
+								>
+									<Settings2Icon
+										class="size-4 opacity-0 group-hover:opacity-100 transition-opacity group-focus-within:opacity-100"
 									/>
-								</div>
-								{#if content.type === 'checkbox'}
-									<div>
-										<Label class="text-xs" for="required_{index}">Required</Label>
-										<Switch
-											bind:checked={content.options[index].required}
-											onCheckedChange={input.update}
-											id="required_{index}"
-										/>
-									</div>
-								{/if}
-								<div>
-									{#if content.type === 'checkbox' || content.type === 'radio'}
-										<Label class="text-xs" for="checked_{index}">Checked</Label>
-										<Checkbox
-											bind:checked={content.options[index].checked}
-											onCheckedChange={input.update}
-											id="checked_{index}"
-										/>
-									{:else if content.type === 'select'}
-										<Label class="text-xs" for="selected_{index}">Selected</Label>
-										{#if content.multiple}
-											<Checkbox
-												bind:checked={content.options[index].selected}
-												onCheckedChange={input.update}
-												id="selected_{index}"
-											/>
-										{:else}
-											<Switch
-												bind:checked={content.options[index].selected}
-												onCheckedChange={() => {
-													content.options = content.options.map((option, i) => ({
-														...option,
-														selected: i === index,
-													}))
+								</button>
+								<button
+									class={cn(
+										'size-9 hover:bg-destructive/10 focus-within:bg-destructive/10 outline-none focus-within:ring-destructive/30 focus-within:text-destructive focus-within:ring hover:text-destructive transition-colors rounded-full flex justify-center items-center',
+										{
+											'opacity-0 invisible pointer-events-none': content.options.length === 1,
+										}
+									)}
+									onclick={() => {
+										remove(index)
+										input.update()
+									}}
+								>
+									<TrashIcon
+										class="size-4 opacity-0 group-hover:opacity-100 transition-opacity group-focus-within:opacity-100"
+									/>
+								</button>
+							</div>
+							{#if options_open}
+								<div class="col-span-full grid gap-4 p-3" transition:slide>
+									{#if input.can_have_options(content)}
+										<div class="grid">
+											<Label class="text-xs" for="name_{index}">Name</Label>
+											<fieldset class="relative">
+												<Input
+													disabled={!option._id || !input.unlocked_names.has(option._id)}
+													bind:value={option.name}
+													onblur={input.update}
+													id="name_{index}"
+												/>
+												<button
+													class="absolute right-4 top-1/2 -translate-y-1/2"
+													onclick={() => {
+														if (!('name' in option)) return
 
-													input.update()
-												}}
-												id="selected_{index}"
-											/>
-										{/if}
+														option.name = option.value
+
+														if (option._id) {
+															if (input.unlocked_names.has(option._id)) {
+																input.unlocked_names.delete(option._id)
+															} else {
+																input.unlocked_names.add(option._id)
+															}
+														}
+
+														input.update()
+													}}
+													id="derive_name_{index}"
+												>
+													{#if option._id && input.unlocked_names.has(option._id)}
+														<LockOpenIcon class="size-4" />
+													{:else}
+														<LockKeyhole class="size-4" />
+													{/if}
+												</button>
+											</fieldset>
+										</div>
 									{/if}
+									<div class="flex gap-4 flex-wrap">
+										<div class="flex gap-1">
+											<Label class="text-xs" for="disabled_{index}">Disabled</Label>
+											<Switch
+												bind:checked={option.disabled}
+												onCheckedChange={input.update}
+												id="disabled_{index}"
+											/>
+										</div>
+										{#if content.type === 'checkbox'}
+											<div class="flex gap-1">
+												<Label class="text-xs" for="required_{index}">Required</Label>
+												<Switch
+													bind:checked={option.required}
+													onCheckedChange={input.update}
+													id="required_{index}"
+												/>
+											</div>
+										{/if}
+										<div class="flex gap-1">
+											{#if content.type === 'checkbox' || content.type === 'radio'}
+												<Label class="text-xs" for="checked_{index}">Checked</Label>
+												<Checkbox
+													bind:checked={option.checked}
+													onCheckedChange={input.update}
+													id="checked_{index}"
+												/>
+											{:else if content.type === 'select'}
+												<Label class="text-xs" for="selected_{index}">Selected</Label>
+												{#if content.multiple}
+													<Checkbox
+														bind:checked={option.selected}
+														onCheckedChange={input.update}
+														id="selected_{index}"
+													/>
+												{:else}
+													<Switch
+														bind:checked={option.selected}
+														onCheckedChange={(checked) => {
+															content.options.forEach((opt) => {
+																opt.selected = opt._id === option._id ? checked : false
+															})
+															input.update()
+														}}
+														id="selected_{index}"
+													/>
+												{/if}
+											{/if}
+										</div>
+									</div>
 								</div>
-							</fieldset>
+							{/if}
 						</div>
 					{/each}
 				</div>

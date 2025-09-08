@@ -1,6 +1,7 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { Input } from '../types.js'
 import { merge } from 'lodash-es'
+import { SvelteSet } from 'svelte/reactivity'
 
 type Plugin = FieldPluginResponse<Input | null | ''>
 
@@ -14,6 +15,8 @@ export class InputManager {
 	})
 
 	show_options = $state(false)
+	open_options = new SvelteSet<string>()
+	unlocked_names = new SvelteSet<string>()
 
 	can_be_multiple = (content: Input): content is Input & { multiple: boolean } => {
 		return ['file', 'select'].includes(content.type)
@@ -22,7 +25,13 @@ export class InputManager {
 	can_have_options = (
 		content: Input
 	): content is Input & {
-		options: Array<{ value: string; required?: boolean; disabled: boolean; checked?: boolean }>
+		options: Array<{
+			value: string
+			required?: boolean
+			disabled: boolean
+			checked?: boolean
+			_id: string
+		}>
 	} => {
 		return ['select', 'checkbox', 'radio'].includes(content.type)
 	}
@@ -78,6 +87,8 @@ export class InputManager {
 			disabled?: boolean
 			checked?: boolean
 			selected?: boolean
+			name?: string
+			_id: string
 		}>
 	} => {
 		return 'options' in content
@@ -123,16 +134,33 @@ export class InputManager {
 			if (this.can_have_options(this.content)) {
 				switch (this.content.type) {
 					case 'checkbox':
-						this.content.options = [{ value: '', required: false, disabled: false, checked: false }]
+						this.content.options = [
+							{
+								value: '',
+								required: false,
+								disabled: false,
+								checked: false,
+								name: '',
+								_id: crypto.randomUUID(),
+							},
+						]
 						break
 
 					case 'radio':
-						this.content.options = [{ value: '', disabled: false, checked: false }]
+						this.content.options = [
+							{ value: '', disabled: false, checked: false, name: '', _id: crypto.randomUUID() },
+						]
 						break
 
 					case 'select':
 						this.content.options = [
-							{ value: '', disabled: false, selected: false, required: false },
+							{
+								value: '',
+								disabled: false,
+								selected: false,
+								name: '',
+								_id: crypto.randomUUID(),
+							},
 						]
 						break
 
@@ -160,30 +188,64 @@ export class InputManager {
 
 		switch (this.content.type) {
 			case 'select':
-				option = { value: '', disabled: false, selected: false, required: false }
+				option = {
+					value: '',
+					disabled: false,
+					selected: false,
+					name: '',
+					_id: crypto.randomUUID(),
+				}
 
 				break
 
 			case 'checkbox':
-				option = { value: '', required: false, disabled: false, checked: false }
+				option = {
+					value: '',
+					required: false,
+					disabled: false,
+					checked: false,
+					name: '',
+					_id: crypto.randomUUID(),
+				}
 				break
 
 			case 'radio':
-				option = { value: '', disabled: false, checked: false }
+				option = { value: '', disabled: false, checked: false, name: '', _id: crypto.randomUUID() }
 				break
 
 			default:
 				break
 		}
 
-		insert(this.content.options.length, option)
+		insert(this.content.options.length, option as any)
 
 		this.update()
 	}
 
 	delete_option = (index: number) => {
 		if (!this.has_options(this.content)) return
-		this.content.options = this.content.options.filter((_, i) => i !== index)
+
+		const option_to_delete = this.content.options[index]
+		if (option_to_delete && '_id' in option_to_delete && option_to_delete._id) {
+			// remove the deleted option's ID from both sets
+			this.open_options.delete(option_to_delete._id)
+			this.unlocked_names.delete(option_to_delete._id)
+		}
+
+		this.content.options = this.content.options.filter((_, i) => i !== index) as any
 		this.update()
+	}
+
+	toggle_options = (index: number) => {
+		if (!this.has_options(this.content)) return
+
+		const option = this.content.options[index]
+		if (!option || !('_id' in option) || !option._id) return
+
+		if (this.open_options.has(option._id)) {
+			this.open_options.delete(option._id)
+		} else {
+			this.open_options.add(option._id)
+		}
 	}
 }
