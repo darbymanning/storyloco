@@ -28,7 +28,8 @@
       "packages/shared/dist",
       "packages/vite/dist",
       "packages/ticketsource/types.ts",
-      "packages/input/types.ts"
+      "packages/input/types.ts",
+      "packages/time/types.ts"
    ],
    "exports": {
       ".": {
@@ -66,6 +67,10 @@
       "./vite": {
          "types": "./packages/vite/dist/index.d.ts",
          "import": "./packages/vite/dist/index.js"
+      },
+      "./time": {
+         "types": "./packages/time/types.ts",
+         "svelte": "./packages/time/src/app.svelte.ts"
       }
    },
    "devDependencies": {

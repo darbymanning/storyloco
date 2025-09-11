@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Input, Label, Select, Button } from 'shared'
+	import { Input, Label, Select, Skeleton as SkeletonUI } from 'shared'
 	import {
 		link_types,
 		target_options,
@@ -52,7 +52,7 @@
 
 	{#snippet Column(index: number)}
 		<td style="--width: {skeleton_widths[index]}%">
-			<Skeleton class="dark:bg-muted-foreground w-[var(--width)] min-w-7 h-7" />
+			<SkeletonUI class="dark:bg-muted-foreground w-[var(--width)] min-w-7 h-7" />
 		</td>
 	{/snippet}
 

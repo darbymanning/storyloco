@@ -116,18 +116,20 @@ export class InputManager {
 		})
 	}
 
-	update = () => {
+	debounced_update = () => {
 		if (this.#update_timeout) clearTimeout(this.#update_timeout)
-		this.#update_timeout = setTimeout(this.#update, 1000)
+		this.#update_timeout = setTimeout(this.update_now, 1000)
 	}
 
-	#update = () => {
+	update_now = () => {
 		if (this.plugin?.type !== 'loaded') return
 
 		// ensure required is not present for checkbox
 		if (this.content.type === 'checkbox') {
 			if ('required' in this.content) delete this.content.required
 		} else {
+			// ensure at_least_one is not present for all other types
+			if ('at_least_one' in this.content) delete this.content.at_least_one
 			// ensure required is present for all other types
 			this.content.required = this.content.required ??= false
 		}
@@ -138,6 +140,9 @@ export class InputManager {
 		const type_changed = this.content.type !== prev_type
 
 		if (type_changed) {
+			// ensure options is not present for all other types
+			if (this.has_options(this.content)) delete (this.content as any).options
+
 			// ensure options is present for multiple input types
 			if (this.can_have_options(this.content)) {
 				switch (this.content.type) {
@@ -181,8 +186,6 @@ export class InputManager {
 					default:
 						break
 				}
-			} else {
-				if (this.has_options(this.content)) delete (this.content as any).options
 			}
 
 			// ensure multiple is present for file input
@@ -242,7 +245,7 @@ export class InputManager {
 
 		if (option) insert(this.content.options.length, option)
 
-		this.update()
+		this.update_now()
 	}
 
 	toggle_options = (index: number) => {

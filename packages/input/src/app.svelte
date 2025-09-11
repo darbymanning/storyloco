@@ -25,7 +25,7 @@
 				<Input
 					disabled={!input.custom_name}
 					bind:value={content.name}
-					oninput={input.update}
+					oninput={input.debounced_update}
 					id="name"
 				/><button
 					class="absolute right-2 top-1/2 -translate-y-1/2 p-2"
@@ -34,7 +34,7 @@
 						if (!input.custom_name) {
 							content.name = content.label
 						}
-						input.update()
+						input.update_now()
 					}}
 				>
 					{#if input.custom_name}
@@ -45,14 +45,15 @@
 				</button>
 			</fieldset>
 		</div>
+
 		{#if input.can_have_value(content)}
 			{@const type = content.type === 'hidden' ? 'text' : content.type}
 			<div class="grid gap-2">
 				<Label for="value">Value</Label>
 				{#if type === 'textarea'}
-					<Textarea bind:value={content.value} oninput={input.update} id="value" />
+					<Textarea bind:value={content.value} oninput={input.debounced_update} id="value" />
 				{:else}
-					<Input bind:value={content.value} oninput={input.update} {type} id="value" />
+					<Input bind:value={content.value} oninput={input.debounced_update} {type} id="value" />
 				{/if}
 			</div>
 		{/if}
@@ -61,9 +62,17 @@
 			<div class="grid gap-2">
 				<Label for="placeholder">Placeholder</Label>
 				{#if content.type === 'textarea'}
-					<Textarea bind:value={content.placeholder} oninput={input.update} id="placeholder" />
+					<Textarea
+						bind:value={content.placeholder}
+						oninput={input.debounced_update}
+						id="placeholder"
+					/>
 				{:else}
-					<Input bind:value={content.placeholder} oninput={input.update} id="placeholder" />
+					<Input
+						bind:value={content.placeholder}
+						oninput={input.debounced_update}
+						id="placeholder"
+					/>
 				{/if}
 			</div>
 		{/if}
@@ -71,14 +80,18 @@
 		{#if content.type !== 'hidden'}
 			<div class="grid gap-2">
 				<Label for="description">Description/help text</Label>
-				<Textarea bind:value={content.description} oninput={input.update} id="description" />
+				<Textarea
+					bind:value={content.description}
+					oninput={input.debounced_update}
+					id="description"
+				/>
 			</div>
 		{/if}
 
 		{#if content.type === 'file'}
 			<div class="grid gap-2">
 				<Label for="accept">Accept</Label>
-				<Input bind:value={content.accept} oninput={input.update} id="accept" />
+				<Input bind:value={content.accept} oninput={input.debounced_update} id="accept" />
 				<small class="text-muted-foreground text-xs">
 					<a
 						href="https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/accept"
@@ -89,6 +102,17 @@
 			</div>
 		{/if}
 
+		{#if content.type === 'checkbox' && typeof content.at_least_one === 'boolean'}
+			<fieldset class="flex gap-2 items-center">
+				<Label for="at_least_one">Require at least one selection</Label>
+				<Switch
+					bind:checked={content.at_least_one}
+					onCheckedChange={input.update_now}
+					id="at_least_one"
+				/>
+			</fieldset>
+		{/if}
+
 		{#if input.can_be_multiple(content) || input.can_be_required(content) || input.can_be_disabled(content)}
 			<div
 				class="flex gap-4 gap-y-2 items-center [&>fieldset]:flex [&>fieldset]:gap-2 [&>fieldset]:items-center flex-wrap"
@@ -96,14 +120,22 @@
 				{#if input.can_be_required(content)}
 					<fieldset>
 						<Label for="required">Required</Label>
-						<Switch bind:checked={content.required} onCheckedChange={input.update} id="required" />
+						<Switch
+							bind:checked={content.required}
+							onCheckedChange={input.update_now}
+							id="required"
+						/>
 					</fieldset>
 				{/if}
 
 				{#if input.can_be_disabled(content)}
 					<fieldset>
 						<Label for="disabled">Disabled</Label>
-						<Switch bind:checked={content.disabled} onCheckedChange={input.update} id="disabled" />
+						<Switch
+							bind:checked={content.disabled}
+							onCheckedChange={input.update_now}
+							id="disabled"
+						/>
 					</fieldset>
 				{/if}
 
@@ -120,7 +152,7 @@
 									}
 								}
 
-								input.update()
+								input.update_now()
 							}}
 							id="multiple"
 						/>
@@ -131,7 +163,7 @@
 
 		{#if input.has_options(content)}
 			{@const [sortable, insert, remove] = dnd(content.options as any, {
-				onDragEnd: input.update,
+				onDragEnd: input.update_now,
 				handlerSelector: '.handle',
 			})}
 			<div class="grid gap-2">
@@ -165,10 +197,11 @@
 										if (option.id && !input.unlocked_values.has(option.id)) {
 											option.value = value
 										}
-										input.update()
+
+										input.debounced_update()
 									}
 								}
-								oninput={input.update}
+								oninput={input.debounced_update}
 							/>
 							<div class="flex items-center gap-1 px-1">
 								<button
@@ -190,7 +223,7 @@
 									)}
 									onclick={() => {
 										remove(index)
-										input.update()
+										input.update_now()
 									}}
 								>
 									<TrashIcon
@@ -207,7 +240,7 @@
 												<Input
 													disabled={!option.id || !input.unlocked_values.has(option.id)}
 													bind:value={option.value}
-													oninput={input.update}
+													oninput={input.debounced_update}
 													id="value_{index}"
 												/>
 												<button
@@ -225,7 +258,7 @@
 															}
 														}
 
-														input.update()
+														input.update_now()
 													}}
 													id="derive_name_{index}"
 												>
@@ -243,7 +276,7 @@
 											<Label class="text-xs" for="disabled_{index}">Disabled</Label>
 											<Switch
 												bind:checked={option.disabled}
-												onCheckedChange={input.update}
+												onCheckedChange={input.update_now}
 												id="disabled_{index}"
 											/>
 										</div>
@@ -252,7 +285,7 @@
 												<Label class="text-xs" for="required_{index}">Required</Label>
 												<Switch
 													bind:checked={option.required}
-													onCheckedChange={input.update}
+													onCheckedChange={input.update_now}
 													id="required_{index}"
 												/>
 											</div>
@@ -262,7 +295,7 @@
 												<Label class="text-xs" for="checked_{index}">Checked</Label>
 												<Checkbox
 													bind:checked={option.checked}
-													onCheckedChange={input.update}
+													onCheckedChange={input.update_now}
 													id="checked_{index}"
 												/>
 											{:else if content.type === 'select'}
@@ -270,7 +303,7 @@
 												{#if content.multiple}
 													<Checkbox
 														bind:checked={option.selected}
-														onCheckedChange={input.update}
+														onCheckedChange={input.update_now}
 														id="selected_{index}"
 													/>
 												{:else}
@@ -280,7 +313,7 @@
 															content.options.forEach((opt) => {
 																opt.selected = opt.id === option.id ? checked : false
 															})
-															input.update()
+															input.update_now()
 														}}
 														id="selected_{index}"
 													/>
@@ -310,7 +343,7 @@
 						if (!input.custom_name) {
 							content.name = content.label
 						}
-						input.update()
+						input.debounced_update()
 					}}
 					id="label"
 				/>
@@ -319,7 +352,7 @@
 				<Label for="type">Type</Label>
 				<select
 					class="rounded outline-none focus-visible:border-ring border-input border bg-input-background min-h-11.5"
-					onchange={input.update}
+					onchange={input.update_now}
 					bind:value={content.type}
 					id="type"
 				>

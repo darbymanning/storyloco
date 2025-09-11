@@ -12,6 +12,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **🔗 Link** - Link editor with support for internal, external, email, and asset links
 - **🏗️ Plans** - Floor plan manager with drag-and-drop sorting for types, floors, dimensions, and rooms
 - **📝 Input** - Comprehensive form input field with support for all HTML input types, checkboxes, radio buttons, selects, and textareas
+- **⏰ Time** - Simple time input field with step control
 
 ### Vite Plugins
 

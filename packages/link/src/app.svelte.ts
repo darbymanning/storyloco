@@ -187,19 +187,39 @@ export class LinkManager {
 	get_content_types = async (): Promise<Set<string>> => {
 		if (!this.plugin || !this.token) throw new Error('Plugin not loaded')
 
-		const url = new URL('https://api.storyblok.com/v2/cdn/stories')
+		const base_url = new URL('https://api.storyblok.com/v2/cdn/stories')
 
-		url.searchParams.set('token', this.token)
-		url.searchParams.set('per_page', '-1')
-		url.searchParams.set('version', 'draft')
-		url.searchParams.set('cv', Date.now().toString())
+		base_url.searchParams.set('token', this.token)
+		base_url.searchParams.set('per_page', '100')
+		base_url.searchParams.set('version', 'draft')
+		base_url.searchParams.set('cv', Date.now().toString())
 
-		const result = await fetch(url.toString())
-		const data = (await result.json()) as ISbStories['data']
+		const components = new Set<string>()
+		let page = 1
+		let total = Infinity
+		let fetched = 0
 
-		return new Set(
-			data.stories.map((story) => story.content.component).filter(Boolean) as Array<string>
-		)
+		while (fetched < total) {
+			const url = new URL(base_url)
+			url.searchParams.set('page', page.toString())
+
+			const result = await fetch(url.toString())
+			const data = (await result.json()) as ISbStories['data']
+
+			// update totals
+			total = Number(result.headers.get('total') || 0)
+			fetched += data.stories.length
+
+			for (const story of data.stories) {
+				const component = story.content.component as string | undefined
+				if (component) components.add(component)
+			}
+
+			if (data.stories.length === 0) break
+			page += 1
+		}
+
+		return components
 	}
 
 	update_email = () => {

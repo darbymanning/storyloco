@@ -1,4 +1,4 @@
-import { UUID } from 'crypto'
+import type { UUID } from 'crypto'
 
 const types = [
 	'text',
@@ -58,6 +58,7 @@ export namespace Field {
 
 	export type Checkbox = Omit<Base, 'required' | 'disabled'> & {
 		type: 'checkbox'
+		at_least_one: boolean
 		options: Array<{
 			value: string
 			required: boolean
