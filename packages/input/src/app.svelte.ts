@@ -127,6 +127,7 @@ export class InputManager {
 		// ensure required is not present for checkbox
 		if (this.content.type === 'checkbox') {
 			if ('required' in this.content) delete this.content.required
+			this.content.at_least_one = this.content.at_least_one ??= false
 		} else {
 			// ensure at_least_one is not present for all other types
 			if ('at_least_one' in this.content) delete this.content.at_least_one
