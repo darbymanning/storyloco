@@ -18,7 +18,7 @@
 				{#each ticketsource.events as event (event.id)}
 					{#if !event.attributes.archived && event.attributes.activated}
 						<option value={event.id}>
-							{event.attributes.name}
+							{@html event.attributes.name}
 							{#if event.count && event.count > 1}
 								({event.count} dates)
 							{/if}

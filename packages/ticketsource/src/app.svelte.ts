@@ -2,7 +2,7 @@ import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-pl
 import type { Ticketsource } from '../types.js'
 import ky from 'ky'
 import { format_date } from 'kitto'
-import type { TicketsauceEvent } from 'moxyloco/ticketsauce-types'
+import type { TicketsauceEvent, ListEventsResponse } from 'moxyloco/ticketsauce-types'
 
 type Plugin = FieldPluginResponse<Ticketsource | null>
 
@@ -10,6 +10,7 @@ export class TicketSourceManager {
 	plugin = $state<Plugin | null>(null)
 	content = $state<Ticketsource>({ event: '', dates: [] })
 	events = $state<Array<TicketsauceEvent> | null>(null)
+	#loading_events = $state(false)
 	#api = $derived.by(() => {
 		if (this.plugin?.type !== 'loaded') return null
 		const secret = this.plugin.data.options.MOXY_TICKETSOURCE_SECRET_ID
@@ -20,17 +21,18 @@ export class TicketSourceManager {
 		}
 
 		return ky.create({
-			prefixUrl: 'https://moxy.uilo.co/api',
+			// prefixUrl: 'https://moxy.uilo.co/api',
+			prefixUrl: 'http://localhost:5173/api',
 			headers: {
 				Authorization: `Bearer ${secret}`,
 			},
 		})
 	})
-	loading = $derived(this.events?.length === 0)
+	loading = $derived(this.#loading_events || this.events === null)
 
 	constructor() {
 		$effect(() => {
-			if (this.#api && !this.events) this.get_events()
+			if (this.#api && !this.events && !this.#loading_events) this.get_events()
 		})
 
 		this.initialize_plugin()
@@ -38,12 +40,30 @@ export class TicketSourceManager {
 
 	get_events = async () => {
 		if (!this.#api) throw new Error('API not initialized')
+		if (this.#loading_events) return
 
-		const response = await this.#api.get('ticketsauce').json<Array<TicketsauceEvent>>()
+		this.#loading_events = true
 
-		this.events = response
+		try {
+			const all_events: Array<TicketsauceEvent> = []
+			let page = 1
+			let has_more = true
 
-		return response
+			while (has_more) {
+				const response = await this.#api
+					.get(`ticketsauce?page=${page}`)
+					.json<ListEventsResponse<Array<TicketsauceEvent>>>()
+
+				all_events.push(...response.data)
+				has_more = response.meta.has_next
+				page++
+			}
+
+			this.events = all_events
+			return all_events
+		} finally {
+			this.#loading_events = false
+		}
 	}
 
 	private initialize_plugin() {
