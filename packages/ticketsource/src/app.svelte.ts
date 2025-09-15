@@ -21,8 +21,7 @@ export class TicketSourceManager {
 		}
 
 		return ky.create({
-			// prefixUrl: 'https://moxy.uilo.co/api',
-			prefixUrl: 'http://localhost:5173/api',
+			prefixUrl: 'https://moxy.uilo.co/api',
 			headers: {
 				Authorization: `Bearer ${secret}`,
 			},
