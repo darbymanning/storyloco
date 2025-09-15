@@ -109,6 +109,13 @@ export class InputManager {
 				const incoming_content = state.data?.content
 				if (!incoming_content) return
 
+            // populate unlocked_values set with any option where the `value` and `label` are not identical
+            if (this.has_options(incoming_content)) {
+               for (const option of incoming_content.options) {
+                  if (option.value !== option.label) this.unlocked_values.add(option.id)
+               }
+            }
+
 				// merge the incoming content instead of replacing it entirely
 				// this preserves object references for dnd
 				merge(this.content, incoming_content)
