@@ -50,13 +50,22 @@ export class TicketSourceManager {
 			let has_more = true
 
 			while (has_more) {
-				const response = await this.#api
-					.get(`ticketsauce?page=${page}`)
-					.json<ListEventsResponse<Array<TicketsauceEvent>>>()
+				try {
+					const response = await this.#api
+						.get(`ticketsauce?page=${page}`)
+						.json<ListEventsResponse<Array<TicketsauceEvent>>>()
 
-				all_events.push(...response.data)
-				has_more = response.meta.has_next
-				page++
+					all_events.push(...response.data)
+					has_more = response.meta.has_next
+					page++
+				} catch (error: any) {
+					// if we get a 401, stop retrying - auth is fucked
+					if (error?.response?.status === 401) {
+						console.error('ticketsauce api returned 401 - stopping pagination')
+						break
+					}
+					throw error
+				}
 			}
 
 			this.events = all_events
