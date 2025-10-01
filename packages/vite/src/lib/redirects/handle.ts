@@ -1,8 +1,5 @@
 import type { Handle } from "@sveltejs/kit"
 import { match, compile } from "path-to-regexp"
-import { access, readFile } from "node:fs/promises"
-import { join } from "node:path"
-import { cwd } from "node:process"
 import { Logger } from "../shared/logger.js"
 
 const name = "vite-storyblok-redirects"
@@ -14,19 +11,15 @@ let redirects_map: Map<string, string> | null = null
 async function load_redirects_map(): Promise<Map<string, string>> {
 	if (redirects_map) return redirects_map
 
-	// Try to find and import the redirects file from the project root. Allow some time
-	// for the Vite plugin to generate it on first boot.
-	const project_root = cwd()
-	const redirects_file_json = join(project_root, ".svelte-kit", "storyblok", "redirects.build.json")
-
 	try {
-		await access(redirects_file_json)
-		const content = await readFile(redirects_file_json, "utf-8")
-		const entries = JSON.parse(content) as Array<[string, string]>
-		redirects_map = new Map(entries)
+		// import from virtual module
+		// @ts-expect-error - virtual module resolved at runtime by vite plugin
+		const module = await import("virtual:storyblok-redirects")
+		const redirects = (module as { redirects: Array<[string, string]> }).redirects
+		redirects_map = new Map(redirects)
 		return redirects_map
 	} catch (err) {
-		logger.warn(`Redirects file not found, using empty redirects map`)
+		logger.warn(`Failed to load redirects from virtual module, using empty redirects map`)
 		logger.warn(String(err))
 		redirects_map = new Map()
 		return redirects_map

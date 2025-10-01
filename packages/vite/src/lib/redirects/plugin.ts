@@ -1,6 +1,4 @@
 import { type Plugin, loadEnv } from "vite"
-import { writeFile, readFile, access, constants } from "node:fs/promises"
-import path from "node:path"
 import { Logger } from "../shared/logger.js"
 
 const name = "vite-storyblok-redirects"
@@ -129,95 +127,61 @@ export default function redirects({
 	datasource = "redirects",
 	public_storyblok_access_token,
 }: Options = {}): Plugin {
+	let redirects_data: Array<[string, string]> = []
+
 	return {
 		name,
-		async configureServer() {
-			let last_written = ""
-
-			function normalize_content(content: string): string {
-				const without_header = content.replace(/^\/\*\*[\s\S]*?\*\/\n+/, "")
-				return without_header.replace(/\r\n/g, "\n").trim()
-			}
-
-			const run = async () => {
+		resolveId(id) {
+			if (id === "virtual:storyblok-redirects") return id
+		},
+		async load(id) {
+			if (id === "virtual:storyblok-redirects") {
 				try {
 					const { datasource_entries } = await get_redirects(
 						datasource,
 						public_storyblok_access_token
 					)
-					const output_dir = path.resolve(".svelte-kit", "storyblok")
-					const output_json = path.join(output_dir, "redirects.build.json")
-					const entries = Array.from(
+					redirects_data = Array.from(
 						new Map(
 							datasource_entries
 								.filter((e) => Boolean(e?.name) && Boolean(e?.value))
 								.map((e) => [e.name, e.value] as [string, string])
 						).entries()
 					)
-					const entries_json = JSON.stringify(entries, null, 2)
 
-					const current_norm = normalize_content(entries_json)
-					if (current_norm !== last_written) {
-						logger.start("Generating redirects")
-						// ensure directory exists
-						await (await import("node:fs/promises")).mkdir(output_dir, { recursive: true })
-						await writeFile(output_json, entries_json)
-						last_written = current_norm
-						logger.succeed("Redirects JSON generated")
-					}
+					logger.start("Generating redirects")
+					logger.succeed("Redirects virtual module generated")
+
+					return `export const redirects = ${JSON.stringify(redirects_data, null, 2)}`
 				} catch (err) {
 					const message =
 						err instanceof Error && typeof err.message === "string" ? err.message : "Unknown error"
 					logger.fail(`Error generating redirects: ${message}`)
+					return `export const redirects = []`
 				}
 			}
-
-			await run()
 		},
 		async buildStart() {
-			function normalize_content(content: string): string {
-				const without_header = content.replace(/^\/\*\*[\s\S]*?\*\/\n+/, "")
-				return without_header.replace(/\r\n/g, "\n").trim()
-			}
-
+			// preload redirects for build
 			try {
 				const { datasource_entries } = await get_redirects(
 					datasource,
 					public_storyblok_access_token
 				)
-				const output_dir = path.resolve(".svelte-kit", "storyblok")
-				const output_json = path.join(output_dir, "redirects.build.json")
-
-				let previous = ""
-				try {
-					await access(output_json, constants.F_OK)
-					previous = await readFile(output_json, "utf8")
-				} catch {
-					// file doesn't exist, that's fine
-				}
-				const entries = Array.from(
+				redirects_data = Array.from(
 					new Map(
 						datasource_entries
 							.filter((e) => Boolean(e?.name) && Boolean(e?.value))
 							.map((e) => [e.name, e.value] as [string, string])
 					).entries()
 				)
-				const entries_json = JSON.stringify(entries, null, 2)
-
-				const previous_norm = normalize_content(previous)
-				const current_norm = normalize_content(entries_json)
-				if (previous_norm !== current_norm) {
-					logger.start("Generating redirects")
-					await (await import("node:fs/promises")).mkdir(output_dir, { recursive: true })
-					await writeFile(output_json, entries_json)
-					logger.succeed("Redirects JSON generated")
-				}
+				logger.start("Generating redirects")
+				logger.succeed("Redirects virtual module generated")
 			} catch (err) {
 				const message =
 					err instanceof Error && typeof err.message === "string" ? err.message : "Unknown error"
 				logger.fail(`Error generating redirects: ${message}`)
 			}
 		},
-		closeBundle() {},
 	}
 }

@@ -19,3 +19,8 @@ declare module 'vue-draggable-resizable' {
 
 declare const __DEV_PLAYGROUND__: boolean
 declare const __DEV_OVERRIDE_NAME__: string | undefined
+
+// virtual module for storyblok redirects
+declare module 'virtual:storyblok-redirects' {
+	export const redirects: Array<[string, string]>
+}
