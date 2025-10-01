@@ -165,12 +165,12 @@ export default function schema({
 					const here = (str: string) =>
 						process.env.SCHEMA_DEV
 							? path.join("src/lib/schema", str)
-							: path.join("node_modules/storyloco/packages/vite/dist", str)
+							: path.join("node_modules/storyloco/packages/vite/dist/schema", str)
 
 					// Generate types
 					logger.start("Generating TypeScript definitions...")
 					await $`chmod u+w ${schema_ts_file}`.quiet().nothrow()
-					await $`${x} storyblok@4.6.6 ts generate -s ${storyblok_space_id} -p .svelte-kit/storyblok --compiler-options ${here("compiler_options.js")} --custom-fields-parser ${here("custom_fields_parser.js")} --strict`.quiet()
+					await $`${x} storyblok@4.6.6 ts generate -s ${storyblok_space_id} -p .svelte-kit/storyblok --compiler-options ${here("compiler_options.js")} --custom-fields-parser ${here("custom_fields_parser.js")} --strict`
 
 					logger.succeed("TypeScript definitions generated.")
 
