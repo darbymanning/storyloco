@@ -1,6 +1,6 @@
 {
    "name": "storyloco",
-   "version": "1.13.4",
+   "version": "1.13.5",
    "description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
    "keywords": [
       "storyblok",
@@ -67,6 +67,10 @@
       "./vite": {
          "types": "./packages/vite/dist/index.d.ts",
          "import": "./packages/vite/dist/index.js"
+      },
+      "./hooks": {
+         "types": "./packages/vite/dist/hooks.d.ts",
+         "import": "./packages/vite/dist/hooks.js"
       },
       "./time": {
          "types": "./packages/time/types.ts",
