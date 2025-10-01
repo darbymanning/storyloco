@@ -4,7 +4,7 @@ import path from "node:path"
 import { Logger } from "../shared/logger.js"
 
 const name = "vite-storyblok-redirects"
-export const logger = new Logger(name)
+const logger = new Logger(name)
 
 interface RedirectEntry {
 	id: number

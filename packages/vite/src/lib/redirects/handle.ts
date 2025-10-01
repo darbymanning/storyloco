@@ -3,7 +3,10 @@ import { match, compile } from "path-to-regexp"
 import { access, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { cwd } from "node:process"
-import { logger } from "./plugin.js"
+import { Logger } from "../shared/logger.js"
+
+const name = "vite-storyblok-redirects"
+const logger = new Logger(name)
 
 // Lazy load the redirects map to avoid import errors during dev
 let redirects_map: Map<string, string> | null = null
