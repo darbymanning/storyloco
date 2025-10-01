@@ -1,7 +1,8 @@
 import devtools from "vite-plugin-devtools-json"
 import { sveltekit } from "@sveltejs/kit/vite"
 import { defineConfig } from "vite"
-import storyblok_schema from "./src/lib/schema.plugin.js"
+import schema from "./src/lib/schema/plugin.js"
+import redirects from "./src/lib/redirects/plugin.js"
 
 export interface StoryblokCustomPlugins {
 	"mux-video": { foo: "bar" }
@@ -9,5 +10,5 @@ export interface StoryblokCustomPlugins {
 }
 
 export default defineConfig({
-	plugins: [sveltekit(), devtools(), storyblok_schema()],
+	plugins: [sveltekit(), devtools(), schema(), redirects({ datasource: "301s" })],
 })

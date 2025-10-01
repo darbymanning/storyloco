@@ -17,6 +17,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 ### Vite Plugins
 
 - **📋 Storyblok Schema** - Automatically generate TypeScript types from your Storyblok components
+- **🔄 Storyblok Redirects** - Generate and handle redirects from Storyblok datasource entries
 
 ### Shared Components
 
@@ -63,11 +64,11 @@ Automatically generate TypeScript types from your Storyblok components during de
 
 ```typescript
 // vite.config.ts
-import { storyblok_schema } from 'storyloco/vite'
+import { schema } from 'storyloco/vite'
 
 export default defineConfig({
 	plugins: [
-		storyblok_schema({
+		schema({
 			output_path: 'src/lib/storyblok',
 			interval_ms: 60000 // regenerate every minute
 		})
@@ -89,6 +90,45 @@ The plugin will:
 - Format the output with Prettier
 - Lock the generated file to prevent manual edits
 - Regenerate automatically when components change
+
+#### Storyblok Redirects Plugin
+
+Generate and handle redirects from Storyblok datasource entries:
+
+```typescript
+// vite.config.ts
+import { redirects } from 'storyloco/vite'
+
+export default defineConfig({
+	plugins: [
+		redirects({
+			datasource: 'redirects',
+			public_storyblok_access_token: 'your-token'
+		})
+	]
+})
+```
+
+**Options:**
+
+- `datasource` - The Storyblok datasource name (defaults to 'redirects')
+- `public_storyblok_access_token` - Your public access token (defaults to `PUBLIC_STORYBLOK_ACCESS_TOKEN` env var)
+
+**SvelteKit Integration:**
+
+```typescript
+// src/hooks.server.ts
+import { handle_redirects } from 'storyloco/vite'
+
+export const handle = handle_redirects
+```
+
+The plugin will:
+
+- Fetch redirect entries from your Storyblok datasource
+- Generate a redirects map during build
+- Support exact matches and wildcard patterns
+- Handle both internal and external redirects
 
 ## 🔧 Development
 

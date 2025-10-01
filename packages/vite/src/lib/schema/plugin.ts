@@ -1,17 +1,13 @@
 import { type Plugin, loadEnv } from "vite"
 import { writeFile, readFile, access, constants, mkdir } from "node:fs/promises"
 import path from "node:path"
-import { $ } from "./shell.js"
-import exec from "./x.js"
-import ora from "ora"
-import chalk from "chalk"
+import { $ } from "../shared/shell.js"
+import exec from "../shared/x.js"
+import { Logger } from "../shared/logger.js"
 import * as prettier from "prettier"
 
 const name = "vite-storyblok-schema"
-
-const logger = ora({
-	prefixText: chalk.yellow(`[${name}]`),
-})
+const logger = new Logger(name)
 
 interface Options {
 	storyblok_personal_access_token?: string
@@ -35,19 +31,19 @@ interface Options {
  *
  * @example Default configuration
  * ```ts title=vite.config.ts
- * import { storyblok_schema } from 'kitto/vite'
+ * import { schema } from 'kitto/vite'
  *
  * export default defineConfig({
- *   plugins: [storyblok_schema()]
+ *   plugins: [schema()]
  * })
  * ```
  *
  * @example Custom output path
  * ```ts title=vite.config.ts
- * import { storyblok_schema } from 'kitto/vite'
+ * import { schema } from 'kitto/vite'
  *
  * export default defineConfig({
- *   plugins: [storyblok_schema({
+ *   plugins: [schema({
  *     output_path: 'src/lib/storyblok'
  *   })]
  * })
@@ -55,20 +51,20 @@ interface Options {
  *
  * @example Custom filename
  * ```ts title=vite.config.ts
- * import { storyblok_schema } from 'kitto/vite'
+ * import { schema } from 'kitto/vite'
  *
  * export default defineConfig({
- *   plugins: [storyblok_schema({
+ *   plugins: [schema({
  *     filename: 'storyblok-types.ts'
  *   })]
  * })
  *
  * @example Custom interval
  * ```ts title=vite.config.ts
- * import { storyblok_schema } from 'kitto/vite'
+ * import { schema } from 'kitto/vite'
  *
  * export default defineConfig({
- *   plugins: [storyblok_schema({
+ *   plugins: [schema({
  *     interval_ms: 10000 // 10 seconds
  *   })]
  * })
@@ -76,7 +72,7 @@ interface Options {
  *
  * @example Field plugin type definitions
  * ```ts title=vite.config.ts
- * import { storyblok_schema } from 'kitto/vite'
+ * import { schema } from 'kitto/vite'
  *
  * export interface StoryblokCustomPlugins {
  *   "mux-video": { foo: "bar" }
@@ -84,11 +80,11 @@ interface Options {
  * }
  *
  * export default defineConfig({
- *   plugins: [storyblok_schema()]
+ *   plugins: [schema()]
  * })
  * ```
  */
-export default function storyblok_schema({
+export default function schema({
 	output_path,
 	interval_ms,
 	storyblok_personal_access_token,
@@ -168,7 +164,7 @@ export default function storyblok_schema({
 
 					const here = (str: string) =>
 						process.env.SCHEMA_DEV
-							? path.join("src/lib", str)
+							? path.join("src/lib/schema", str)
 							: path.join("node_modules/storyloco/packages/vite/dist", str)
 
 					// Generate types
@@ -236,7 +232,7 @@ import type { ISbStoryData } from '@storyblok/js';`,
 					// Lock the file
 					await $`chmod a-w ${schema_ts_file}`.quiet()
 					logger.succeed(
-						`Storyblok component types generated successfully to ${chalk.magenta(schema_ts_file)}`
+						`Storyblok component types generated successfully to ${Logger.color.magenta(schema_ts_file)}`
 					)
 				} catch (err) {
 					const message = err instanceof Error ? err.message : "An unknown error occurred."
