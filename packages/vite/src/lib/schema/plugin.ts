@@ -170,7 +170,7 @@ export default function schema({
 					// Generate types
 					logger.start("Generating TypeScript definitions...")
 					await $`chmod u+w ${schema_ts_file}`.quiet().nothrow()
-					await $`${x} storyblok@4.6.6 ts generate -s ${storyblok_space_id} -p .svelte-kit/storyblok --compiler-options ${here("compiler_options.js")} --custom-fields-parser ${here("custom_fields_parser.js")} --strict`
+					await $`${x} storyblok@4.6.6 ts generate -s ${storyblok_space_id} -p .svelte-kit/storyblok --compiler-options ${here("compiler_options.js")} --custom-fields-parser ${here("custom_fields_parser.js")} --strict`.quiet()
 
 					logger.succeed("TypeScript definitions generated.")
 
