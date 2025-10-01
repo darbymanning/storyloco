@@ -1,6 +1,23 @@
 import type { Handle } from "@sveltejs/kit"
-import { redirects_map } from "../../../.svelte-kit/storyblok/redirects.build.js"
 import { match, compile } from "path-to-regexp"
+
+// Lazy load the redirects map to avoid import errors during dev
+let redirects_map: Map<string, string> | null = null
+
+async function load_redirects_map(): Promise<Map<string, string>> {
+	if (redirects_map) return redirects_map
+
+	try {
+		const { redirects_map: map } = await import("../../../.svelte-kit/storyblok/redirects.build.js")
+		redirects_map = map
+		return map
+	} catch (error) {
+		// During dev or if file doesn't exist yet, return empty map
+		console.warn("Redirects file not found, using empty redirects map")
+		redirects_map = new Map()
+		return redirects_map
+	}
+}
 
 /**
  * Resolve a pathname to a redirect target using a generated redirects map.
@@ -42,26 +59,38 @@ function to_dst_pattern(glob: string): string {
 }
 
 /** Precompiled wildcard rules generated from the redirects map. */
-const wildcard_rules: Array<{
+let wildcard_rules: Array<{
 	matcher: ReturnType<typeof match>
 	builder: ReturnType<typeof compile>
 }> = []
 
 /** Exact redirect lookups, with and without leading slash variants. */
-const exact_map: Map<string, string> = new Map()
+let exact_map: Map<string, string> = new Map()
 
-for (const [key, value] of redirects_map.entries()) {
-	if (key.includes("*")) {
-		const src_pattern = to_src_pattern(key)
-		const dst_pattern = to_dst_pattern(value)
-		wildcard_rules.push({
-			matcher: match(src_pattern, { decode: decodeURIComponent, end: true }),
-			builder: compile(dst_pattern, { encode: (x) => x }),
-		})
-	} else {
-		exact_map.set(normalize_path(key), value)
-		exact_map.set(key.startsWith("/") ? key.slice(1) : key, value)
+let rules_initialized = false
+
+async function initialize_rules() {
+	if (rules_initialized) return
+
+	const map = await load_redirects_map()
+	wildcard_rules = []
+	exact_map = new Map()
+
+	for (const [key, value] of map.entries()) {
+		if (key.includes("*")) {
+			const src_pattern = to_src_pattern(key)
+			const dst_pattern = to_dst_pattern(value)
+			wildcard_rules.push({
+				matcher: match(src_pattern, { decode: decodeURIComponent, end: true }),
+				builder: compile(dst_pattern, { encode: (x) => x }),
+			})
+		} else {
+			exact_map.set(normalize_path(key), value)
+			exact_map.set(key.startsWith("/") ? key.slice(1) : key, value)
+		}
 	}
+
+	rules_initialized = true
 }
 
 /**
@@ -70,7 +99,8 @@ for (const [key, value] of redirects_map.entries()) {
  * Returns a normalised absolute path ('/…') if a redirect applies, else null.
  * Self-redirects are ignored.
  */
-function resolve_redirect(url: URL): string | null {
+async function resolve_redirect(url: URL): Promise<string | null> {
+	await initialize_rules()
 	try {
 		const source = normalize_path(url.pathname + (url.search || ""))
 		const source_plain = source.includes("?") ? (source.split("?")[0] as Pathname) : source
@@ -106,7 +136,7 @@ function resolve_redirect(url: URL): string | null {
 }
 
 export const handle_redirects: Handle = async ({ event, resolve }) => {
-	const target = resolve_redirect(event.url)
+	const target = await resolve_redirect(event.url)
 	if (!target) return await resolve(event)
 	return new Response(null, { status: 308, headers: { Location: target } })
 }

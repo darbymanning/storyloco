@@ -27,4 +27,8 @@ export class Logger {
 	fail(message: string) {
 		this.spinner.fail(message)
 	}
+
+	warn(message: string) {
+		this.spinner.warn(message)
+	}
 }

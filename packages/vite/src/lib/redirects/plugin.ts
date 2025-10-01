@@ -4,7 +4,7 @@ import path from "node:path"
 import { Logger } from "../shared/logger.js"
 import * as prettier from "prettier"
 
-const name = "vite-redirects"
+const name = "vite-storyblok-redirects"
 const logger = new Logger(name)
 
 interface RedirectEntry {
