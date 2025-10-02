@@ -63,8 +63,8 @@ export class StoryblokClient {
 
 	/** Storyblok access token for API authentication */
 	#access_token: string
-	/** Map of component categories to their import functions */
-	#component_maps: Record<string, Record<string, Import>>
+	/** Map of component import functions */
+	#component_imports: Record<string, Import>
 
 	// API method declarations - these are assigned during initialization
 	/** Fetch a single story or collection of stories */
@@ -83,11 +83,15 @@ export class StoryblokClient {
 	/**
 	 * Create a new StoryblokClient instance
 	 * @param access_token - Your Storyblok access token
-	 * @param component_maps - Map of component categories to their import functions
+	 * @param component_imports - Map of component paths to their import functions
 	 */
-	constructor(access_token: string, component_maps: Record<string, Record<string, Import>>) {
+	constructor(
+		access_token: string,
+		component_imports: Record<string, Import> = import.meta.glob("$lib/blocks/*.svelte")
+	) {
 		this.#access_token = access_token
-		this.#component_maps = component_maps
+		this.#component_imports = component_imports
+		this.init()
 	}
 
 	/**
@@ -97,14 +101,12 @@ export class StoryblokClient {
 	async init() {
 		if (this.#initialized) return
 
-		// Load all components from the provided maps
-		for (const [_map_name, imports] of Object.entries(this.#component_maps)) {
-			for (const [path, import_fn] of Object.entries(imports)) {
-				const name = path.split("/").pop()?.replace(".svelte", "") ?? ""
-				if (name) {
-					const component = (await import_fn()) as { default: Component }
-					this.components.set(name, component.default)
-				}
+		// Load all components from the provided imports
+		for (const [path, fn] of Object.entries(this.#component_imports)) {
+			const name = path.split("/").pop()?.replace(".svelte", "") ?? ""
+			if (name) {
+				const component = (await fn()) as { default: Component }
+				this.components.set(name, component.default)
 			}
 		}
 
