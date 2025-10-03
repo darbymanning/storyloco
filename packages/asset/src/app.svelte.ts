@@ -150,20 +150,17 @@ export class AssetManager {
 		this.plugin.actions.setContent(state)
 	}
 
-	set_video = (video: MuxAsset | null) => {
-		if (!video) {
+	set_asset = (asset: Asset | null) => {
+		if (!asset) {
 			this.content = null
 			this.update()
 			return
 		}
-		const playback_id = video.playback_ids?.[0]?.id
+
+		console.log('clicked', asset)
 		this.content = {
 			...this.content,
-			playback_id,
-			title: video.meta?.title,
-			m3u8_url: playback_id ? `https://stream.mux.com/${playback_id}.m3u8` : undefined,
-			poster: this.get_poster(video),
-			mux_video: video,
+			...asset.Metadata,
 		}
 		this.update()
 		this.plugin?.actions?.setModalOpen(false)
@@ -174,14 +171,23 @@ export class AssetManager {
 		this.assets = (await this.r2.get<R2List>(this.#secrets.r2_bucket).json()).Contents
 	}
 
-	delete = async (id: string) => {
-		if (this.plugin?.type !== 'loaded' || !this.plugin.data.options.MOXY_MUX_SECRET_ID || !this.mux)
-			throw new Error('Mux not initialised')
-		const confirm = window.confirm('Are you sure you want to delete this video?')
+	delete = async (asset: Asset) => {
+		const confirm = window.confirm('Are you sure you want to delete this asset?')
 		if (!confirm) return
-		if (this.assets?.length) this.assets = this.assets.filter((asset) => asset.Key !== id)
-		await this.mux.video.assets.delete(id)
-		if (this.content?.mux_video?.id === id) this.set_video(null)
+		if (this.assets?.length) this.assets = this.assets.filter((item) => item.Key !== asset.Key)
+
+		await this.r2.delete(this.#secrets.r2_bucket + '/' + asset.Key)
+		if (this.content?.filename === asset.Key) this.set_asset(null)
+		await this.list()
+	}
+
+	delete_multiple = async (assets: Asset[]) => {
+		const confirm = window.confirm('Are you sure you want to delete these assets?')
+		if (!confirm) return
+		if (this.assets?.length) this.assets = this.assets.filter((item) => !assets.includes(item.Key))
+
+		await this.r2.delete(this.#secrets.r2_bucket, { json: assets.map((e) => e.Key) })
+		if (assets.some((e) => e.Key === this.content.filename)) this.set_asset(null)
 		await this.list()
 	}
 
