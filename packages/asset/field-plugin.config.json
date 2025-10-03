@@ -1,0 +1,12 @@
+{
+   "options": [
+      {
+         "name": "MOXY_R2_SECRET_ID",
+         "value": "20313cf5-2f52-4520-879c-9fce2f9293c3"
+      },
+      {
+         "name": "R2_BUCKET",
+         "value": "bedales"
+      }
+   ]
+}
