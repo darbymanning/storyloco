@@ -18,6 +18,7 @@
 		ChevronDownIcon,
 		ChevronLeftIcon,
 		ChevronRightIcon,
+		XIcon,
 	} from '@lucide/svelte'
 	import { cn } from 'shared/utils'
 	import { Input, Label, Skeleton as SkeletonComponent, Switch, Checkbox } from 'shared'
@@ -64,6 +65,7 @@
 	let back = $state(false)
 	let selected = $state([])
 	let folders = $state([])
+	let folder_modal = $state(false)
 
 	function set_focus(e: MouseEvent) {
 		manager.content.focus = `${e.offsetX}x${e.offsetY}:${e.offsetX + 1}x${e.offsetY + 1}`
@@ -147,11 +149,12 @@
 
 {#if loaded}
 	{#if manager.is_modal_open && !manager.open_item}
-		<div class="grid grid-cols-5 px-16 gap-x-12">
+		<div class="grid grid-cols-5 grid-rows-[auto_1fr_auto] px-16 gap-x-12 h-full">
 			<header class="flex items-center gap-4 pb-4 pt-8 col-span-5">
 				<div class="text-2xl font-medium mr-auto">Assets+</div>
 				<button
 					class="bg-secondary border border-white/10 rounded-lg px-4 py-2 relative flex gap-2 items-center"
+					onclick={() => (folder_modal = true)}
 				>
 					<FolderIcon size={18} />
 					Create folder
@@ -179,7 +182,7 @@
 				<div class="flex flex-col">
 					{#each Array(6), i}
 						<div
-							class="flex items-center gap-2 py-2 pl-2 hover:bg-zinc-600 rounded-md"
+							class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
 							class:pl-8={i !== 5}
 						>
 							{#if i === 5}
@@ -187,7 +190,7 @@
 									<ChevronDownIcon size={18} class={cn({ 'rotate-270': !folders[i] })} />
 								</button>
 							{/if}
-							<button class="flex items-center gap-3">
+							<button class="flex items-center gap-3 w-full py-2">
 								<FolderIcon size={18} strokeWidth={1.5} />
 								Folder {i + 1}
 							</button>
@@ -375,6 +378,75 @@
 				<button class="p-3 border-l-[0.5px] border-white/50"><ChevronRightIcon size={18} /></button>
 			</footer>
 		</div>
+		{#if folder_modal}
+			<button
+				class="fixed inset-0 bg-white/10 z-10"
+				onclick={() => (folder_modal = false)}
+				aria-label="Close modal"
+				transition:fade
+			></button>
+			<div
+				class="flex flex-col gap-4 fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-800 z-20 rounded-lg border border-white/10 p-8 min-w-[600px] shadow-xl"
+				transition:fly={{ y: 20 }}
+			>
+				<div class="flex justify-between gap-4">
+					<h2 class="text-xl font-medium">Create New Folder</h2>
+					<button class="" onclick={() => (folder_modal = false)}>
+						<XIcon size={18} />
+					</button>
+				</div>
+				<div class="flex flex-col gap-4 pb-8">
+					<label class="flex flex-col gap-2">
+						New name
+						<Input
+							class="w-full rounded-lg border border-white"
+							placeholder="e.g. Icons, Videos, Landing pages"
+						/>
+					</label>
+					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
+					<div>
+						{#each Array(6), i}
+							<div
+								class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
+								class:pl-8={i !== 5}
+							>
+								{#if i === 5}
+									<button onclick={() => (folders[i] = !folders[i])}>
+										<ChevronDownIcon size={18} class={cn({ 'rotate-270': !folders[i] })} />
+									</button>
+								{/if}
+								<button class="flex items-center gap-3 w-full py-2">
+									<FolderIcon size={18} strokeWidth={1.5} />
+									Folder {i + 1}
+								</button>
+							</div>
+							{#if i === 5 && folders[i]}
+								<div class="flex flex-col" transition:slide>
+									{#each Array(3), i}
+										<button
+											class="w-full flex items-center gap-3 py-2 hover:bg-zinc-600 rounded-md pl-12"
+										>
+											<FolderIcon size={18} strokeWidth={1.5} />
+											Folder {i + 1}
+										</button>
+									{/each}
+								</div>
+							{/if}
+						{/each}
+					</div>
+				</div>
+				<div class="flex gap-4 justify-end bg-white/5 rounded-b-lg px-8 py-4 -m-8">
+					<button
+						class="bg-secondary border border-white/10 rounded-lg px-6 py-2 relative flex gap-2 items-center"
+						>Cancel</button
+					>
+					<button
+						class="bg-primary text-primary-foreground border border-primary rounded-lg px-6 py-2 relative flex gap-2 items-center"
+						>Create</button
+					>
+				</div>
+			</div>
+		{/if}
 	{:else if manager.open_item}
 		<div class="grid grid-cols-12 h-full">
 			<div class="p-8 col-span-8 flex flex-col gap-8 overflow-y-auto">
