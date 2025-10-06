@@ -67,6 +67,7 @@
 	let folder_modal = $state(false)
 	let folder_name = $state('')
 	let loading = $state(false)
+	let page = $state(1)
 
 	function set_focus(e: MouseEvent) {
 		manager.content.focus = e
@@ -76,8 +77,11 @@
 	}
 
 	async function upload(e) {
-		const res = await manager.upload(e.target.files[0])
-		if (res === true) manager.list()
+		const res = await manager.upload(e.target.files)
+		if (res === true) {
+			manager.list()
+			e.target.files = []
+		}
 	}
 </script>
 
@@ -157,7 +161,7 @@
 				>
 					<CloudUploadIcon size={18} />
 					Upload files
-					<input class="opacity-0 absolute inset-0" type="file" onchange={upload} />
+					<input class="opacity-0 absolute inset-0" type="file" multiple onchange={upload} />
 				</div>
 			</header>
 
@@ -170,26 +174,27 @@
 					<TrashIcon size={18} />
 					Deleted Assets
 				</button>
-				<div class="">Folders</div>
-				<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
-				<div class="flex flex-col">
-					{#each manager.folders as folder, i}
-						<div
-							class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
-							class:pl-8={i !== 5}
-						>
-							{#if i === 5}
-								<button onclick={() => (folders[i] = !folders[i])}>
-									<ChevronDownIcon size={18} class={cn({ 'rotate-270': !folders[i] })} />
+				{#if manager.folders.length}
+					<div class="">Folders</div>
+					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
+					<div class="flex flex-col">
+						{#each manager.folders as folder, i}
+							<div
+								class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
+								class:pl-8={i !== 5}
+							>
+								{#if i === 5}
+									<button onclick={() => (folders[i] = !folders[i])}>
+										<ChevronDownIcon size={18} class={cn({ 'rotate-270': !folders[i] })} />
+									</button>
+								{/if}
+								<button class="flex items-center gap-3 w-full py-2">
+									<FolderIcon size={18} strokeWidth={1.5} />
+									{folder.attributes.name}
 								</button>
-							{/if}
-							<button class="flex items-center gap-3 w-full py-2">
-								<FolderIcon size={18} strokeWidth={1.5} />
-								{folder.attributes.name}
-							</button>
-						</div>
-						<!-- TODO: add subfolders -->
-						<!-- {#if i === 5 && folders[i]}
+							</div>
+							<!-- TODO: add subfolders -->
+							<!-- {#if i === 5 && folders[i]}
 							<div class="flex flex-col" transition:slide>
 								{#each Array(3), i}
 									<button
@@ -201,8 +206,9 @@
 								{/each}
 							</div>
 						{/if} -->
-					{/each}
-				</div>
+						{/each}
+					</div>
+				{/if}
 			</aside>
 
 			<main class="pt-4 col-span-4">
@@ -335,21 +341,33 @@
 				class="flex items-center col-start-2 col-span-4 py-1 border-t-[0.5px] border-white/50"
 			>
 				<div class="grow-1">
-					1-{manager.assets?.meta?.total} of {manager.assets?.meta?.total} items
+					1-{manager.meta?.total} of {manager.meta?.total} items
 				</div>
-				<div class="shrink-0 flex items-center gap-2 p-3 border-l-[0.5px] border-white/50">
-					{#if manager.assets?.meta?.total}
-						{@const pages = Math.floor(manager.assets.meta.total / 96)}
+				{#if manager.meta?.total > manager.limit}
+					{@const pages = Math.ceil(manager.meta.total / manager.limit)}
+					<div class="shrink-0 flex items-center gap-2 p-3 border-l-[0.5px] border-white/50">
 						<select>
 							{#each Array(pages), i}
-								<option value={i}>Page {i}</option>
+								<option value={i + 1}>Page {i + 1}</option>
 							{/each}
 						</select>
 						of {pages}
-					{/if}
-				</div>
-				<button class="p-3 border-l-[0.5px] border-white/50"><ChevronLeftIcon size={18} /></button>
-				<button class="p-3 border-l-[0.5px] border-white/50"><ChevronRightIcon size={18} /></button>
+					</div>
+					<button
+						class="p-3 border-l-[0.5px] border-white/50 disabled:pointer-events-none disabled:opacity-25"
+						disabled={page === 1}
+						onclick={() => manager.list(page - 1)}
+					>
+						<ChevronLeftIcon size={18} />
+					</button>
+					<button
+						class="p-3 border-l-[0.5px] border-white/50 disabled:pointer-events-none disabled:opacity-25"
+						disabled={page === pages}
+						onclick={() => manager.list(page + 1)}
+					>
+						<ChevronRightIcon size={18} />
+					</button>
+				{/if}
 			</footer>
 		</div>
 		{#if folder_modal}

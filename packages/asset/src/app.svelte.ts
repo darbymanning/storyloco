@@ -13,8 +13,10 @@ export class AssetManager {
 	content = $state<Asset | null>({})
 	assets = $state<Array<R2Item> | null>(null)
 	folders = $state([])
+	meta = $state()
 	open_item: null | R2Item = $state(null)
 	open_actions = $state<string | null>(null)
+	limit = 2
 	// client: ReturnType<typeof R2>
 
 	#initial = $state(true)
@@ -128,11 +130,14 @@ export class AssetManager {
 		return req?.ok
 	}
 
-	list = async () => {
+	list = async (page) => {
 		if (!this.#secrets) return
-		const res = await this.r2.get<R2List>(this.#secrets.r2_bucket).json()
+		const res = await this.r2
+			.get<R2List>(`${this.#secrets.r2_bucket}?limit=${this.limit}&page=${page || 1}`)
+			.json()
 		this.assets = res.data
 		this.folders = res.included
+		this.meta = res.meta
 	}
 
 	upload = async (body: File) => {
