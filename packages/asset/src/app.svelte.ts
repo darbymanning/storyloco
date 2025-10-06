@@ -1,60 +1,33 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
-import Mux from '@mux/mux-node'
-import type { Video, VimeoVideo } from '../types.js'
+import type { Asset } from '../types.js'
 import { format_date, format_elapse } from 'kitto'
 import ky from 'ky'
 
-export type MuxAsset = Mux.Video.Assets.Asset
+export type R2List = any
+export type R2Item = any
 
-export type R2List = {
-	$metadata: {
-		httpStatusCode: number
-		attempts: number
-		totalRetryDelay: number
-	}
-	Contents: Array<{
-		Key: string
-		LastModified: string
-		ETag: string
-		Size: number
-		StorageClass: string
-	}>
-	IsTruncated: boolean
-	KeyCount: number
-	MaxKeys: number
-	Name: string
-}
-
-export type R2Item = R2List['Contents'][number]
-
-type Plugin = FieldPluginResponse<Video | null>
+type Plugin = FieldPluginResponse<Asset | null>
 
 export class AssetManager {
 	plugin = $state<Plugin | null>(null)
-	content = $state<Video | null>({})
-	assets = $state<Array<R2List['Contents'][number]> | null>(null)
-	open_actions = $state<string | null>(null)
-	timeout = $state<NodeJS.Timeout | null>(null)
-	video_options_open = $state(false)
-	vimeo_upload_state: null | 'loading' = $state(null)
+	content = $state<Asset | null>({})
+	assets = $state<Array<R2Item> | null>(null)
+	folders = $state([])
 	open_item: null | R2Item = $state(null)
+	open_actions = $state<string | null>(null)
+	// client: ReturnType<typeof R2>
 
-	#poll: NodeJS.Timeout | null = $state(null)
 	#initial = $state(true)
 	#secrets: {
-		mux_secret: string
-		vimeo_secret?: string
 		r2_secret: string
 		r2_bucket: string
 	} | null = $derived.by(() => {
 		if (this.plugin?.type !== 'loaded') return null
 
-		const mux_secret = this.plugin.data.options.MOXY_MUX_SECRET_ID
-		const vimeo_secret = this.plugin.data.options.MOXY_VIMEO_SECRET_ID
 		const r2_secret = this.plugin.data.options.MOXY_R2_SECRET_ID
 		const r2_bucket = this.plugin.data.options.R2_BUCKET
 
-		return { mux_secret, vimeo_secret, r2_secret, r2_bucket }
+		return { r2_secret, r2_bucket }
 	})
 
 	constructor() {
@@ -73,7 +46,7 @@ export class AssetManager {
 		this.open_item = item
 		this.content = {
 			...this.content,
-			filename: `https://r2.uilo.co/${item.Key}`,
+			filename: `https://r2.uilo.co/${item.id}`,
 			meta_data: {
 				alt: this.content.alt,
 				title: this.content.title,
@@ -92,11 +65,11 @@ export class AssetManager {
 	}
 
 	private initialize_plugin() {
-		createFieldPlugin<Video | null>({
+		createFieldPlugin<Asset | null>({
 			enablePortalModal: true,
 			validateContent(content) {
 				if (typeof content !== 'object') return { content: null }
-				return { content: content as Video }
+				return { content: content as Asset }
 			},
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
@@ -104,26 +77,6 @@ export class AssetManager {
 					this.content = this.plugin.data.content
 					if (this.#initial) this.#initial = false
 				}
-			},
-		})
-	}
-
-	get mux() {
-		return new Mux({
-			baseURL: 'https://moxy.uilo.co/api/mux/',
-			tokenId: '',
-			tokenSecret: '',
-			defaultHeaders: {
-				authorization: `Bearer ${this.#secrets?.mux_secret}`,
-			},
-		})
-	}
-
-	get vimeo() {
-		return ky.create({
-			prefixUrl: 'https://moxy.uilo.co/api/vimeo/',
-			headers: {
-				authorization: `Bearer ${this.#secrets?.vimeo_secret}`,
 			},
 		})
 	}
@@ -137,12 +90,7 @@ export class AssetManager {
 		})
 	}
 
-	get_poster(video: MuxAsset) {
-		const playback_id = video.playback_ids?.[0]?.id
-		return playback_id ? `https://image.mux.com/${playback_id}/thumbnail.jpg` : undefined
-	}
-
-	update(c?: Partial<Video>) {
+	update(c?: Partial<Asset>) {
 		if (this.plugin?.type !== 'loaded') return
 		const existing_content = this.content || {}
 		const state = $state.snapshot({ ...existing_content, ...c })
@@ -157,7 +105,6 @@ export class AssetManager {
 			return
 		}
 
-		console.log('clicked', asset)
 		this.content = {
 			...this.content,
 			...asset.Metadata,
@@ -166,80 +113,53 @@ export class AssetManager {
 		this.plugin?.actions?.setModalOpen(false)
 	}
 
+	update_asset = async () => {
+		if (!this.#secrets) return
+
+		const req = await this.r2.put<R2List>(`${this.#secrets.r2_bucket}/${this.open_item.id}`, {
+			json: this.open_item.attributes,
+		})
+		return req?.ok
+	}
+
+	create_folder = async (folder) => {
+		if (!this.#secrets) return
+		const req = await this.r2.post<R2List>(`${this.#secrets.r2_bucket}/${folder}`)
+		return req?.ok
+	}
+
 	list = async () => {
 		if (!this.#secrets) return
-		this.assets = (await this.r2.get<R2List>(this.#secrets.r2_bucket).json()).Contents
+		const res = await this.r2.get<R2List>(this.#secrets.r2_bucket).json()
+		this.assets = res.data
+		this.folders = res.included
+	}
+
+	upload = async (body: File) => {
+		if (!this.#secrets) return
+		const req = await this.r2.post<R2List>(this.#secrets.r2_bucket, { body })
+
+		return req?.ok
 	}
 
 	delete = async (asset: Asset) => {
 		const confirm = window.confirm('Are you sure you want to delete this asset?')
 		if (!confirm) return
-		if (this.assets?.length) this.assets = this.assets.filter((item) => item.Key !== asset.Key)
+		if (this.assets?.length) this.assets = this.assets.filter((item) => item.id !== asset.id)
 
-		await this.r2.delete(this.#secrets.r2_bucket + '/' + asset.Key)
-		if (this.content?.filename === asset.Key) this.set_asset(null)
+		await this.r2.delete(this.#secrets.r2_bucket + '/' + asset.id)
+		if (this.content?.filename === asset.id) this.set_asset(null)
 		await this.list()
 	}
 
 	delete_multiple = async (assets: Asset[]) => {
 		const confirm = window.confirm('Are you sure you want to delete these assets?')
 		if (!confirm) return
-		if (this.assets?.length) this.assets = this.assets.filter((item) => !assets.includes(item.Key))
+		if (this.assets?.length) this.assets = this.assets.filter((item) => !assets.includes(item.id))
 
-		await this.r2.delete(this.#secrets.r2_bucket, { json: assets.map((e) => e.Key) })
-		if (assets.some((e) => e.Key === this.content.filename)) this.set_asset(null)
+		await this.r2.delete(this.#secrets.r2_bucket, { json: assets.map((e) => e.id) })
+		if (assets.some((e) => e.id === this.content.filename)) this.set_asset(null)
 		await this.list()
-	}
-
-	get_upload_endpoint = async () => {
-		if (!this.mux) throw new Error('Mux not initialised')
-
-		return (
-			await this.mux.video.uploads.create({
-				cors_origin: 'https://storyblok.com',
-				new_asset_settings: {
-					playback_policy: ['public'],
-					encoding_tier: 'baseline',
-				},
-			})
-		).url
-	}
-
-	toggle_actions(id: string) {
-		this.open_actions = this.open_actions === id ? null : id
-	}
-
-	async set_title(title: string, id: string) {
-		if (this.timeout) clearTimeout(this.timeout)
-		this.update({ title })
-		this.timeout = setTimeout(async () => {
-			if (!this.mux) return
-			await this.mux.video.assets.update(id, {
-				meta: { title },
-			})
-		}, 1000)
-	}
-
-	async select_poster() {
-		if (!this.content?.mux_video) return
-		const asset = await this.plugin?.actions?.selectAsset()
-		if (!asset) this.update({ poster: this.get_poster(this.content.mux_video) })
-		else this.update({ poster: asset.filename })
-	}
-
-	async delete_poster() {
-		if (!this.content?.mux_video) return
-		this.update({ poster: this.get_poster(this.content.mux_video) })
-	}
-
-	format_duration(seconds: number): string {
-		const hours = Math.floor(seconds / 3600)
-		const minutes = Math.floor((seconds % 3600) / 60)
-		const remaining_seconds = Math.floor(seconds % 60)
-		if (hours > 0) {
-			return `${hours}:${minutes.toString().padStart(2, '0')}:${remaining_seconds.toString().padStart(2, '0')}`
-		}
-		return `${minutes}:${remaining_seconds.toString().padStart(2, '0')}`
 	}
 
 	date(date: string): string {
@@ -247,69 +167,11 @@ export class AssetManager {
 		return format_elapse(d) || format_date('{MMM} {D}, {YYYY}', d)
 	}
 
-	get is_mux_poster() {
-		return this.content?.poster?.startsWith('https://image.mux.com/')
-	}
-
-	get poster() {
-		if (this.is_mux_poster) return `${this.content?.poster}?width=558&height=314&fit_mode=smartcrop`
-		if (this.content?.poster?.endsWith('.svg')) return this.content.poster
-		return `${this.content?.poster}/m/558x314/smart`
+	toggle_actions(id: string) {
+		this.open_actions = this.open_actions === id ? null : id
 	}
 
 	get is_modal_open() {
 		return this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen
-	}
-
-	get has_vimeo() {
-		return !!this.#secrets?.vimeo_secret
-	}
-
-	add_vimeo_url = async (e: Event) => {
-		e.preventDefault()
-		const form = e.target
-		if (!(form instanceof HTMLFormElement)) return
-
-		const url = form.vimeo_url.value
-		if (!url) throw new Error('No URL found')
-
-		// extract video id from vimeo url using regex - handles all formats:
-		// https://vimeo.com/867092030
-		// https://vimeo.com/867092030/02e4819d25
-		// https://vimeo.com/channels/staffpicks/867092030
-		const vimeo_regex =
-			/vimeo\.com\/(?:channels\/\w+\/|groups\/\w+\/|album\d+\/|video\/)?(\d+)(?:\/[\w-]+)?/
-		const match = url.match(vimeo_regex)
-		const video_id = match?.[1]
-		if (!video_id) throw new Error('No video ID found')
-
-		this.vimeo_upload_state = 'loading'
-		const video = await this.vimeo.get<VimeoVideo>(`videos/${video_id}`).json()
-
-		const largest_file = video.files.find(
-			(file) => file.size === Math.max(...video.files.map((file) => file.size))
-		)
-
-		if (!largest_file) {
-			this.vimeo_upload_state = null
-			throw new Error('No largest file found')
-		}
-
-		await this.mux.video.assets.create({
-			inputs: [
-				{
-					url: largest_file.link,
-				},
-			],
-			playback_policy: ['public'],
-			encoding_tier: 'baseline',
-			meta: {
-				title: video.name,
-				external_id: video_id,
-			},
-		})
-
-		await this.list()
-		this.vimeo_upload_state = null
 	}
 }
