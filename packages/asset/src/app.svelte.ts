@@ -142,7 +142,10 @@ export class AssetManager {
 		this.meta = res.meta
 	}
 
-	upload = async (body: File) => {
+	upload = async (files: FileList) => {
+		const body = new FormData()
+		for (const file of files) body.append('file', file)
+
 		if (!this.#secrets) return
 		const req = await this.r2.post(this.#secrets.r2_bucket, { body })
 

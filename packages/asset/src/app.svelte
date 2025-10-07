@@ -76,11 +76,12 @@
 		manager.update()
 	}
 
-	async function upload(e) {
+	async function upload(e: Event) {
+		if (!(e.target instanceof HTMLInputElement) || !e.target.files) return
 		const res = await manager.upload(e.target.files)
 		if (res === true) {
 			manager.list()
-			e.target.files = []
+			e.target.value = ''
 		}
 	}
 </script>
