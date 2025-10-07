@@ -4,9 +4,6 @@ import { format_date, format_elapse } from 'kitto'
 import ky from 'ky'
 import type { R2AssetResource, R2FolderResource, R2ListResponse } from 'moxyloco/r2'
 
-export type R2List = any
-export type R2Item = any
-
 type Plugin = FieldPluginResponse<Asset | null>
 
 export class AssetManager {
@@ -18,7 +15,6 @@ export class AssetManager {
 	open_item: R2AssetResource | undefined = $state(undefined)
 	open_actions = $state<string | null>(null)
 	limit = 2
-
 	#initial = $state(true)
 	#secrets: {
 		r2_secret: string
@@ -43,20 +39,20 @@ export class AssetManager {
 		})
 	}
 
-	open_item_details(item: R2Item) {
+	open_item_details(item: R2AssetResource) {
 		if (!this.is_modal_open) this.plugin?.actions?.setModalOpen(true)
 		this.open_item = item
 		this.content = {
-			...this.content,
-			filename: `https://r2.uilo.co/${item.id}`,
+			id: item.id,
+			filename: item.links?.self,
 			meta_data: {
-				alt: item.alt,
-				title: item.title,
-				source: item.source,
-				copyright: item.copyright,
-				width: Number(item.Metadata.width),
-				height: Number(item.Metadata.height),
-				format: item.Metadata.format,
+				alt: item.attributes?.alt,
+				title: item.attributes?.title,
+				source: item.attributes?.source,
+				copyright: item.attributes?.copyright,
+				width: item.attributes?.width,
+				height: item.attributes?.height,
+				format: item.attributes?.format,
 			},
 		}
 	}
@@ -126,7 +122,7 @@ export class AssetManager {
 
 	create_folder = async (folder: string) => {
 		if (!this.#secrets) return
-		const req = await this.r2.post<R2List>(`${this.#secrets.r2_bucket}/${folder}`)
+		const req = await this.r2.post(`${this.#secrets.r2_bucket}/${folder}`)
 		return req?.ok
 	}
 
@@ -148,7 +144,7 @@ export class AssetManager {
 
 	upload = async (body: File) => {
 		if (!this.#secrets) return
-		const req = await this.r2.post<R2List>(this.#secrets.r2_bucket, { body })
+		const req = await this.r2.post(this.#secrets.r2_bucket, { body })
 
 		return req?.ok
 	}
@@ -164,11 +160,12 @@ export class AssetManager {
 		await this.list()
 	}
 
-	delete_multiple = async (assets: Asset[]) => {
+	delete_multiple = async (assets: Array<R2AssetResource>) => {
 		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete these assets?')
 		if (!confirm) return
-		if (this.assets?.length) this.assets = this.assets.filter((item) => !assets.includes(item.id))
+		if (this.assets?.length)
+			this.assets = this.assets.filter((item) => !assets.some((asset) => asset.id === item.id))
 
 		await this.r2.delete(this.#secrets.r2_bucket, { json: assets.map((e) => e.id) })
 		if (assets.some((e) => e.id === this.content?.filename)) this.set_asset(null)

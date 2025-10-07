@@ -1,13 +1,13 @@
 export interface Asset {
-	id: string
+	id?: string
 	filename?: string
 	meta_data?: {
-		alt?: string
-		title?: string
-		source: string
-		copyright?: string
-		width: number
-		height: number
-		format: string
+		alt?: string | null
+		title?: string | null
+		source?: string | null
+		copyright?: string | null
+		width?: number | null
+		height?: number | null
+		format?: string | null
 	}
 }
