@@ -2,6 +2,7 @@ import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-pl
 import type { Asset } from '../types.js'
 import { format_date, format_elapse } from 'kitto'
 import ky from 'ky'
+import type { R2AssetResource, R2FolderResource, R2ListResponse } from 'moxyloco/r2'
 
 export type R2List = any
 export type R2Item = any
@@ -10,14 +11,13 @@ type Plugin = FieldPluginResponse<Asset | null>
 
 export class AssetManager {
 	plugin = $state<Plugin | null>(null)
-	content = $state<Asset | null>({})
-	assets = $state<Array<R2Item> | null>(null)
-	folders = $state([])
+	content = $state<Asset | null>(null)
+	assets = $state<Array<R2AssetResource> | undefined>(undefined)
+	folders = $state<Array<R2FolderResource> | undefined>(undefined)
 	meta = $state()
-	open_item: null | R2Item = $state(null)
+	open_item: R2AssetResource | undefined = $state(undefined)
 	open_actions = $state<string | null>(null)
 	limit = 2
-	// client: ReturnType<typeof R2>
 
 	#initial = $state(true)
 	#secrets: {
@@ -50,10 +50,10 @@ export class AssetManager {
 			...this.content,
 			filename: `https://r2.uilo.co/${item.id}`,
 			meta_data: {
-				alt: this.content.alt,
-				title: this.content.title,
-				source: this.content.source,
-				copyright: this.content.copyright,
+				alt: item.alt,
+				title: item.title,
+				source: item.source,
+				copyright: item.copyright,
 				width: Number(item.Metadata.width),
 				height: Number(item.Metadata.height),
 				format: item.Metadata.format,
@@ -63,7 +63,7 @@ export class AssetManager {
 
 	close_item_details() {
 		this.plugin?.actions?.setModalOpen(false)
-		this.open_item = null
+		this.open_item = undefined
 	}
 
 	private initialize_plugin() {
@@ -109,7 +109,7 @@ export class AssetManager {
 
 		this.content = {
 			...this.content,
-			...asset.Metadata,
+			...asset.meta_data,
 		}
 		this.update()
 		this.plugin?.actions?.setModalOpen(false)
@@ -118,22 +118,28 @@ export class AssetManager {
 	update_asset = async () => {
 		if (!this.#secrets) return
 
-		const req = await this.r2.put<R2List>(`${this.#secrets.r2_bucket}/${this.open_item.id}`, {
-			json: this.open_item.attributes,
+		const req = await this.r2.put(`${this.#secrets.r2_bucket}/${this.open_item?.id}`, {
+			json: this.open_item?.attributes,
 		})
 		return req?.ok
 	}
 
-	create_folder = async (folder) => {
+	create_folder = async (folder: string) => {
 		if (!this.#secrets) return
 		const req = await this.r2.post<R2List>(`${this.#secrets.r2_bucket}/${folder}`)
 		return req?.ok
 	}
 
-	list = async (page) => {
+	list = async (page?: number) => {
 		if (!this.#secrets) return
+
+		const params = new URLSearchParams([
+			['limit', this.limit.toString()],
+			['page', page?.toString() || '1'],
+		])
+
 		const res = await this.r2
-			.get<R2List>(`${this.#secrets.r2_bucket}?limit=${this.limit}&page=${page || 1}`)
+			.get<R2ListResponse>(`${this.#secrets.r2_bucket}?${params.toString()}`)
 			.json()
 		this.assets = res.data
 		this.folders = res.included
@@ -148,22 +154,24 @@ export class AssetManager {
 	}
 
 	delete = async (asset: Asset) => {
+		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete this asset?')
 		if (!confirm) return
 		if (this.assets?.length) this.assets = this.assets.filter((item) => item.id !== asset.id)
 
-		await this.r2.delete(this.#secrets.r2_bucket + '/' + asset.id)
+		await this.r2.delete(`${this.#secrets.r2_bucket}/${asset.id}`)
 		if (this.content?.filename === asset.id) this.set_asset(null)
 		await this.list()
 	}
 
 	delete_multiple = async (assets: Asset[]) => {
+		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete these assets?')
 		if (!confirm) return
 		if (this.assets?.length) this.assets = this.assets.filter((item) => !assets.includes(item.id))
 
 		await this.r2.delete(this.#secrets.r2_bucket, { json: assets.map((e) => e.id) })
-		if (assets.some((e) => e.id === this.content.filename)) this.set_asset(null)
+		if (assets.some((e) => e.id === this.content?.filename)) this.set_asset(null)
 		await this.list()
 	}
 

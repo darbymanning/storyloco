@@ -174,7 +174,7 @@
 					<TrashIcon size={18} />
 					Deleted Assets
 				</button>
-				{#if manager.folders.length}
+				{#if manager.folders?.length}
 					<div class="">Folders</div>
 					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
 					<div class="flex flex-col">
