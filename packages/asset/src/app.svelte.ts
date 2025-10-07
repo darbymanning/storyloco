@@ -114,9 +114,12 @@ export class AssetManager {
 	update_asset = async () => {
 		if (!this.#secrets) return
 
-		const req = await this.r2.put(`${this.#secrets.r2_bucket}/${this.open_item?.id}`, {
-			json: this.open_item?.attributes,
-		})
+		const req = await this.r2.patch<R2AssetResource>(
+			`${this.#secrets.r2_bucket}/${this.open_item?.id}`,
+			{
+				json: this.open_item,
+			}
+		)
 		return req?.ok
 	}
 
