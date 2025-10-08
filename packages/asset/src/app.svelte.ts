@@ -81,7 +81,7 @@ export class AssetManager {
 
 	get r2() {
 		return ky.create({
-			prefixUrl: 'https://moxy.uilo.co/api/r2/',
+			prefixUrl: 'https://assets.uilo.co/api/r2/',
 			headers: {
 				authorization: `Bearer ${this.#secrets?.r2_secret}`,
 			},
