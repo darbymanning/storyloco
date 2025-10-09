@@ -1,13 +1,9 @@
 <script lang="ts">
+	import { filesize } from 'filesize'
 	import { flip } from 'svelte/animate'
-	import { fly, fade, slide, scale } from 'svelte/transition'
+	import { fly, fade, scale } from 'svelte/transition'
 	import {
 		ImageIcon,
-		ImageOffIcon,
-		HourglassIcon,
-		Trash2Icon,
-		RefreshCwIcon,
-		CheckCircle2Icon,
 		EllipsisIcon,
 		Settings2Icon,
 		FocusIcon,
@@ -19,11 +15,14 @@
 		ChevronLeftIcon,
 		ChevronRightIcon,
 		XIcon,
+		FileTextIcon,
+		Trash2Icon,
+		RefreshCwIcon,
 	} from '@lucide/svelte'
 	import { cn } from 'shared/utils'
-	import { Input, Label, Skeleton as SkeletonComponent, Switch, Checkbox } from 'shared'
+	import { Input, Skeleton as SkeletonComponent, Checkbox } from 'shared'
 	import { AssetManager } from './app.svelte.js'
-	import type { R2Item } from './app.svelte.js'
+	import type { R2AssetResource } from 'moxyloco/r2'
 
 	const manager = new AssetManager()
 	const loaded = $derived(manager.plugin?.type === 'loaded')
@@ -59,31 +58,14 @@
       group-focus-within:translate-y-0
    `
 
-	let focus_x = $derived(manager.content.focus?.split(':')[0].split('x')[0])
-	let focus_y = $derived(manager.content.focus?.split(':')[0].split('x')[1])
+	let focus_x = $derived(manager.content?.focus?.split(':')[0].split('x')[0])
+	let focus_y = $derived(manager.content?.focus?.split(':')[0].split('x')[1])
 	let back = $state(false)
-	let selected = $state([])
-	let folders = $state([])
+	let selected: Array<string> = $state([])
+	let folders: Array<boolean> = $state([])
 	let folder_modal = $state(false)
 	let folder_name = $state('')
 	let loading = $state(false)
-	let page = $state(1)
-
-	function set_focus(e: MouseEvent) {
-		manager.content.focus = e
-			? `${e.offsetX}x${e.offsetY}:${e.offsetX + 1}x${e.offsetY + 1}`
-			: undefined
-		manager.update()
-	}
-
-	async function upload(e: Event) {
-		if (!(e.target instanceof HTMLInputElement) || !e.target.files) return
-		const res = await manager.upload(e.target.files)
-		if (res === true) {
-			manager.list()
-			e.target.value = ''
-		}
-	}
 </script>
 
 <svelte:window
@@ -113,8 +95,8 @@
 	</ol>
 {/snippet}
 
-{#snippet AssetPreview(asset?: R2Item)}
-	{@const is_selected = manager.content?.asset?.id === asset?.id}
+{#snippet AssetPreview(asset?: R2AssetResource)}
+	{@const is_selected = manager.content?.id === asset?.id}
 
 	<figure
 		class={cn([
@@ -122,26 +104,27 @@
 			{ 'bg-primary [&>svg]:text-primary-foreground': asset && is_selected },
 		])}
 	>
-		{#if asset}
-			<img
-				class={['rounded shrink-0 size-full absolute object-cover', { 'opacity-50': is_selected }]}
-				src={asset.links.self}
-				alt={asset?.title}
-			/>
-		{:else if !asset}
+		{#if asset?.attributes.content_type}
+			{#if asset.attributes.content_type.startsWith('image/')}
+				<img
+					class={[
+						'rounded shrink-0 size-full absolute object-cover',
+						{ 'opacity-50': is_selected },
+					]}
+					src={asset.links.self}
+					alt={asset.attributes?.alt}
+				/>
+			{:else}
+				<FileTextIcon />
+			{/if}
+		{:else}
 			<ImageIcon />
-		{:else if asset.status === 'errored'}
-			<ImageOffIcon />
-		{:else if asset.status === 'preparing'}
-			<HourglassIcon />
-		{:else if is_selected}
-			<CheckCircle2Icon />
 		{/if}
 	</figure>
 {/snippet}
 
-{#snippet AssetMeta(asset: R2Item)}
-	<p class="font-medium truncate">{asset.attributes.title || asset.attributes.original_filename}</p>
+{#snippet AssetMeta(asset: R2AssetResource)}
+	<p class="font-medium truncate">{asset.attributes.title || asset.attributes.filename}</p>
 	<span class="justify-between flex text-muted-foreground text-xs">{asset.attributes.format}</span>
 {/snippet}
 
@@ -162,7 +145,12 @@
 				>
 					<CloudUploadIcon size={18} />
 					Upload files
-					<input class="opacity-0 absolute inset-0" type="file" multiple onchange={upload} />
+					<input
+						class="opacity-0 absolute inset-0"
+						type="file"
+						multiple
+						onchange={manager.upload}
+					/>
 				</div>
 			</header>
 
@@ -176,7 +164,7 @@
 					Deleted Assets
 				</button>
 				{#if manager.folders?.length}
-					<div class="">Folders</div>
+					<div>Folders</div>
 					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
 					<div class="flex flex-col">
 						{#each manager.folders as folder, i}
@@ -232,7 +220,7 @@
 									<div class="text-sm">{selected.length} items selected</div>
 									<button
 										class="text-sm"
-										onclick={() => (selected = manager.assets.map((asset) => asset.id))}
+										onclick={() => (selected = manager.assets?.map((asset) => asset.id) || [])}
 										>Select All</button
 									>
 									<button class="text-sm" onclick={() => (selected = [])}>Clear</button>
@@ -268,7 +256,7 @@
 															class="p-3 w-full text-start hover:bg-muted transition-colors"
 															onclick={() => {
 																manager.plugin?.actions?.setModalOpen(false)
-																manager.set_asset(asset)
+																manager.select(asset)
 															}}
 														>
 															Select
@@ -289,12 +277,11 @@
 											<button
 												class="peer/ellipsis"
 												onclick={() => {
-													manager.set_asset(asset)
+													manager.select(asset)
 													manager.plugin?.actions?.setModalOpen(false)
 												}}
 											>
 												{@render AssetPreview(asset)}
-												<div class="text-start mt-2">{asset.attributes.original_filenam}</div>
 											</button>
 											<Checkbox
 												class="absolute top-6 left-6 opacity-0 pointer-events-none translate-y-1 scale-95 transition-[translate,opacity] peer-hover/ellipsis:opacity-100 peer-hover/ellipsis:pointer-events-auto peer-hover/ellipsis:translate-y-0 peer-hover/ellipsis:scale-100 duration-400 hover:opacity-100 hover:pointer-events-auto hover:translate-y-0 hover:scale-100 aria-checked:opacity-100 aria-checked:pointer-events-auto aria-checked:translate-y-0 aria-checked:scale-100 !bg-zinc-800"
@@ -315,7 +302,8 @@
 												<button
 													class="p-3 w-full text-start hover:bg-muted transition-colors"
 													onclick={() => {
-														;(manager.open_item_details(asset), (back = true))
+														manager.open_item_details(asset)
+														back = true
 													}}
 												>
 													View Details
@@ -338,38 +326,43 @@
 					An error occurred while loading assets.
 				{/await}
 			</main>
-			<footer
-				class="flex items-center col-start-2 col-span-4 py-1 border-t-[0.5px] border-white/50"
-			>
-				<div class="grow-1">
-					1-{manager.meta?.total} of {manager.meta?.total} items
-				</div>
-				{#if manager.meta?.total > manager.limit}
-					{@const pages = Math.ceil(manager.meta.total / manager.limit)}
-					<div class="shrink-0 flex items-center gap-2 p-3 border-l-[0.5px] border-white/50">
-						<select>
-							{#each Array(pages), i}
-								<option value={i + 1}>Page {i + 1}</option>
-							{/each}
-						</select>
-						of {pages}
+			{#if manager.meta?.total}
+				<footer
+					class="flex items-center col-start-2 col-span-4 py-1 border-t-[0.5px] border-white/50"
+				>
+					<div class="grow-1">
+						{manager.meta.page}-{manager.meta.total} of {manager.meta.total} items
 					</div>
-					<button
-						class="p-3 border-l-[0.5px] border-white/50 disabled:pointer-events-none disabled:opacity-25"
-						disabled={page === 1}
-						onclick={() => manager.list(page - 1)}
-					>
-						<ChevronLeftIcon size={18} />
-					</button>
-					<button
-						class="p-3 border-l-[0.5px] border-white/50 disabled:pointer-events-none disabled:opacity-25"
-						disabled={page === pages}
-						onclick={() => manager.list(page + 1)}
-					>
-						<ChevronRightIcon size={18} />
-					</button>
-				{/if}
-			</footer>
+					{#if manager.meta.total > manager.limit}
+						<div class="shrink-0 flex items-center gap-2 p-3 border-l-[0.5px] border-white/50">
+							<select
+								bind:value={manager.meta.page}
+								onchange={(event) =>
+									manager.go_to_page(Number((event.target as HTMLSelectElement).value))}
+							>
+								{#each Array(manager.meta.total_pages), i}
+									<option value={i + 1}>Page {i + 1}</option>
+								{/each}
+							</select>
+							of {manager.meta.total_pages}
+						</div>
+						<button
+							class="p-3 border-l-[0.5px] border-white/50 disabled:pointer-events-none disabled:opacity-25"
+							disabled={manager.meta.page === 1}
+							onclick={manager.previous_page}
+						>
+							<ChevronLeftIcon size={18} />
+						</button>
+						<button
+							class="p-3 border-l-[0.5px] border-white/50 disabled:pointer-events-none disabled:opacity-25"
+							disabled={manager.meta.page === manager.meta.total_pages}
+							onclick={manager.next_page}
+						>
+							<ChevronRightIcon size={18} />
+						</button>
+					{/if}
+				</footer>
+			{/if}
 		</div>
 		{#if folder_modal}
 			<button
@@ -384,7 +377,7 @@
 			>
 				<div class="flex justify-between gap-4">
 					<h2 class="text-xl font-medium">Create New Folder</h2>
-					<button class="" onclick={() => (folder_modal = false)}>
+					<button onclick={() => (folder_modal = false)}>
 						<XIcon size={18} />
 					</button>
 				</div>
@@ -399,7 +392,7 @@
 					</label>
 					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
 					<div>
-						{#each manager.folders as folder, i}
+						{#each manager.folders || [] as folder, i}
 							<div
 								class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
 								class:pl-8={i !== 5}
@@ -434,7 +427,8 @@
 					<button
 						class="bg-secondary border border-white/10 rounded-lg px-6 py-2 relative flex gap-2 items-center"
 						onclick={() => {
-							;((folder_modal = false), (folder_name = ''))
+							folder_modal = false
+							folder_name = ''
 						}}>Cancel</button
 					>
 					<button
@@ -456,10 +450,9 @@
 				<div class="flex justify-between">
 					{#if back}
 						<button
-							class=""
 							onclick={() => {
-								back = !back
-								manager.open_item_details(false)
+								back = false
+								manager.close_item_details()
 								manager.plugin?.actions?.setModalOpen(true)
 							}}
 						>
@@ -467,37 +460,55 @@
 						</button>
 					{/if}
 					<div class="text-2xl">{manager.open_item.attributes.filename}</div>
-					<button class="p-0" onclick={() => set_focus()}>
-						<FocusIcon size="20" />
-					</button>
-				</div>
-				<figure
-					class="self-center my-auto bg-white/10 cursor-crosshair relative"
-					onclick={set_focus}
-				>
-					<img
-						class="w-full h-full object-contain"
-						src={manager.open_item.links.self}
-						alt="Asset"
-					/>
-					{#if manager.content.focus}
-						<span
-							class="absolute w-5 h-5 border border-black bg-primary rounded-full"
-							style:top={focus_y + 'px'}
-							style:left={focus_x + 'px'}
-						></span>
+					{#if manager.is_image}
+						<button class="p-0" onclick={manager.set_focus}>
+							<FocusIcon size="20" />
+						</button>
 					{/if}
-				</figure>
+				</div>
+				{#if manager.is_image}
+					<button
+						class="self-center my-auto bg-white/10 cursor-crosshair relative"
+						onclick={manager.set_focus}
+					>
+						<img
+							class="size-full object-contain"
+							src={manager.open_item.links.self}
+							alt={manager.open_item.attributes.alt}
+							title={manager.open_item.attributes.title}
+						/>
+						{#if manager.content?.focus}
+							<span
+								class="absolute size-5 border border-black bg-primary rounded-full"
+								style:top={focus_y + 'px'}
+								style:left={focus_x + 'px'}
+							></span>
+						{/if}
+					</button>
+				{:else}
+					<figure class="size-full flex items-center justify-center">
+						<FileTextIcon size="48" />
+					</figure>
+				{/if}
 				<div class="flex gap-6 justify-center">
-					<div class="flex flex-col gap-1">
-						<div class="text-zinc-400">Width & Height</div>
-						<div class="">
-							{manager.open_item.attributes.width} x {manager.open_item.attributes.height}
+					{#if manager.open_item.attributes.width && manager.open_item.attributes.height}
+						<div class="flex flex-col gap-1">
+							<div class="text-zinc-400">Width & Height</div>
+							<div>
+								{manager.open_item.attributes.width} x {manager.open_item.attributes.height}
+							</div>
 						</div>
-					</div>
+					{:else if manager.open_item.attributes.size_bytes}
+						<div class="flex flex-col gap-1">
+							<div class="text-zinc-400">Size</div>
+							<div>
+								{filesize(manager.open_item.attributes.size_bytes, { standard: 'jedec' })}
+							</div>
+						</div>
+					{/if}
 					<div class="flex flex-col gap-1">
 						<div class="text-zinc-400">Format</div>
-						<div class="">.{manager.open_item.attributes.format}</div>
+						<div>.{manager.open_item.attributes.format}</div>
 					</div>
 				</div>
 			</div>
@@ -505,7 +516,11 @@
 				<div class="p-8 grow-1 flex flex-col gap-5 overflow-y-auto">
 					<div class="flex flex-col gap-2 mb-4">
 						Asset ID
-						<div class="">{manager.open_item.id}</div>
+						<pre class="overflow-auto">{manager.open_item.id}</pre>
+					</div>
+					<div class="flex flex-col gap-2 mb-4">
+						Asset URL
+						<pre class="overflow-auto">{manager.open_item.links.self}</pre>
 					</div>
 					<label class="flex flex-col gap-2" for="title">
 						Title/Caption
@@ -514,6 +529,10 @@
 					<label class="flex flex-col gap-2" for="alt">
 						Alt text
 						<Input bind:value={manager.open_item.attributes.alt} />
+					</label>
+					<label class="flex flex-col gap-2" for="alt">
+						Name
+						<Input bind:value={manager.open_item.attributes.name} />
 					</label>
 					<label class="flex flex-col gap-2" for="copyright">
 						Copyright
@@ -533,27 +552,23 @@
 					</button>
 					<button
 						class="bg-primary text-primary-foreground rounded py-3 px-7"
-						onclick={() => {
-							// ;(manager.update(), manager.close_item_details())
-							manager.update()
-							manager.update_asset()
-						}}
+						onclick={manager.save_and_close}
 					>
 						Save & Close
 					</button>
 				</div>
 			</div>
 		</div>
-	{:else if manager.content?.asset}
+	{:else if manager.content?._data}
 		<div
 			class="p-4 grid grid-cols-[140px_1fr] w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
-			{@render AssetPreview(manager.content.asset)}
-			<div class="grid">{@render AssetMeta(manager.content.asset)}</div>
+			{@render AssetPreview(manager.content._data)}
+			<div class="grid">{@render AssetMeta(manager.content._data)}</div>
 			<ul class={actions_menu_classes}>
 				<li>
 					<button
-						onclick={() => manager.plugin?.actions?.setModalOpen(true)}
+						onclick={manager.open_asset_picker}
 						title="Replace asset"
 						aria-label="Replace asset"
 					>
@@ -564,14 +579,14 @@
 					<button
 						title="Settings"
 						aria-label="Settings"
-						onclick={() => (manager.asset_options_open = !manager.asset_options_open)}
+						onclick={() => manager.open_item_details(manager.content!._data)}
 					>
 						<Settings2Icon size={18} />
 					</button>
 				</li>
 				<li>
 					<button
-						onclick={() => manager.set_asset(null)}
+						onclick={() => manager.select(null)}
 						title="Remove asset"
 						aria-label="Remove asset"
 					>
@@ -583,7 +598,7 @@
 	{:else}
 		<button
 			class="p-4 grid grid-cols-[140px_1fr] w-full border border-input rounded hover:border-primary transition-colors bg-input-background text-card-foreground items-center justify-items-start gap-5 font-medium"
-			onclick={() => manager.plugin?.actions?.setModalOpen(true)}
+			onclick={manager.open_asset_picker}
 			title="Add asset"
 			aria-label="Add asset"
 		>
@@ -595,12 +610,6 @@
 
 <style>
 	@reference './app.css';
-
-	mux-uploader {
-		&::part(drop) {
-			@apply border-input rounded-md border-1;
-		}
-	}
 
 	:global {
 		[data-modal-open='true'] {
