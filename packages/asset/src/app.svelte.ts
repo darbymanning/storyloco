@@ -90,10 +90,9 @@ export class AssetManager {
 			},
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
-				if (this.plugin.data?.content) {
-					this.content = this.plugin.data.content
-					if (this.#initial) this.#initial = false
-				}
+				// mirror incoming content exactly; include null to clear ui state
+				this.content = (this.plugin.data?.content as Asset | null) ?? null
+				if (this.#initial) this.#initial = false
 			},
 		})
 	}
@@ -215,7 +214,7 @@ export class AssetManager {
 		if (this.assets?.length) this.assets = this.assets.filter((item) => item.id !== asset.id)
 
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}`)
-		if (this.content?.filename === asset.id) this.select_asset(null)
+		if (this.content?.id === asset.id) this.select_asset(null)
 		await this.list_assets()
 	}
 
@@ -227,7 +226,7 @@ export class AssetManager {
 			this.assets = this.assets.filter((item) => !assets.some((asset) => asset === item.id))
 
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets`, { json: assets })
-		if (assets.some((e) => e === this.content?.filename)) this.select_asset(null)
+		if (assets.some((e) => e === this.content?.id)) this.select_asset(null)
 		await this.list_assets()
 	}
 
