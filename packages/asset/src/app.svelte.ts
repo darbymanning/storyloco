@@ -1,22 +1,33 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { Asset } from '../types.js'
 import ky from 'ky'
-import type { R2AssetResource, R2FolderResource, R2ListResponse } from 'moxyloco/r2'
+import type { R2Asset, R2Folder, Paths } from 'moxyloco/r2'
 
 type Plugin = FieldPluginResponse<Asset | null>
 
 export class AssetManager {
 	plugin: Plugin | null = $state(null)
 	content: Asset | null = $state(null)
-	assets: Array<R2AssetResource> | undefined = $state(undefined)
-	folders: Array<R2FolderResource> | undefined = $state(undefined)
-	meta: R2ListResponse['meta'] = $state()
-	open_item: R2AssetResource | undefined = $derived.by(() => {
+	selected: Array<string> = $state([])
+	expanded_folders: Array<boolean> = $state([])
+	show_deleted = $state(false)
+	focus_x = $derived(this.content?.focus?.split(':')[0].split('x')[0])
+	focus_y = $derived(this.content?.focus?.split(':')[0].split('x')[1])
+	back = $state(false)
+	folder_modal = $state(false)
+	folder_name = $state('')
+	loading = $state(false)
+
+	assets: Array<R2Asset> | undefined = $state(undefined)
+	folders: Array<R2Folder> | undefined = $state(undefined)
+	meta: Paths.ListAssets.Responses.$200['meta'] = $state()
+	open_item: R2Asset | undefined = $derived.by(() => {
 		// State doesnt persist between modal opens, so we use sessionStorage to store which view we need
 		if (sessionStorage.getItem('view') === 'details' && this.is_modal_open) {
 			return this.content?._data
 		}
 	})
+	active_folder = $derived(sessionStorage.getItem('active_folder') || null)
 	open_actions: string | null = $state(null)
 	is_image = $derived(this.open_item?.attributes.content_type?.startsWith('image/'))
 	limit = 96
@@ -44,7 +55,14 @@ export class AssetManager {
 		})
 	}
 
-	open_item_details = (item?: R2AssetResource) => {
+	select_folder = (folder: string | null) => {
+		this.show_deleted = false
+		if (folder) sessionStorage.setItem('active_folder', folder)
+		else sessionStorage.removeItem('active_folder')
+		this.active_folder = folder
+	}
+
+	open_item_details = (item?: R2Asset) => {
 		if (item) sessionStorage.setItem('view', 'details')
 		if (!this.is_modal_open) this.plugin?.actions?.setModalOpen(true)
 		if (!item) return
@@ -82,23 +100,23 @@ export class AssetManager {
 
 	get r2() {
 		return ky.create({
-			prefixUrl: 'https://assets.uilo.co/api/r2/',
+			prefixUrl: import.meta.env.DEV
+				? 'http://localhost:5173/api/r2/'
+				: 'https://assets.uilo.co/api/r2/',
 			headers: {
 				authorization: `Bearer ${this.#secrets?.r2_secret}`,
 			},
 		})
 	}
 
-	update(c?: Partial<Asset>) {
+	update = () => {
 		if (this.plugin?.type !== 'loaded') return
-		const existing_content = this.content || {}
-		const state = $state.snapshot({ ...existing_content, ...c }) as Asset
-		if (!state.id) return
+		const state = $state.snapshot(this.content)
 		this.content = state
 		this.plugin.actions.setContent(state)
 	}
 
-	set_asset = (asset: R2AssetResource | null) => {
+	set_asset = (asset: R2Asset | null) => {
 		if (!asset) {
 			this.content = null
 			this.update()
@@ -122,7 +140,7 @@ export class AssetManager {
 			// Storyblok attributes
 			id: asset.id,
 			alt,
-			filename: asset.links.self,
+			filename: asset.links?.self || '',
 			focus: asset.attributes.focus,
 			title,
 			source,
@@ -141,27 +159,38 @@ export class AssetManager {
 		this.update()
 	}
 
-	select = (asset: R2AssetResource | null) => {
+	select_asset = (asset: R2Asset | null) => {
 		this.set_asset(asset)
-		this.update()
-		this.plugin?.actions?.setModalOpen(false)
+		if (this.is_modal_open) this.plugin?.actions?.setModalOpen(false)
 	}
 
 	update_asset = async (): Promise<void> => {
 		if (!this.#secrets) return
 
-		await this.r2.patch<R2AssetResource>(`${this.#secrets.r2_bucket}/${this.open_item?.id}`, {
+		await this.r2.patch<R2Asset>(`${this.#secrets.r2_bucket}/assets/${this.open_item?.id}`, {
 			json: this.open_item,
 		})
 	}
 
 	create_folder = async (folder: string): Promise<void> => {
 		if (!this.#secrets) return
-		const req = await this.r2.post(`${this.#secrets.r2_bucket}/${folder}`)
-		if (req?.ok) await this.list()
+		const current_folder = this.active_folder
+		const path = current_folder ? `${current_folder}/${folder}` : folder
+		const req = await this.r2.post(`${this.#secrets.r2_bucket}/folders`, {
+			json: { path },
+		})
+		if (req?.ok) await this.list_folders()
 	}
 
-	list = async (page?: number) => {
+	list_folders = async () => {
+		if (!this.#secrets) return
+		const res = await this.r2
+			.get<Paths.ListFolders.Responses.$200>(`${this.#secrets.r2_bucket}/folders`)
+			.json()
+		this.folders = res.data
+	}
+
+	list_assets = async (page?: number) => {
 		if (!this.#secrets) return
 
 		const params = new URLSearchParams([
@@ -169,35 +198,37 @@ export class AssetManager {
 			['page', page?.toString() || '1'],
 		])
 
-		const res = await this.r2
-			.get<R2ListResponse>(`${this.#secrets.r2_bucket}?${params.toString()}`)
-			.json()
+		if (this.active_folder) params.set('folder_path', this.active_folder)
+		if (this.show_deleted) params.set('deleted', 'true')
+
+		const target = `${this.#secrets.r2_bucket}/assets?${params.toString()}`
+
+		const res = await this.r2.get<Paths.ListAssets.Responses.$200>(target).json()
 		this.assets = res.data
-		this.folders = res.included
 		this.meta = res.meta
 	}
 
-	delete = async (asset: R2AssetResource) => {
+	delete_asset = async (asset: R2Asset) => {
 		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete this asset?')
 		if (!confirm) return
 		if (this.assets?.length) this.assets = this.assets.filter((item) => item.id !== asset.id)
 
-		await this.r2.delete(`${this.#secrets.r2_bucket}/${asset.id}`)
-		if (this.content?.filename === asset.id) this.select(null)
-		await this.list()
+		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}`)
+		if (this.content?.filename === asset.id) this.select_asset(null)
+		await this.list_assets()
 	}
 
-	delete_multiple = async (assets: Array<string>) => {
+	delete_many_assets = async (assets: Array<string>) => {
 		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete these assets?')
 		if (!confirm) return
 		if (this.assets?.length)
 			this.assets = this.assets.filter((item) => !assets.some((asset) => asset === item.id))
 
-		await this.r2.delete(this.#secrets.r2_bucket, { json: assets })
-		if (assets.some((e) => e === this.content?.filename)) this.select(null)
-		await this.list()
+		await this.r2.delete(`${this.#secrets.r2_bucket}/assets`, { json: assets })
+		if (assets.some((e) => e === this.content?.filename)) this.select_asset(null)
+		await this.list_assets()
 	}
 
 	save_and_close = () => {
@@ -222,33 +253,45 @@ export class AssetManager {
 		this.update()
 	}
 
-	upload = async (e: Event) => {
-		if (!(e.target instanceof HTMLInputElement) || !e.target.files) return
+	upload = async ({ target }: Event) => {
+		if (!(target instanceof HTMLInputElement) || !target.files) return
 
 		const body = new FormData()
-		for (const file of e.target.files) body.append('file', file)
+		for (const file of target.files) body.append('file', file)
+
+		if (this.active_folder) body.append('folder_path', this.active_folder)
 
 		if (!this.#secrets) return
-		const req = await this.r2.post(this.#secrets.r2_bucket, { body })
+		const req = await this.r2.post(`${this.#secrets.r2_bucket}/assets`, { body })
 
-		if (req?.ok) {
-			this.list()
-			e.target.value = ''
-		}
+		if (!req.ok) return
+
+		this.list_assets()
+		target.value = ''
+	}
+
+	restore = async (asset: R2Asset) => {
+		if (!this.#secrets) return
+		await this.r2.post(`${this.#secrets.r2_bucket}/assets/${asset.id}/restore`)
+	}
+
+	restore_multiple = async (asset_ids: Array<string>) => {
+		if (!this.#secrets) return
+		await this.r2.post(`${this.#secrets.r2_bucket}/restore`, { json: asset_ids })
 	}
 
 	next_page = () => {
 		if (!this.meta?.page) return
-		this.list(this.meta.page + 1)
+		this.list_assets(this.meta.page + 1)
 	}
 
 	previous_page = () => {
 		if (!this.meta?.page) return
-		this.list(this.meta.page - 1)
+		this.list_assets(this.meta.page - 1)
 	}
 
 	go_to_page = (page: number) => {
 		if (!this.meta?.page) return
-		this.list(page)
+		this.list_assets(page)
 	}
 }

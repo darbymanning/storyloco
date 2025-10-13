@@ -36,7 +36,7 @@
         "@tsconfig/svelte": "5.0.5",
         "filesize": "11.0.13",
         "ky": "1.11.0",
-        "moxyloco": "0.5.0",
+        "moxyloco": "0.6.1",
         "prettier": "3.6.2",
         "prettier-plugin-svelte": "3.4.0",
         "shared": "../shared",
@@ -1364,7 +1364,7 @@
 
     "mkdirp": ["mkdirp@1.0.4", "", { "bin": { "mkdirp": "bin/cmd.js" } }, "sha512-vVqVZQyf3WLx2Shd0qJ9xuvqgAyKPLAiqITEtqW0oIUjzo3PePDd6fW9iFz30ef7Ysp/oiWqbhszeGWW2T6Gzw=="],
 
-    "moxyloco": ["moxyloco@0.5.0", "", { "dependencies": { "@aws-crypto/sha256-js": "5.2.0", "@aws-sdk/client-s3": "3.901.0", "@aws-sdk/signature-v4": "3.374.0", "@xmldom/xmldom": "0.8.11", "image-size": "2.0.2" }, "peerDependencies": { "storyloco": "^1.9.3" } }, "sha512-KhL4UDgN9vUVG5gwRsbV0Dn+k7wdWpbWTCu++m5rOptfNMQJSasg9bzFyXMxJAo3BSBYEDor9Lu6x54k7V93mw=="],
+    "moxyloco": ["moxyloco@0.6.1", "", { "dependencies": { "@aws-crypto/sha256-js": "5.2.0", "@aws-sdk/client-s3": "3.901.0", "@aws-sdk/signature-v4": "3.374.0", "@xmldom/xmldom": "0.8.11", "image-size": "2.0.2" }, "peerDependencies": { "storyloco": "^1.9.3" } }, "sha512-phHLkYF73Ie/XjJrS4zISVVPcFvfUG4SgD+DR2yKnze1GvpbkW2KXAnyIpqYvvL8HD9JAbGClAgneR10S/aKSg=="],
 
     "mri": ["mri@1.2.0", "", {}, "sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA=="],
 

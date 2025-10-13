@@ -18,11 +18,13 @@
 		FileTextIcon,
 		Trash2Icon,
 		RefreshCwIcon,
+		UndoDotIcon,
+		LoaderCircleIcon,
 	} from '@lucide/svelte'
 	import { cn } from 'shared/utils'
-	import { Input, Skeleton as SkeletonComponent, Checkbox } from 'shared'
+	import { Input, Skeleton as SkeletonComponent, Checkbox, Button, button_variants } from 'shared'
 	import { AssetManager } from './app.svelte.js'
-	import type { R2AssetResource } from 'moxyloco/r2'
+	import type { R2Asset } from 'moxyloco/r2'
 
 	const manager = new AssetManager()
 	const loaded = $derived(manager.plugin?.type === 'loaded')
@@ -57,16 +59,16 @@
       group-focus-within:pointer-events-auto
       group-focus-within:translate-y-0
    `
-
-	let focus_x = $derived(manager.content?.focus?.split(':')[0].split('x')[0])
-	let focus_y = $derived(manager.content?.focus?.split(':')[0].split('x')[1])
-	let back = $state(false)
-	let selected: Array<string> = $state([])
-	let folders: Array<boolean> = $state([])
-	let folder_modal = $state(false)
-	let folder_name = $state('')
-	let loading = $state(false)
 </script>
+
+<svelte:head>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+	<link
+		href="https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap"
+		rel="stylesheet"
+	/>
+</svelte:head>
 
 <svelte:window
 	onclick={(event) => {
@@ -95,14 +97,14 @@
 	</ol>
 {/snippet}
 
-{#snippet AssetPreview(asset?: R2AssetResource)}
+{#snippet AssetPreview(asset?: R2Asset)}
 	{@const is_selected = manager.content?.id === asset?.id}
 
 	<figure
-		class={cn([
-			'flex items-center justify-center [&>svg]:absolute [&>svg]:size-5 bg-muted text-muted-foreground rounded w-full aspect-video relative border',
-			{ 'bg-primary [&>svg]:text-primary-foreground': asset && is_selected },
-		])}
+		class={cn(
+			'flex items-center justify-center [&>svg]:absolute [&>svg]:size-5 bg-muted text-muted-foreground rounded w-full aspect-video relative border min-h-20',
+			{ 'opacity-50': manager.show_deleted }
+		)}
 	>
 		{#if asset?.attributes.content_type}
 			{#if asset.attributes.content_type.startsWith('image/')}
@@ -111,7 +113,7 @@
 						'rounded shrink-0 size-full absolute object-cover',
 						{ 'opacity-50': is_selected },
 					]}
-					src={asset.links.self}
+					src={asset.links?.self}
 					alt={asset.attributes?.alt}
 				/>
 			{:else}
@@ -123,7 +125,7 @@
 	</figure>
 {/snippet}
 
-{#snippet AssetMeta(asset: R2AssetResource)}
+{#snippet AssetMeta(asset: R2Asset)}
 	<p class="font-medium truncate">{asset.attributes.title || asset.attributes.filename}</p>
 	<span class="justify-between flex text-muted-foreground text-xs">{asset.attributes.format}</span>
 {/snippet}
@@ -133,20 +135,15 @@
 		<div class="grid grid-cols-5 grid-rows-[auto_1fr_auto] px-16 gap-x-12 h-full">
 			<header class="flex items-center gap-4 pb-4 pt-8 col-span-5">
 				<div class="text-2xl font-medium mr-auto">Assets Pro</div>
-				<button
-					class="bg-secondary border border-white/10 rounded-lg px-4 py-2 relative flex gap-2 items-center active:scale-95"
-					onclick={() => (folder_modal = true)}
-				>
-					<FolderIcon size={18} />
+				<Button onclick={() => (manager.folder_modal = true)} size="lg" variant="secondary">
+					<FolderIcon />
 					Create folder
-				</button>
-				<div
-					class="bg-primary text-primary-foreground border border-primary rounded-lg px-4 py-2 relative flex gap-2 items-center active:scale-95"
-				>
+				</Button>
+				<div class={button_variants({ size: 'lg' })}>
 					<CloudUploadIcon size={18} />
 					Upload files
 					<input
-						class="opacity-0 absolute inset-0"
+						class="opacity-0 absolute inset-0 cursor-pointer"
 						type="file"
 						multiple
 						onchange={manager.upload}
@@ -155,35 +152,62 @@
 			</header>
 
 			<aside class="py-4 col-span-1 flex flex-col gap-4">
-				<button class="w-full flex items-center gap-2" class:text-primary={true}>
-					<ImageIcon size={18} />
+				<Button
+					variant="ghost"
+					class={[
+						'text-start justify-start -mx-3',
+						{ '!text-tertiary': manager.active_folder === null && !manager.show_deleted },
+					]}
+					onclick={() => manager.select_folder(null)}
+				>
+					<ImageIcon />
 					All Assets
-				</button>
-				<button class="w-full flex items-center gap-2">
-					<TrashIcon size={18} />
+				</Button>
+				<Button
+					variant="ghost"
+					class={['text-start justify-start -mx-3', { '!text-tertiary': manager.show_deleted }]}
+					onclick={() => {
+						manager.select_folder(null)
+						manager.show_deleted = true
+					}}
+				>
+					<TrashIcon />
 					Deleted Assets
-				</button>
-				{#if manager.folders?.length}
-					<div>Folders</div>
-					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
-					<div class="flex flex-col">
-						{#each manager.folders as folder, i}
-							<div
-								class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
-								class:pl-8={i !== 5}
-							>
-								{#if i === 5}
-									<button onclick={() => (folders[i] = !folders[i])}>
-										<ChevronDownIcon size={18} class={cn({ 'rotate-270': !folders[i] })} />
+				</Button>
+				{#await manager.list_folders()}
+					<LoaderCircleIcon class="animate-spin" />
+				{:then}
+					{#if manager.folders?.length}
+						<div>Folders</div>
+						<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
+						<div class="flex flex-col">
+							{#each manager.folders as folder, i}
+								<div
+									class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
+									class:pl-8={i !== 5}
+								>
+									{#if i === 5}
+										<button
+											onclick={() => (manager.expanded_folders[i] = !manager.expanded_folders[i])}
+										>
+											<ChevronDownIcon
+												size={18}
+												class={cn({ 'rotate-270': !manager.expanded_folders[i] })}
+											/>
+										</button>
+									{/if}
+									<button
+										class={cn('flex items-center gap-3 w-full py-2', {
+											'text-tertiary': manager.active_folder === folder.attributes.name,
+										})}
+										onclick={() => manager.select_folder(folder.attributes.name)}
+									>
+										<FolderIcon size={18} strokeWidth={1.5} />
+										{folder.attributes.name}
 									</button>
-								{/if}
-								<button class="flex items-center gap-3 w-full py-2">
-									<FolderIcon size={18} strokeWidth={1.5} />
-									{folder.attributes.name}
-								</button>
-							</div>
-							<!-- TODO: add subfolders -->
-							<!-- {#if i === 5 && folders[i]}
+								</div>
+								<!-- TODO: add subfolders -->
+								<!-- {#if i === 5 && folders[i]}
 							<div class="flex flex-col" transition:slide>
 								{#each Array(3), i}
 									<button
@@ -195,13 +219,14 @@
 								{/each}
 							</div>
 						{/if} -->
-						{/each}
-					</div>
-				{/if}
+							{/each}
+						</div>
+					{/if}
+				{/await}
 			</aside>
 
 			<main class="pt-4 col-span-4">
-				{#await manager.list()}
+				{#await manager.list_assets()}
 					{@render Skeleton()}
 				{:then}
 					<Input class="w-full rounded-lg border border-white" placeholder="Search assets..." />
@@ -212,31 +237,52 @@
 						</div>
 					{:else}
 						<div class="relative pt-14">
-							{#if selected.length > 0}
+							{#if manager.selected.length > 0}
 								<div
-									class="bg-zinc-700 rounded-md p-3 flex gap-4 items-center absolute z-10 top-2 left-0 w-full"
+									class="bg-zinc-700 rounded-md p-3 py-1.5 flex gap-4 items-center absolute z-10 top-2 left-0 w-full"
 									transition:scale={{ start: 0.99 }}
 								>
-									<div class="text-sm">{selected.length} items selected</div>
-									<button
-										class="text-sm"
-										onclick={() => (selected = manager.assets?.map((asset) => asset.id) || [])}
-										>Select All</button
+									<div class="text-sm">
+										{manager.selected.length}
+										{manager.selected.length === 1 ? 'item' : 'items'} selected
+									</div>
+									<Button
+										size="sm"
+										variant="ghost"
+										onclick={() =>
+											(manager.selected = manager.assets?.map((asset) => asset.id) || [])}
+										>Select All</Button
 									>
-									<button class="text-sm" onclick={() => (selected = [])}>Clear</button>
-									<button class="text-sm ml-auto p-0">
-										<FolderIcon size={18} />
-									</button>
-									<button
-										class="text-sm p-0 mr-2"
-										onclick={() => manager.delete_multiple(selected)}
+									<Button size="sm" variant="ghost" onclick={() => (manager.selected = [])}
+										>Clear</Button
 									>
-										<TrashIcon size={18} />
-									</button>
+									{#if manager.show_deleted}
+										<Button
+											variant="ghost"
+											size="sm"
+											class="ml-auto"
+											onclick={() => manager.restore_multiple(manager.selected)}
+										>
+											<UndoDotIcon size={18} />
+											Restore
+										</Button>
+									{:else}
+										<Button size="icon" variant="ghost" class="ml-auto rounded-full">
+											<FolderIcon size={18} />
+										</Button>
+										<Button
+											size="icon"
+											class="mr-2 rounded-full"
+											variant="ghost"
+											onclick={() => manager.delete_many_assets(manager.selected)}
+										>
+											<TrashIcon size={18} />
+										</Button>
+									{/if}
 								</div>
 							{/if}
 							<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
-								{#each manager.assets as asset (asset.id)}
+								{#each manager.assets as asset, i (i + asset.id)}
 									{@const actions_open = manager.open_actions === asset.id}
 									<li
 										class="relative group size-full"
@@ -255,20 +301,29 @@
 														<button
 															class="p-3 w-full text-start hover:bg-muted transition-colors"
 															onclick={() => {
-																manager.plugin?.actions?.setModalOpen(false)
-																manager.select(asset)
+																manager.open_item_details(asset)
+																manager.back = true
 															}}
 														>
-															Select
+															View Details
 														</button>
 													</li>
 													<li>
-														<button
-															class="p-3 w-full text-start hover:bg-muted transition-colors"
-															onclick={() => manager.delete(asset)}
-														>
-															Delete
-														</button>
+														{#if manager.show_deleted}
+															<button
+																class="p-3 w-full text-start hover:bg-muted transition-colors"
+																onclick={() => manager.restore(asset)}
+															>
+																Restore
+															</button>
+														{:else}
+															<button
+																class="p-3 w-full text-start hover:bg-muted transition-colors"
+																onclick={() => manager.delete_asset(asset)}
+															>
+																Delete
+															</button>
+														{/if}
 													</li>
 												</ol>
 											{/if}
@@ -277,44 +332,48 @@
 											<button
 												class="peer/ellipsis"
 												onclick={() => {
-													manager.select(asset)
+													manager.select_asset(asset)
 													manager.plugin?.actions?.setModalOpen(false)
 												}}
 											>
 												{@render AssetPreview(asset)}
 											</button>
 											<Checkbox
-												class="absolute top-6 left-6 opacity-0 pointer-events-none translate-y-1 scale-95 transition-[translate,opacity] peer-hover/ellipsis:opacity-100 peer-hover/ellipsis:pointer-events-auto peer-hover/ellipsis:translate-y-0 peer-hover/ellipsis:scale-100 duration-400 hover:opacity-100 hover:pointer-events-auto hover:translate-y-0 hover:scale-100 aria-checked:opacity-100 aria-checked:pointer-events-auto aria-checked:translate-y-0 aria-checked:scale-100 !bg-zinc-800"
+												class="absolute top-6 left-6 opacity-0 pointer-events-none translate-y-1 transition-[translate,opacity] peer-hover/ellipsis:opacity-100 peer-hover/ellipsis:pointer-events-auto peer-hover/ellipsis:translate-y-0 duration-400 hover:opacity-100 hover:pointer-events-auto hover:translate-y-0 aria-checked:opacity-100 aria-checked:pointer-events-auto aria-checked:translate-y-0"
 												onCheckedChange={() =>
-													selected.includes(asset.id)
-														? selected.splice(selected.indexOf(asset.id), 1)
-														: selected.push(asset.id)}
-												checked={selected.includes(asset.id)}
+													manager.selected.includes(asset.id)
+														? manager.selected.splice(manager.selected.indexOf(asset.id), 1)
+														: manager.selected.push(asset.id)}
+												checked={manager.selected.includes(asset.id)}
 											/>
 											<button
-												class="absolute top-6 right-6 bg-zinc-800 rounded-md p-1 border border-white/10 opacity-0 pointer-events-none translate-y-1 scale-95 transition-[translate,opacity] peer-hover/ellipsis:opacity-100 peer-hover/ellipsis:pointer-events-auto peer-hover/ellipsis:translate-y-0 peer-hover/ellipsis:scale-100 duration-400 peer/context hover:pointer-events-auto hover:translate-y-0 hover:scale-100"
-												onclick={() => manager.open_item_details(asset)}
+												class="
+                                       absolute
+                                       top-6
+                                       right-6
+                                       bg-secondary
+                                       border
+                                       text-muted-foreground
+                                       rounded
+                                       p-1
+                                       z-10
+
+                                       opacity-0
+                                       pointer-events-none
+                                       translate-y-1
+                                       transition-[translate,opacity]
+
+                                       group-hover:opacity-100
+                                       group-hover:pointer-events-auto
+                                       group-hover:translate-y-0
+
+                                       group-focus-within:opacity-100
+                                       group-focus-within:pointer-events-auto
+                                       group-focus-within:translate-y-0
+                                    "
+												onclick={() => manager.toggle_actions(asset.id)}
 												><EllipsisIcon size="20" /></button
 											>
-											<div
-												class="absolute top-6 right-0 bg-zinc-800 rounded-md p-1 border border-white/10 opacity-0 pointer-events-none translate-y-1 scale-95 transition-[translate,opacity] peer-hover/context:opacity-100 peer-hover/context:pointer-events-auto peer-hover/context:translate-y-0 peer-hover/context:scale-100 duration-400 hover:opacity-100 hover:pointer-events-auto hover:translate-y-0 hover:scale-100"
-											>
-												<button
-													class="p-3 w-full text-start hover:bg-muted transition-colors"
-													onclick={() => {
-														manager.open_item_details(asset)
-														back = true
-													}}
-												>
-													View Details
-												</button>
-												<button
-													class="p-3 w-full text-start hover:bg-muted transition-colors"
-													onclick={() => manager.delete(asset)}
-												>
-													Delete
-												</button>
-											</div>
 											{@render AssetMeta(asset)}
 										</div>
 									</li>
@@ -364,10 +423,10 @@
 				</footer>
 			{/if}
 		</div>
-		{#if folder_modal}
+		{#if manager.folder_modal}
 			<button
 				class="fixed inset-0 bg-white/10 z-10"
-				onclick={() => (folder_modal = false)}
+				onclick={() => (manager.folder_modal = false)}
 				aria-label="Close modal"
 				transition:fade
 			></button>
@@ -377,7 +436,7 @@
 			>
 				<div class="flex justify-between gap-4">
 					<h2 class="text-xl font-medium">Create New Folder</h2>
-					<button onclick={() => (folder_modal = false)}>
+					<button onclick={() => (manager.folder_modal = false)}>
 						<XIcon size={18} />
 					</button>
 				</div>
@@ -387,7 +446,7 @@
 						<Input
 							class="w-full rounded-lg border border-white"
 							placeholder="e.g. Icons, Videos, Landing pages"
-							bind:value={folder_name}
+							bind:value={manager.folder_name}
 						/>
 					</label>
 					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
@@ -398,8 +457,13 @@
 								class:pl-8={i !== 5}
 							>
 								{#if i === 5}
-									<button onclick={() => (folders[i] = !folders[i])}>
-										<ChevronDownIcon size={18} class={cn({ 'rotate-270': !folders[i] })} />
+									<button
+										onclick={() => (manager.expanded_folders[i] = !manager.expanded_folders[i])}
+									>
+										<ChevronDownIcon
+											size={18}
+											class={cn({ 'rotate-270': !manager.expanded_folders[i] })}
+										/>
 									</button>
 								{/if}
 								<button class="flex items-center gap-3 w-full py-2">
@@ -424,22 +488,21 @@
 					</div>
 				</div>
 				<div class="flex gap-4 justify-end bg-white/5 rounded-b-lg px-8 py-4 -m-8">
-					<button
-						class="bg-secondary border border-white/10 rounded-lg px-6 py-2 relative flex gap-2 items-center"
+					<Button
+						variant="secondary"
 						onclick={() => {
-							folder_modal = false
-							folder_name = ''
-						}}>Cancel</button
+							manager.folder_modal = false
+							manager.folder_name = ''
+						}}>Cancel</Button
 					>
-					<button
-						class="bg-primary text-primary-foreground border border-primary rounded-lg px-6 py-2 relative flex gap-2 items-center"
-						disabled={folder_name === ''}
+					<Button
+						disabled={manager.folder_name === '' || manager.loading}
 						onclick={async () => {
-							loading = true
-							await manager.create_folder(folder_name)
-							loading = false
-							folder_modal = false
-						}}>{loading ? 'Creating' : 'Create'}</button
+							manager.loading = true
+							await manager.create_folder(manager.folder_name)
+							manager.loading = false
+							manager.folder_modal = false
+						}}>{manager.loading ? 'Creating' : 'Create'}</Button
 					>
 				</div>
 			</div>
@@ -448,10 +511,10 @@
 		<div class="grid grid-cols-12 h-full">
 			<div class="p-8 col-span-8 flex flex-col gap-8 overflow-y-auto">
 				<div class="flex justify-between">
-					{#if back}
+					{#if manager.back}
 						<button
 							onclick={() => {
-								back = false
+								manager.back = false
 								manager.close_item_details()
 								manager.plugin?.actions?.setModalOpen(true)
 							}}
@@ -473,15 +536,15 @@
 					>
 						<img
 							class="size-full object-contain"
-							src={manager.open_item.links.self}
+							src={manager.open_item.links?.self}
 							alt={manager.open_item.attributes.alt}
 							title={manager.open_item.attributes.title}
 						/>
 						{#if manager.content?.focus}
 							<span
 								class="absolute size-5 border border-black bg-primary rounded-full"
-								style:top={focus_y + 'px'}
-								style:left={focus_x + 'px'}
+								style:top={manager.focus_y + 'px'}
+								style:left={manager.focus_x + 'px'}
 							></span>
 						{/if}
 					</button>
@@ -520,7 +583,7 @@
 					</div>
 					<div class="flex flex-col gap-2 mb-4">
 						Asset URL
-						<pre class="overflow-auto">{manager.open_item.links.self}</pre>
+						<pre class="overflow-auto">{manager.open_item.links?.self}</pre>
 					</div>
 					<label class="flex flex-col gap-2" for="title">
 						Title/Caption
@@ -544,24 +607,14 @@
 					</label>
 				</div>
 				<div class="px-8 py-4 grow-0 shrink-0 flex gap-2 border-t border-white/10 justify-end">
-					<button
-						class="bg-secondary text-secondary-foreground rounded py-3 px-7 border border-white/20"
-						onclick={manager.close_item_details}
-					>
-						Cancel
-					</button>
-					<button
-						class="bg-primary text-primary-foreground rounded py-3 px-7"
-						onclick={manager.save_and_close}
-					>
-						Save & Close
-					</button>
+					<Button variant="secondary" onclick={manager.close_item_details}>Cancel</Button>
+					<Button onclick={manager.save_and_close}>Save & Close</Button>
 				</div>
 			</div>
 		</div>
 	{:else if manager.content?._data}
 		<div
-			class="p-4 grid grid-cols-[140px_1fr] w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
+			class="p-4 grid grid-cols-[106px_1fr] w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
 			{@render AssetPreview(manager.content._data)}
 			<div class="grid">{@render AssetMeta(manager.content._data)}</div>
@@ -586,7 +639,7 @@
 				</li>
 				<li>
 					<button
-						onclick={() => manager.select(null)}
+						onclick={() => manager.select_asset(null)}
 						title="Remove asset"
 						aria-label="Remove asset"
 					>
@@ -597,7 +650,7 @@
 		</div>
 	{:else}
 		<button
-			class="p-4 grid grid-cols-[140px_1fr] w-full border border-input rounded hover:border-primary transition-colors bg-input-background text-card-foreground items-center justify-items-start gap-5 font-medium"
+			class="p-4 grid grid-cols-[106px_1fr] w-full border border-input rounded hover:border-primary transition-colors bg-input-background text-card-foreground items-center justify-items-start gap-5 font-medium"
 			onclick={manager.open_asset_picker}
 			title="Add asset"
 			aria-label="Add asset"
