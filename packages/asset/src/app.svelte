@@ -103,7 +103,7 @@
 	<figure
 		class={cn(
 			'flex items-center justify-center [&>svg]:absolute [&>svg]:size-5 bg-muted text-muted-foreground rounded w-full aspect-video relative border min-h-20',
-			{ 'opacity-50': manager.show_deleted }
+			{ 'opacity-50 bg-destructive': manager.show_deleted }
 		)}
 	>
 		{#if asset?.attributes.content_type}

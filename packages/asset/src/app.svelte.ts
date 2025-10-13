@@ -272,6 +272,7 @@ export class AssetManager {
 	restore = async (asset: R2Asset) => {
 		if (!this.#secrets) return
 		await this.r2.post(`${this.#secrets.r2_bucket}/assets/${asset.id}/restore`)
+		this.list_assets()
 	}
 
 	restore_multiple = async (asset_ids: Array<string>) => {
