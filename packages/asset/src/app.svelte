@@ -197,12 +197,12 @@
 										</button>
 									{/if}
 									<button
-										class={cn('flex items-center gap-3 w-full py-2', {
+										class={cn('flex items-center gap-3 w-full py-2 text-start', {
 											'text-tertiary': manager.active_folder === folder.attributes.name,
 										})}
 										onclick={() => manager.select_folder(folder.attributes.name)}
 									>
-										<FolderIcon size={18} strokeWidth={1.5} />
+										<FolderIcon class="shrink-0" size={18} strokeWidth={1.5} />
 										{folder.attributes.name}
 									</button>
 								</div>
@@ -467,7 +467,7 @@
 									</button>
 								{/if}
 								<button class="flex items-center gap-3 w-full py-2">
-									<FolderIcon size={18} strokeWidth={1.5} />
+									<FolderIcon class="shrink-0" size={18} strokeWidth={1.5} />
 									{folder.attributes.name}
 								</button>
 							</div>
