@@ -65,4 +65,7 @@ export interface Asset extends Omit<StoryblokAsset, 'id'> {
 
 	/* The raw data from the database */
 	_data: R2AssetResource
+
+	/* The name of the asset ('Description' in Storyblok UI) */
+	name?: string
 }

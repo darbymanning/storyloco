@@ -122,17 +122,13 @@ export class AssetManager {
 			return
 		}
 
-		const { alt, title, source, copyright } = asset.attributes
+		const { alt, title, source, copyright, name } = asset.attributes
 
 		const meta_data: Asset['meta_data'] = {
 			alt,
 			title,
 			source,
 			copyright,
-		}
-
-		if (asset.attributes.width && asset.attributes.height) {
-			meta_data.size = `${asset.attributes.width}x${asset.attributes.height}`
 		}
 
 		this.content = {
@@ -146,6 +142,7 @@ export class AssetManager {
 			copyright,
 			is_external_url: false,
 			meta_data,
+			name,
 
 			// Additional attributes
 			width: asset.attributes.width,
@@ -167,7 +164,7 @@ export class AssetManager {
 		if (!this.#secrets) return
 
 		await this.r2.patch<R2Asset>(`${this.#secrets.r2_bucket}/assets/${this.open_item?.id}`, {
-			json: this.open_item,
+			json: this.open_item?.attributes,
 		})
 	}
 
@@ -230,9 +227,17 @@ export class AssetManager {
 		await this.list_assets()
 	}
 
-	save_and_close = () => {
+	save_and_close = async () => {
+		if (!this.content) return
+
+		this.content.alt = this.open_item?.attributes.alt
+		this.content.title = this.open_item?.attributes.title
+		this.content.source = this.open_item?.attributes.source
+		this.content.copyright = this.open_item?.attributes.copyright
+		this.content.name = this.open_item?.attributes.name
+
 		this.update()
-		this.update_asset()
+		await this.update_asset()
 		this.close_item_details()
 	}
 
