@@ -1,6 +1,6 @@
 import type { R2AssetResource } from 'moxyloco/r2'
 
-export interface StoryblokAsset {
+interface StoryblokAsset {
 	/* The numeric ID */
 	id: number
 

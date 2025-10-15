@@ -7,6 +7,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 ### Field Plugins
 
 - **🎬 Mux Video** - Upload, manage, and configure videos with Mux integration
+- **📎 Asset Plus** - Enhanced asset picker with search, filters, and previews
 - **📝 Heading** - Simple heading editor with level selection (H1-H6)
 - **🎨 Theme** - Color theme selector with visual previews
 - **🔗 Link** - Link editor with support for internal, external, email, and asset links
@@ -49,9 +50,10 @@ import type { Video } from 'storyloco/mux'
 import type { Heading } from 'storyloco/heading'
 import type { Link } from 'storyloco/link'
 import type { Input } from 'storyloco/input'
+import type { Asset } from 'storyloco/asset'
 
 // Or import everything
-import type { Video, Heading, Link, Input } from 'storyloco'
+import type { Video, Heading, Link, Input, Asset } from 'storyloco'
 ```
 
 ### Use Storyblok Client
@@ -186,6 +188,7 @@ export interface StoryblokCustomPlugins {
 		twitter_description: string
 	}
 	'loco-time': string
+	'loco-asset': import('storyloco/asset').Asset
 }
 
 export default defineConfig({

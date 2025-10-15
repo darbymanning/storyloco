@@ -24,6 +24,7 @@
       "packages/heading/types.ts",
       "packages/plans/types.ts",
       "packages/link/types.ts",
+      "packages/asset/types.ts",
       "packages/theme/types.ts",
       "packages/shared/dist",
       "packages/vite/dist",
@@ -59,6 +60,9 @@
       },
       "./link": {
          "types": "./packages/link/types.ts"
+      },
+      "./asset": {
+         "types": "./packages/asset/types.ts"
       },
       "./shared/utils": {
          "types": "./packages/shared/dist/utils.d.ts",
