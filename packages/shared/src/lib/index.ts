@@ -1,6 +1,6 @@
 // UI Components
 export * as Accordion from './components/ui/accordion/index.js'
-export { Button } from './components/ui/button/index.js'
+export { Button, buttonVariants as button_variants } from './components/ui/button/index.js'
 export * as Card from './components/ui/card/index.js'
 export { Checkbox } from './components/ui/checkbox/index.js'
 export { Input } from './components/ui/input/index.js'
