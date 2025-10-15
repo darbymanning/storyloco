@@ -97,8 +97,8 @@
 	</ol>
 {/snippet}
 
-{#snippet AssetPreview(asset?: R2Asset)}
-	{@const is_selected = manager.content?.id === asset?.id}
+{#snippet AssetPreview(asset?: R2Asset, show_selected = true)}
+	{@const is_selected = show_selected && manager.content?.id === asset?.id}
 
 	<figure
 		class={cn(
@@ -357,7 +357,15 @@
 											</ol>
 										{/if}
 									{/if}
-									<div class="grid gap-1 rounded hover:bg-muted transition-colors p-3 w-ful">
+									<div
+										class={cn(
+											'grid gap-1 rounded hover:bg-muted transition-colors p-3 w-full border border-transparent',
+											{
+												'bg-primary/20 hover:bg-primary/30 border-primary/50 hover:border-primary/70':
+													manager.content?.id === asset.id,
+											}
+										)}
+									>
 										<button
 											class="peer/ellipsis"
 											onclick={() => {
@@ -643,7 +651,7 @@
 		<div
 			class="p-4 grid grid-cols-[106px_1fr] w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
 		>
-			{@render AssetPreview(manager.content._data)}
+			{@render AssetPreview(manager.content._data, false)}
 			<div class="grid">{@render AssetMeta(manager.content._data)}</div>
 			<ul class={actions_menu_classes}>
 				<li>
