@@ -1,4 +1,4 @@
-import type { R2AssetResource } from 'moxyloco/r2'
+import type { R2Asset, R2AssetAttributes } from 'moxyloco/r2'
 
 interface StoryblokAsset {
 	/* The numeric ID */
@@ -49,22 +49,22 @@ export interface Asset extends Omit<StoryblokAsset, 'id'> {
 	id: string
 
 	/* The width of the asset */
-	width?: R2AssetResource['attributes']['width']
+	width?: R2AssetAttributes['width']
 
 	/* The height of the asset */
-	height?: R2AssetResource['attributes']['height']
+	height?: R2AssetAttributes['height']
 
 	/* The format of the asset */
-	format?: R2AssetResource['attributes']['format']
+	format?: R2AssetAttributes['format']
 
 	/* Content type of the asset */
-	content_type?: R2AssetResource['attributes']['content_type']
+	content_type?: R2AssetAttributes['content_type']
 
 	/* The size of the asset in bytes */
-	size_bytes: R2AssetResource['attributes']['size_bytes']
+	size_bytes: R2AssetAttributes['size_bytes']
 
 	/* The raw data from the database */
-	_data: R2AssetResource
+	_data: R2Asset
 
 	/* The name of the asset ('Description' in Storyblok UI) */
 	name?: string
