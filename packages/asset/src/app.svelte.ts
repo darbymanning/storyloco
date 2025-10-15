@@ -204,7 +204,7 @@ export class AssetManager {
 		this.meta = res.meta
 	}
 
-	delete_asset = async (asset: R2Asset) => {
+	soft_delete_asset = async (asset: R2Asset) => {
 		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete this asset?')
 		if (!confirm) return
@@ -215,7 +215,24 @@ export class AssetManager {
 		await this.list_assets()
 	}
 
-	delete_many_assets = async (assets: Array<string>) => {
+	hard_delete_asset = async (asset: R2Asset) => {
+		if (!this.#secrets) return
+		const confirm = window.confirm('Are you sure you want to delete this asset permanently?')
+		if (!confirm) return
+		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}?hard=true`)
+		await this.list_assets()
+	}
+
+	hard_delete_many_assets = async (asset_ids: Array<string>) => {
+		if (!this.#secrets) return
+		const confirm = window.confirm('Are you sure you want to delete these assets permanently?')
+		if (!confirm) return
+		await this.r2.delete(`${this.#secrets.r2_bucket}/assets?hard=true`, { json: asset_ids })
+		await this.list_assets()
+		this.selected = []
+	}
+
+	soft_delete_many_assets = async (assets: Array<string>) => {
 		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete these assets?')
 		if (!confirm) return
@@ -225,6 +242,7 @@ export class AssetManager {
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets`, { json: assets })
 		if (assets.some((e) => e === this.content?.id)) this.select_asset(null)
 		await this.list_assets()
+		this.selected = []
 	}
 
 	save_and_close = async () => {
@@ -280,7 +298,7 @@ export class AssetManager {
 		this.list_assets()
 	}
 
-	restore_multiple = async (asset_ids: Array<string>) => {
+	restore_many_assets = async (asset_ids: Array<string>) => {
 		if (!this.#secrets) return
 		await this.r2.post(`${this.#secrets.r2_bucket}/restore`, { json: asset_ids })
 	}

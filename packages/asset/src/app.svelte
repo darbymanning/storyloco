@@ -209,7 +209,7 @@
 								<!-- TODO: add subfolders -->
 								<!-- {#if i === 5 && folders[i]}
 							<div class="flex flex-col" transition:slide>
-								{#each Array(3), i}
+								{#each Array(3), i}soft_delete_asset
 									<button
 										class="w-full flex items-center gap-3 py-2 hover:bg-zinc-600 rounded-md pl-12"
 									>
@@ -257,15 +257,24 @@
 										>Clear</Button
 									>
 									{#if manager.show_deleted}
-										<Button
-											variant="ghost"
-											size="sm"
-											class="ml-auto"
-											onclick={() => manager.restore_multiple(manager.selected)}
-										>
-											<UndoDotIcon size={18} />
-											Restore
-										</Button>
+										<div class="ml-auto">
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => manager.restore_many_assets(manager.selected)}
+											>
+												<UndoDotIcon size={18} />
+												Restore
+											</Button>
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => manager.hard_delete_many_assets(manager.selected)}
+											>
+												<TrashIcon size={18} />
+												Delete Permanently
+											</Button>
+										</div>
 									{:else}
 										<Button size="icon" variant="ghost" class="ml-auto rounded-full">
 											<FolderIcon size={18} />
@@ -274,7 +283,7 @@
 											size="icon"
 											class="mr-2 rounded-full"
 											variant="ghost"
-											onclick={() => manager.delete_many_assets(manager.selected)}
+											onclick={() => manager.soft_delete_many_assets(manager.selected)}
 										>
 											<TrashIcon size={18} />
 										</Button>
@@ -316,10 +325,16 @@
 															>
 																Restore
 															</button>
+															<button
+																class="p-3 w-full text-start hover:bg-muted transition-colors"
+																onclick={() => manager.hard_delete_asset(asset)}
+															>
+																Delete Permanently
+															</button>
 														{:else}
 															<button
 																class="p-3 w-full text-start hover:bg-muted transition-colors"
-																onclick={() => manager.delete_asset(asset)}
+																onclick={() => manager.soft_delete_asset(asset)}
 															>
 																Delete
 															</button>
