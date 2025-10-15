@@ -82,7 +82,7 @@
 />
 
 {#snippet Skeleton()}
-	<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
+	<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2 pt-14">
 		{#each Array(12)}
 			<li>
 				<div class="p-3 grid gap-2">
@@ -158,7 +158,11 @@
 						'text-start justify-start -mx-3',
 						{ '!text-tertiary': manager.active_folder === null && !manager.show_deleted },
 					]}
-					onclick={() => manager.select_folder(null)}
+					onclick={() => {
+						manager.show_deleted = false
+						manager.select_folder(null)
+						manager.list_assets(1)
+					}}
 				>
 					<ImageIcon />
 					All Assets
@@ -167,8 +171,9 @@
 					variant="ghost"
 					class={['text-start justify-start -mx-3', { '!text-tertiary': manager.show_deleted }]}
 					onclick={() => {
-						manager.select_folder(null)
 						manager.show_deleted = true
+						manager.select_folder(null)
+						manager.list_assets(1)
 					}}
 				>
 					<TrashIcon />
@@ -179,7 +184,8 @@
 				{:then}
 					{#if manager.folders?.length}
 						<div>Folders</div>
-						<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
+						<!-- TODO: add search folders -->
+						<!-- <Input class="w-full rounded-lg border border-white" placeholder="Search folders..." /> -->
 						<div class="flex flex-col">
 							{#each manager.folders as folder, i}
 								<div
@@ -200,7 +206,11 @@
 										class={cn('flex items-center gap-3 w-full py-2 text-start', {
 											'text-tertiary': manager.active_folder === folder.attributes.name,
 										})}
-										onclick={() => manager.select_folder(folder.attributes.name)}
+										onclick={() => {
+											manager.show_deleted = false
+											manager.select_folder(folder.attributes.name)
+											manager.list_assets(1)
+										}}
 									>
 										<FolderIcon class="shrink-0" size={18} strokeWidth={1.5} />
 										{folder.attributes.name}
@@ -226,179 +236,180 @@
 			</aside>
 
 			<main class="pt-4 col-span-4">
-				{#await manager.list_assets()}
+				<Input
+					class="w-full rounded-lg border border-white"
+					placeholder="Search assets..."
+					bind:value={manager.search_query}
+					onkeyup={manager.search_keyup}
+				/>
+				{#if manager.loading_assets}
 					{@render Skeleton()}
-				{:then}
-					<Input class="w-full rounded-lg border border-white" placeholder="Search assets..." />
-					{#if !manager.assets || manager.assets.length === 0}
-						<div class="flex flex-col gap-4 items-center justify-center h-full">
-							<div class="text-4xl">🙈</div>
-							<p class="text-lg text-muted-foreground">No assets found</p>
-						</div>
-					{:else}
-						<div class="relative pt-14">
-							{#if manager.selected.length > 0}
-								<div
-									class="bg-zinc-700 rounded-md p-3 py-1.5 flex gap-4 items-center absolute z-10 top-2 left-0 w-full"
-									transition:scale={{ start: 0.99 }}
+				{:else if !manager.assets || manager.assets.length === 0}
+					<div class="flex flex-col gap-4 items-center justify-center h-full">
+						<div class="text-4xl">🙈</div>
+						<p class="text-lg text-muted-foreground">No assets found</p>
+					</div>
+				{:else}
+					<div class="relative pt-14">
+						{#if manager.selected.length > 0}
+							<div
+								class="bg-zinc-700 rounded-md p-3 py-1.5 flex gap-4 items-center absolute z-10 top-2 left-0 w-full"
+								transition:scale={{ start: 0.99 }}
+							>
+								<div class="text-sm">
+									{manager.selected.length}
+									{manager.selected.length === 1 ? 'item' : 'items'} selected
+								</div>
+								<Button
+									size="sm"
+									variant="ghost"
+									onclick={() =>
+										(manager.selected = manager.assets?.map((asset) => asset.id) || [])}
+									>Select All</Button
 								>
-									<div class="text-sm">
-										{manager.selected.length}
-										{manager.selected.length === 1 ? 'item' : 'items'} selected
-									</div>
-									<Button
-										size="sm"
-										variant="ghost"
-										onclick={() =>
-											(manager.selected = manager.assets?.map((asset) => asset.id) || [])}
-										>Select All</Button
-									>
-									<Button size="sm" variant="ghost" onclick={() => (manager.selected = [])}
-										>Clear</Button
-									>
-									{#if manager.show_deleted}
-										<div class="ml-auto">
-											<Button
-												variant="ghost"
-												size="sm"
-												onclick={() => manager.restore_many_assets(manager.selected)}
-											>
-												<UndoDotIcon size={18} />
-												Restore
-											</Button>
-											<Button
-												variant="ghost"
-												size="sm"
-												onclick={() => manager.hard_delete_many_assets(manager.selected)}
-											>
-												<TrashIcon size={18} />
-												Delete Permanently
-											</Button>
-										</div>
-									{:else}
-										<Button size="icon" variant="ghost" class="ml-auto rounded-full">
-											<FolderIcon size={18} />
+								<Button size="sm" variant="ghost" onclick={() => (manager.selected = [])}
+									>Clear</Button
+								>
+								{#if manager.show_deleted}
+									<div class="ml-auto">
+										<Button
+											variant="ghost"
+											size="sm"
+											onclick={() => manager.restore_many_assets(manager.selected)}
+										>
+											<UndoDotIcon size={18} />
+											Restore
 										</Button>
 										<Button
-											size="icon"
-											class="mr-2 rounded-full"
 											variant="ghost"
-											onclick={() => manager.soft_delete_many_assets(manager.selected)}
+											size="sm"
+											onclick={() => manager.hard_delete_many_assets(manager.selected)}
 										>
 											<TrashIcon size={18} />
+											Delete Permanently
 										</Button>
-									{/if}
-								</div>
-							{/if}
-							<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
-								{#each manager.assets as asset, i (i + asset.id)}
-									{@const actions_open = manager.open_actions === asset.id}
-									<li
-										class="relative group size-full"
-										class:active={actions_open}
-										animate:flip={{ duration: 300 }}
-										in:fly={{ y: 20, duration: 300, delay: 100 }}
-										out:fade={{ duration: 200 }}
+									</div>
+								{:else}
+									<Button size="icon" variant="ghost" class="ml-auto rounded-full">
+										<FolderIcon size={18} />
+									</Button>
+									<Button
+										size="icon"
+										class="mr-2 rounded-full"
+										variant="ghost"
+										onclick={() => manager.soft_delete_many_assets(manager.selected)}
 									>
-										{#if asset.id}
-											{#if actions_open}
-												<ol
-													class="absolute top-14 w-full bg-card text-card-foreground rounded shadow-md z-10 border"
-													transition:fly={{ y: 20, duration: 300, delay: 100 }}
-												>
-													<li>
+										<TrashIcon size={18} />
+									</Button>
+								{/if}
+							</div>
+						{/if}
+						<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
+							{#each manager.assets as asset, i (i + asset.id)}
+								{@const actions_open = manager.open_actions === asset.id}
+								<li
+									class="relative group size-full"
+									class:active={actions_open}
+									animate:flip={{ duration: 300 }}
+									in:fly={{ y: 20, duration: 300, delay: 100 }}
+									out:fade={{ duration: 200 }}
+								>
+									{#if asset.id}
+										{#if actions_open}
+											<ol
+												class="absolute top-14 w-full bg-card text-card-foreground rounded shadow-md z-10 border"
+												transition:fly={{ y: 20, duration: 300, delay: 100 }}
+											>
+												<li>
+													<button
+														class="p-3 w-full text-start hover:bg-muted transition-colors"
+														onclick={() => {
+															manager.open_item_details(asset)
+															manager.back = true
+														}}
+													>
+														View Details
+													</button>
+												</li>
+												<li>
+													{#if manager.show_deleted}
 														<button
 															class="p-3 w-full text-start hover:bg-muted transition-colors"
-															onclick={() => {
-																manager.open_item_details(asset)
-																manager.back = true
-															}}
+															onclick={() => manager.restore(asset)}
 														>
-															View Details
+															Restore
 														</button>
-													</li>
-													<li>
-														{#if manager.show_deleted}
-															<button
-																class="p-3 w-full text-start hover:bg-muted transition-colors"
-																onclick={() => manager.restore(asset)}
-															>
-																Restore
-															</button>
-															<button
-																class="p-3 w-full text-start hover:bg-muted transition-colors"
-																onclick={() => manager.hard_delete_asset(asset)}
-															>
-																Delete Permanently
-															</button>
-														{:else}
-															<button
-																class="p-3 w-full text-start hover:bg-muted transition-colors"
-																onclick={() => manager.soft_delete_asset(asset)}
-															>
-																Delete
-															</button>
-														{/if}
-													</li>
-												</ol>
-											{/if}
+														<button
+															class="p-3 w-full text-start hover:bg-muted transition-colors"
+															onclick={() => manager.hard_delete_asset(asset)}
+														>
+															Delete Permanently
+														</button>
+													{:else}
+														<button
+															class="p-3 w-full text-start hover:bg-muted transition-colors"
+															onclick={() => manager.soft_delete_asset(asset)}
+														>
+															Delete
+														</button>
+													{/if}
+												</li>
+											</ol>
 										{/if}
-										<div class="grid gap-1 rounded hover:bg-muted transition-colors p-3 w-ful">
-											<button
-												class="peer/ellipsis"
-												onclick={() => {
-													manager.select_asset(asset)
-													manager.plugin?.actions?.setModalOpen(false)
-												}}
-											>
-												{@render AssetPreview(asset)}
-											</button>
-											<Checkbox
-												class="absolute top-6 left-6 opacity-0 pointer-events-none translate-y-1 transition-[translate,opacity] peer-hover/ellipsis:opacity-100 peer-hover/ellipsis:pointer-events-auto peer-hover/ellipsis:translate-y-0 duration-400 hover:opacity-100 hover:pointer-events-auto hover:translate-y-0 aria-checked:opacity-100 aria-checked:pointer-events-auto aria-checked:translate-y-0"
-												onCheckedChange={() =>
-													manager.selected.includes(asset.id)
-														? manager.selected.splice(manager.selected.indexOf(asset.id), 1)
-														: manager.selected.push(asset.id)}
-												checked={manager.selected.includes(asset.id)}
-											/>
-											<button
-												class="
-                                       absolute
-                                       top-6
-                                       right-6
-                                       bg-secondary
-                                       border
-                                       text-muted-foreground
-                                       rounded
-                                       p-1
-                                       z-10
+									{/if}
+									<div class="grid gap-1 rounded hover:bg-muted transition-colors p-3 w-ful">
+										<button
+											class="peer/ellipsis"
+											onclick={() => {
+												manager.select_asset(asset)
+												manager.plugin?.actions?.setModalOpen(false)
+											}}
+										>
+											{@render AssetPreview(asset)}
+										</button>
+										<Checkbox
+											class="absolute top-6 left-6 opacity-0 pointer-events-none translate-y-1 transition-[translate,opacity] peer-hover/ellipsis:opacity-100 peer-hover/ellipsis:pointer-events-auto peer-hover/ellipsis:translate-y-0 duration-400 hover:opacity-100 hover:pointer-events-auto hover:translate-y-0 aria-checked:opacity-100 aria-checked:pointer-events-auto aria-checked:translate-y-0"
+											onCheckedChange={() =>
+												manager.selected.includes(asset.id)
+													? manager.selected.splice(manager.selected.indexOf(asset.id), 1)
+													: manager.selected.push(asset.id)}
+											checked={manager.selected.includes(asset.id)}
+										/>
+										<button
+											class="
+                                    absolute
+                                    top-6
+                                    right-6
+                                    bg-secondary
+                                    border
+                                    text-muted-foreground
+                                    rounded
+                                    p-1
+                                    z-10
 
-                                       opacity-0
-                                       pointer-events-none
-                                       translate-y-1
-                                       transition-[translate,opacity]
+                                    opacity-0
+                                    pointer-events-none
+                                    translate-y-1
+                                    transition-[translate,opacity]
 
-                                       group-hover:opacity-100
-                                       group-hover:pointer-events-auto
-                                       group-hover:translate-y-0
+                                    group-hover:opacity-100
+                                    group-hover:pointer-events-auto
+                                    group-hover:translate-y-0
 
-                                       group-focus-within:opacity-100
-                                       group-focus-within:pointer-events-auto
-                                       group-focus-within:translate-y-0
-                                    "
-												onclick={() => manager.toggle_actions(asset.id)}
-												><EllipsisIcon size="20" /></button
-											>
-											{@render AssetMeta(asset)}
-										</div>
-									</li>
-								{/each}
-							</ol>
-						</div>
-					{/if}
-				{:catch}
-					An error occurred while loading assets.
-				{/await}
+                                    group-focus-within:opacity-100
+                                    group-focus-within:pointer-events-auto
+                                    group-focus-within:translate-y-0
+                                 "
+											onclick={() => manager.toggle_actions(asset.id)}
+											><EllipsisIcon size="20" /></button
+										>
+										{@render AssetMeta(asset)}
+									</div>
+								</li>
+							{/each}
+						</ol>
+					</div>
+				{/if}
 			</main>
 			{#if manager.meta?.total}
 				<footer
@@ -464,7 +475,8 @@
 							bind:value={manager.folder_name}
 						/>
 					</label>
-					<Input class="w-full rounded-lg border border-white" placeholder="Search folders..." />
+					<!-- TODO: add search folders -->
+					<!-- <Input class="w-full rounded-lg border border-white" placeholder="Search folders..." /> -->
 					<div>
 						{#each manager.folders || [] as folder, i}
 							<div

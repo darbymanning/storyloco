@@ -11,6 +11,8 @@ export class AssetManager {
 	selected: Array<string> = $state([])
 	expanded_folders: Array<boolean> = $state([])
 	show_deleted = $state(false)
+	search_query: string = $state('')
+	loading_assets = $state(false)
 	focus_x = $derived(this.content?.focus?.split(':')[0].split('x')[0])
 	focus_y = $derived(this.content?.focus?.split(':')[0].split('x')[1])
 	back = $state(false)
@@ -32,6 +34,7 @@ export class AssetManager {
 	is_image = $derived(this.open_item?.attributes.content_type?.startsWith('image/'))
 	limit = 96
 	#initial = $state(true)
+	#search_timeout: number | null = $state(null)
 	#secrets: {
 		r2_secret: string
 		r2_bucket: string
@@ -56,7 +59,6 @@ export class AssetManager {
 	}
 
 	select_folder = (folder: string | null) => {
-		this.show_deleted = false
 		if (folder) sessionStorage.setItem('active_folder', folder)
 		else sessionStorage.removeItem('active_folder')
 		this.active_folder = folder
@@ -92,7 +94,12 @@ export class AssetManager {
 				this.plugin = state as Plugin
 				// mirror incoming content exactly; include null to clear ui state
 				this.content = (this.plugin.data?.content as Asset | null) ?? null
-				if (this.#initial) this.#initial = false
+
+				if (this.#initial) {
+					this.#initial = false
+					// initial fetch for picker view
+					this.list_assets(1)
+				}
 			},
 		})
 	}
@@ -188,7 +195,7 @@ export class AssetManager {
 
 	list_assets = async (page?: number) => {
 		if (!this.#secrets) return
-
+		this.loading_assets = true
 		const params = new URLSearchParams([
 			['limit', this.limit.toString()],
 			['page', page?.toString() || '1'],
@@ -196,12 +203,28 @@ export class AssetManager {
 
 		if (this.active_folder) params.set('folder_path', this.active_folder)
 		if (this.show_deleted) params.set('deleted', 'true')
+		if (this.search_query) params.set('filter[q]', this.search_query)
 
 		const target = `${this.#secrets.r2_bucket}/assets?${params.toString()}`
 
-		const res = await this.r2.get<Paths.ListAssets.Responses.$200>(target).json()
-		this.assets = res.data
-		this.meta = res.meta
+		try {
+			const res = await this.r2.get<Paths.ListAssets.Responses.$200>(target).json()
+			this.assets = res.data
+			this.meta = res.meta
+		} finally {
+			this.loading_assets = false
+		}
+	}
+
+	search_keyup = (event: KeyboardEvent) => {
+		const value = (event.target as HTMLInputElement)?.value || ''
+		this.search_query = value
+
+		if (this.#search_timeout) window.clearTimeout(this.#search_timeout)
+
+		this.#search_timeout = window.setTimeout(() => {
+			this.list_assets(1)
+		}, 500)
 	}
 
 	soft_delete_asset = async (asset: R2Asset) => {
