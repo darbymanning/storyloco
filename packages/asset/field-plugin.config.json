@@ -7,6 +7,10 @@
       {
          "name": "R2_BUCKET",
          "value": "asset-plugin-test"
+      },
+      {
+         "name": "multiple",
+         "value": "true"
       }
    ]
 }

@@ -4,13 +4,30 @@ import ky from 'ky'
 import type { R2Asset, Paths, R2FolderTree } from 'moxyloco/r2'
 import { SvelteSet } from 'svelte/reactivity'
 import { toast } from 'shared'
+import { merge } from 'lodash-es'
 
-type Plugin = FieldPluginResponse<Asset | null>
+type Content = Asset | Array<Asset> | null
+type Plugin = FieldPluginResponse<Content>
 
 export class AssetManager {
 	plugin: Plugin | null = $state(null)
-	content: Asset | null = $state(null)
-	selected: Array<string> = $state([])
+	readonly loaded = $derived(this.plugin?.type === 'loaded')
+	readonly multiple = $derived(this.plugin?.data?.options.multiple === 'true')
+	content: Content = $state(null)
+	selected: Array<R2Asset> = $state([])
+	toggle_selected = (asset: R2Asset) => {
+		if (this.multiple) {
+			this.selected = this.selected.includes(asset)
+				? this.selected.filter((a) => a !== asset)
+				: [...this.selected, asset]
+		} else {
+			if (this.selected.includes(asset)) {
+				this.selected = this.selected.filter((a) => a !== asset)
+			} else {
+				this.selected = [asset]
+			}
+		}
+	}
 	expanded_folders: Set<string> = $state(new SvelteSet())
 	toggle_folder_expansion = (folder_id: string) => {
 		if (this.expanded_folders.has(folder_id)) {
@@ -22,8 +39,37 @@ export class AssetManager {
 	show_deleted = $state(false)
 	search_query: string = $state('')
 	loading_assets = $state(false)
-	focus_x = $derived(this.content?.focus?.split(':')[0].split('x')[0])
-	focus_y = $derived(this.content?.focus?.split(':')[0].split('x')[1])
+	active_asset_ids = $derived.by(() => {
+		if (Array.isArray(this.content)) return this.content.map((item) => item._data.id)
+		return this.content?._data.id ? [this.content?._data.id] : []
+	})
+	assets: Array<R2Asset> | undefined = $state(undefined)
+	folders: Array<R2FolderTree> | undefined = $state(undefined)
+	meta: Paths.ListAssets.Responses.$200['meta'] = $state()
+	active_asset: R2Asset | null = $derived.by(() => {
+		if (sessionStorage.getItem('view') === 'details' && this.is_modal_open) {
+			return JSON.parse(sessionStorage.getItem('active_asset') || 'null')
+		}
+	})
+	active_folder = $derived(sessionStorage.getItem('active_folder') || null)
+	open_actions: string | null = $state(null)
+	is_image = $derived(this.active_asset?.attributes.content_type?.startsWith('image/'))
+	limit = 96
+	#initial = $state(true)
+	#search_timeout: number | null = $state(null)
+	readonly #secrets: {
+		r2_secret: string
+		r2_bucket: string
+	} | null = $derived.by(() => {
+		if (this.plugin?.type !== 'loaded') return null
+
+		const r2_secret = this.plugin.data.options.MOXY_R2_SECRET_ID
+		const r2_bucket = this.plugin.data.options.R2_BUCKET
+
+		return { r2_secret, r2_bucket }
+	})
+	focus_x = $derived(this.active_asset?.attributes.focus?.split(':')[0].split('x')[0])
+	focus_y = $derived(this.active_asset?.attributes.focus?.split(':')[0].split('x')[1])
 	back = $state(false)
 	folder_modal = $state(false)
 	folder_name = $state('')
@@ -34,6 +80,19 @@ export class AssetManager {
 	active_folder_id = $state<string | null>(null)
 	parent_folder_id = $state<string | null>(null)
 	move_asset_modal = $state(false)
+	item_details_open = $derived.by(() => sessionStorage.getItem('view') === 'details')
+	replace_index_target = $derived.by(() => sessionStorage.getItem('replace_index_target') || null)
+
+	constructor() {
+		this.initialize_plugin()
+
+		$effect(() => {
+			document.documentElement.setAttribute(
+				'data-modal-open',
+				this.is_modal_open ? 'true' : 'false'
+			)
+		})
+	}
 
 	close_rename_folder_modal = () => {
 		this.rename_folder_modal = false
@@ -64,54 +123,14 @@ export class AssetManager {
 		this.create_folder_modal = false
 		this.parent_folder_id = null
 	}
-	open_move_asset_modal = (asset_or_assets: R2Asset | Array<string>) => {
+	open_move_asset_modal = (asset_or_assets: R2Asset | Array<R2Asset>) => {
 		this.move_asset_modal = true
-		if (!Array.isArray(asset_or_assets)) {
-			this.selected = [asset_or_assets.id]
-		}
+		this.selected = Array.isArray(asset_or_assets) ? asset_or_assets : [asset_or_assets]
 	}
 	close_move_asset_modal = () => {
 		this.move_asset_modal = false
-		this.active_asset = undefined
+		this.active_asset = null
 		this.selected = []
-	}
-
-	assets: Array<R2Asset> | undefined = $state(undefined)
-	folders: Array<R2FolderTree> | undefined = $state(undefined)
-	meta: Paths.ListAssets.Responses.$200['meta'] = $state()
-	active_asset: R2Asset | undefined = $derived.by(() => {
-		// State doesnt persist between modal opens, so we use sessionStorage to store which view we need
-		if (sessionStorage.getItem('view') === 'details' && this.is_modal_open) {
-			return this.content?._data
-		}
-	})
-	active_folder = $derived(sessionStorage.getItem('active_folder') || null)
-	open_actions: string | null = $state(null)
-	is_image = $derived(this.active_asset?.attributes.content_type?.startsWith('image/'))
-	limit = 96
-	#initial = $state(true)
-	#search_timeout: number | null = $state(null)
-	#secrets: {
-		r2_secret: string
-		r2_bucket: string
-	} | null = $derived.by(() => {
-		if (this.plugin?.type !== 'loaded') return null
-
-		const r2_secret = this.plugin.data.options.MOXY_R2_SECRET_ID
-		const r2_bucket = this.plugin.data.options.R2_BUCKET
-
-		return { r2_secret, r2_bucket }
-	})
-
-	constructor() {
-		this.initialize_plugin()
-
-		$effect(() => {
-			document.documentElement.setAttribute(
-				'data-modal-open',
-				this.is_modal_open ? 'true' : 'false'
-			)
-		})
 	}
 
 	view_folder = (folder_id: string) => {
@@ -122,22 +141,35 @@ export class AssetManager {
 	}
 
 	active_asset_details = (item?: R2Asset) => {
-		if (item) sessionStorage.setItem('view', 'details')
+		// Need to set the view to details in sessionStorage to persist the state between modal opens
+		if (item) {
+			sessionStorage.setItem('view', 'details')
+			sessionStorage.setItem('active_asset', JSON.stringify(item))
+		}
+
 		if (!this.is_modal_open) this.plugin?.actions?.setModalOpen(true)
 		if (!item) return
 		this.active_asset = item
-		this.set_asset(item)
+		if (!this.multiple) this.set_asset(item)
 	}
 
 	close_item_details = () => {
 		sessionStorage.setItem('view', 'picker')
 		this.plugin?.actions?.setModalOpen(false)
-		this.active_asset = undefined
+		this.active_asset = null
 	}
 
-	open_asset_picker = () => {
+	#get_card_index = (event: Event): string | undefined => {
+		const card = (event.target as HTMLElement)?.closest('[data-index]')
+		return (card as HTMLElement)?.dataset.index
+	}
+
+	open_asset_picker = async (event: Event) => {
+		const index = this.#get_card_index(event)
+		if (index) sessionStorage.setItem('replace_index_target', index)
+		else sessionStorage.removeItem('replace_index_target')
 		sessionStorage.setItem('view', 'picker')
-		this.plugin?.actions?.setModalOpen(true)
+		await this.plugin?.actions?.setModalOpen(true)
 	}
 
 	close_modals = () => {
@@ -156,14 +188,20 @@ export class AssetManager {
 			},
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
-				// mirror incoming content exactly; include null to clear ui state
-				this.content = (this.plugin.data?.content as Asset | null) ?? null
 
-				if (this.#initial) {
-					this.#initial = false
-					// initial fetch for picker view
-					this.list_assets(1)
+				const incoming_content = state.data?.content
+
+				if (this.content) {
+					merge(this.content, incoming_content)
+				} else if (incoming_content) {
+					this.content = incoming_content
 				}
+
+				if (!this.#initial) return
+
+				this.#initial = false
+				// initial fetch for picker view
+				this.list_assets(1)
 			},
 		})
 	}
@@ -199,22 +237,41 @@ export class AssetManager {
 		await this.list_folders()
 	}
 
-	update = () => {
+	order = () => {
+		if (this.plugin?.type !== 'loaded') return
+		const state = $state.snapshot(this.content)
+		this.plugin.actions.setContent(state)
+	}
+
+	update = (event?: any) => {
 		if (this.plugin?.type !== 'loaded') return
 		const state = $state.snapshot(this.content)
 		this.content = state
 		this.plugin.actions.setContent(state)
 	}
 
-	set_asset = (asset: R2Asset | null) => {
-		if (!asset) {
-			this.content = null
+	insert_selected_assets = () => {
+		if (!this.selected.length || !this.multiple) return
+
+		const content = (this.content || []) as Array<Asset>
+
+		// Only add assets that are not already in the content
+		const new_assets = this.selected.filter(
+			(asset) => !content.some((item) => item._data.id === asset.id)
+		)
+
+		if (new_assets.length) {
+			content.push(...new_assets.map(this.#turn_r2_asset_into_asset))
+			this.content = content
 			this.update()
-			return
 		}
 
-		const { alt, title, source, copyright, name } = asset.attributes
+		this.selected = []
+		if (this.is_modal_open) this.plugin?.actions?.setModalOpen(false)
+	}
 
+	#turn_r2_asset_into_asset = (asset: R2Asset): Asset => {
+		const { alt, title, source, copyright, name } = asset.attributes
 		const meta_data: Asset['meta_data'] = {
 			alt,
 			title,
@@ -222,7 +279,7 @@ export class AssetManager {
 			copyright,
 		}
 
-		this.content = {
+		return {
 			// Storyblok attributes
 			id: asset.id,
 			alt,
@@ -242,8 +299,29 @@ export class AssetManager {
 			size_bytes: asset.attributes.size_bytes,
 			_data: asset,
 		}
+	}
+
+	set_asset = (asset: R2Asset | null) => {
+		if (!asset) {
+			this.content = null
+			this.update()
+			return
+		}
+
+		this.content = this.#turn_r2_asset_into_asset(asset)
 
 		this.update()
+	}
+
+	replace_asset_at = (index: number, asset: R2Asset) => {
+		if (!Array.isArray(this.content)) return
+
+		// don't replace if the asset is already in the content
+		if (this.content.some((item) => item._data.id === asset.id)) return
+
+		this.content[index] = this.#turn_r2_asset_into_asset(asset)
+		this.update()
+		this.close_item_details()
 	}
 
 	select_asset = (asset: R2Asset | null) => {
@@ -257,7 +335,7 @@ export class AssetManager {
 
 		if (this.selected.length) {
 			const json: Paths.UpdateAssetsBulk.RequestBody = {
-				assets: this.selected,
+				assets: this.selected.map((asset) => asset.id),
 				metadata: {
 					folder_id: this.parent_folder_id || '',
 				},
@@ -332,6 +410,15 @@ export class AssetManager {
 		this.folders = res.data?.structured
 	}
 
+	remove_asset = (asset: R2Asset) => {
+		if (Array.isArray(this.content)) {
+			this.content = this.content.filter((item) => item._data.id !== asset.id)
+		} else if (this.content?._data.id === asset.id) {
+			this.content = null
+		}
+		this.update()
+	}
+
 	list_assets = async (page?: number) => {
 		if (!this.#secrets) return
 		this.loading_assets = true
@@ -373,7 +460,13 @@ export class AssetManager {
 		if (this.assets?.length) this.assets = this.assets.filter((item) => item.id !== asset.id)
 
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}`)
-		if (this.content?.id === asset.id) this.select_asset(null)
+
+		// If multiple assets are selected, remove the asset from the content
+		if (Array.isArray(this.content))
+			this.content = this.content.filter((item) => item._data.id !== asset.id)
+		// If a single asset is selected, deselect it
+		else if (this.content?._data.id === asset.id) this.select_asset(null)
+
 		await this.load()
 	}
 
@@ -385,24 +478,37 @@ export class AssetManager {
 		await this.load()
 	}
 
-	hard_delete_many_assets = async (asset_ids: Array<string>) => {
+	hard_delete_many_assets = async (assets: Array<R2Asset>) => {
 		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete these assets permanently?')
 		if (!confirm) return
-		await this.r2.delete(`${this.#secrets.r2_bucket}/assets?hard=true`, { json: asset_ids })
+		await this.r2.delete(`${this.#secrets.r2_bucket}/assets?hard=true`, {
+			json: assets.map((asset) => asset.id),
+		})
 		await this.load()
 		this.selected = []
 	}
 
-	soft_delete_many_assets = async (assets: Array<string>) => {
+	soft_delete_many_assets = async (assets: Array<R2Asset>) => {
 		if (!this.#secrets) return
 		const confirm = window.confirm('Are you sure you want to delete these assets?')
 		if (!confirm) return
 		if (this.assets?.length)
-			this.assets = this.assets.filter((item) => !assets.some((asset) => asset === item.id))
+			this.assets = this.assets.filter((item) => !assets.some((asset) => asset.id === item.id))
 
-		await this.r2.delete(`${this.#secrets.r2_bucket}/assets`, { json: assets })
-		if (assets.some((e) => e === this.content?.id)) this.select_asset(null)
+		await this.r2.delete(`${this.#secrets.r2_bucket}/assets`, {
+			json: assets.map((asset) => asset.id),
+		})
+
+		// If multiple assets are selected, remove the assets from the content
+		if (Array.isArray(this.content)) {
+			this.content = this.content.filter(
+				(item) => !assets.some((asset) => asset.id === item._data.id)
+			)
+			// If a single asset is selected, deselect it
+		} else if (this.content?._data.id === assets[0].id) {
+			this.select_asset(null)
+		}
 		await this.load()
 		this.selected = []
 	}
@@ -415,33 +521,96 @@ export class AssetManager {
 		await this.list_folders()
 	}
 
-	save_and_close = async () => {
-		if (!this.content) return
+	save_and_close = async (event: SubmitEvent) => {
+		if (!this.active_asset) return
+		this.loading = true
+		event.preventDefault()
+		event.stopPropagation()
 
-		this.content.alt = this.active_asset?.attributes.alt
-		this.content.title = this.active_asset?.attributes.title
-		this.content.source = this.active_asset?.attributes.source
-		this.content.copyright = this.active_asset?.attributes.copyright
-		this.content.name = this.active_asset?.attributes.name
+		const data = new FormData(event.target as HTMLFormElement)
+		const [title, alt, name, copyright, source] = [
+			data.get('title'),
+			data.get('alt'),
+			data.get('name'),
+			data.get('copyright'),
+			data.get('source'),
+		] as Array<string | null>
 
+		// Update this.active_asset
+		this.active_asset.attributes.title = title || undefined
+		this.active_asset.attributes.alt = alt || undefined
+		this.active_asset.attributes.name = name || undefined
+		this.active_asset.attributes.copyright = copyright || undefined
+		this.active_asset.attributes.source = source || undefined
+
+		// Update local content if single asset is selected
+		if (!this.multiple && this.content && !Array.isArray(this.content)) {
+			this.content.alt = alt
+			this.content.title = title
+			this.content.source = source
+			this.content.copyright = copyright
+			this.content.name = name || undefined
+			this.content._data = {
+				...this.content._data,
+				attributes: {
+					...this.content._data.attributes,
+					title: title || undefined,
+					alt: alt || undefined,
+					name: name || undefined,
+					copyright: copyright || undefined,
+					source: source || undefined,
+				},
+			}
+		} else if (this.multiple && Array.isArray(this.content)) {
+			this.content = this.content.map((item) => {
+				if (item._data.id === this.active_asset!.id) {
+					return {
+						...item,
+						title,
+						alt,
+						name: name || undefined,
+						copyright,
+						source,
+						_data: {
+							...item._data,
+							attributes: {
+								...item._data.attributes,
+								title: title || undefined,
+								alt: alt || undefined,
+								name: name || undefined,
+								copyright: copyright || undefined,
+								source: source || undefined,
+							},
+						},
+					}
+				}
+				return item
+			})
+		}
 		this.update()
 		await this.update_asset()
 		this.close_item_details()
+		this.loading = false
 	}
 
 	toggle_actions(id: string) {
 		this.open_actions = this.open_actions === id ? null : id
 	}
 
-	get is_modal_open() {
-		return this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen
-	}
+	readonly is_modal_open = $derived(this.loaded && this.plugin?.data?.isModalOpen)
 
 	set_focus(e: MouseEvent) {
 		if (!this.content) return
-		this.content.focus = e
-			? `${e.offsetX}x${e.offsetY}:${e.offsetX + 1}x${e.offsetY + 1}`
-			: undefined
+		if (Array.isArray(this.content)) {
+			this.content.forEach((item) => {
+				item.focus = e ? `${e.offsetX}x${e.offsetY}:${e.offsetX + 1}x${e.offsetY + 1}` : undefined
+			})
+		} else {
+			this.content.focus = e
+				? `${e.offsetX}x${e.offsetY}:${e.offsetX + 1}x${e.offsetY + 1}`
+				: undefined
+		}
+
 		this.update()
 	}
 
@@ -468,9 +637,11 @@ export class AssetManager {
 		this.load()
 	}
 
-	restore_many_assets = async (asset_ids: Array<string>) => {
+	restore_many_assets = async (assets: Array<R2Asset>) => {
 		if (!this.#secrets) return
-		await this.r2.post(`${this.#secrets.r2_bucket}/assets/restore`, { json: asset_ids })
+		await this.r2.post(`${this.#secrets.r2_bucket}/assets/restore`, {
+			json: assets.map((asset) => asset.id),
+		})
 		this.load()
 	}
 

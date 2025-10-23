@@ -5,7 +5,6 @@
 	import {
 		ImageIcon,
 		EllipsisIcon,
-		Settings2Icon,
 		FocusIcon,
 		ArrowLeftIcon,
 		FolderIcon,
@@ -18,6 +17,8 @@
 		UndoDotIcon,
 		LoaderCircleIcon,
 		HouseIcon,
+		SquarePenIcon,
+		GripVerticalIcon,
 	} from '@lucide/svelte'
 	import { cn } from 'shared/utils'
 	import {
@@ -35,9 +36,10 @@
 	} from 'shared'
 	import { AssetManager } from './app.svelte.js'
 	import type { R2Asset, R2FolderTree } from 'moxyloco/r2'
+	import { useDragAndDrop as dnd } from 'fluid-dnd/svelte'
+	import type { Asset } from '../types.js'
 
 	const manager = new AssetManager()
-	const loaded = $derived(manager.plugin?.type === 'loaded')
 	const actions_menu_classes = `
       absolute
       right-4
@@ -69,6 +71,10 @@
       group-focus-within:pointer-events-auto
       group-focus-within:translate-y-0
    `
+
+	const selected_label = $derived(
+		manager.selected.length === 1 ? '1 item' : `${manager.selected.length} items`
+	)
 </script>
 
 <svelte:head>
@@ -108,7 +114,7 @@
 {/snippet}
 
 {#snippet AssetPreview(asset?: R2Asset, show_selected = true)}
-	{@const is_selected = show_selected && manager.content?.id === asset?.id}
+	{@const is_selected = show_selected && asset?.id && manager.active_asset_ids.includes(asset.id)}
 
 	<figure
 		class={cn(
@@ -390,25 +396,82 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-{#if loaded}
+{#snippet AssetCard(_asset: Asset)}
+	{@const asset = _asset._data}
+	<div
+		class="p-4 grid grid-cols-[106px_1fr] relative w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
+	>
+		{@render AssetPreview(asset, false)}
+		<div class="grid">{@render AssetMeta(asset)}</div>
+		<ul class={actions_menu_classes}>
+			<li>
+				<button
+					onclick={manager.open_asset_picker}
+					title="Replace asset"
+					aria-label="Replace asset"
+				>
+					<RefreshCwIcon size={18} />
+				</button>
+			</li>
+			<li>
+				<button
+					title="Edit Asset"
+					aria-label="Edit Asset"
+					onclick={() => manager.active_asset_details(asset)}
+				>
+					<SquarePenIcon size={18} />
+				</button>
+			</li>
+			<li>
+				<button
+					onclick={() => manager.remove_asset(asset)}
+					title="Remove asset"
+					aria-label="Remove asset"
+				>
+					<Trash2Icon size={18} />
+				</button>
+			</li>
+		</ul>
+	</div>
+{/snippet}
+
+{#snippet AddAssetCard()}
+	{@const label = manager.multiple ? 'Add Assets' : 'Add Asset'}
+	<button
+		class="p-4 grid grid-cols-[106px_1fr] w-full border border-input rounded hover:border-primary transition-colors bg-input-background text-card-foreground items-center justify-items-start gap-5 font-medium"
+		onclick={manager.open_asset_picker}
+		title={label}
+		aria-label={label}
+	>
+		{@render AssetPreview()}
+		+ {label}
+	</button>
+{/snippet}
+
+{#if manager.loaded}
 	{#if manager.is_modal_open && !manager.active_asset}
 		<div class="grid grid-cols-5 grid-rows-[auto_1fr_auto] px-16 gap-x-12 h-full">
 			<header class="flex items-center gap-4 pb-4 pt-8 col-span-5">
 				<div class="text-2xl font-medium mr-auto">Assets Pro</div>
-				<Button onclick={() => manager.open_create_folder_modal()} size="lg" variant="secondary">
-					<FolderIcon />
-					Create folder
-				</Button>
-				<div class={button_variants({ size: 'lg' })}>
-					<CloudUploadIcon size={18} />
-					Upload files
-					<input
-						class="opacity-0 absolute inset-0 cursor-pointer"
-						type="file"
-						multiple
-						onchange={manager.upload}
-					/>
-				</div>
+				{#if manager.multiple && manager.selected.length && !manager.replace_index_target}
+					{selected_label} selected
+					<Button size="lg" onclick={manager.insert_selected_assets}>Insert</Button>
+				{:else}
+					<Button onclick={() => manager.open_create_folder_modal()} size="lg" variant="secondary">
+						<FolderIcon />
+						Create folder
+					</Button>
+					<div class={button_variants({ size: 'lg' })}>
+						<CloudUploadIcon size={18} />
+						Upload files
+						<input
+							class="opacity-0 absolute inset-0 cursor-pointer"
+							type="file"
+							multiple
+							onchange={manager.upload}
+						/>
+					</div>
+				{/if}
 			</header>
 
 			<aside class="py-4 col-span-1 flex flex-col gap-4">
@@ -466,7 +529,6 @@
 
 			<main class="pt-4 col-span-4">
 				<Input
-					class="w-full rounded-lg border border-white"
 					placeholder="Search assets..."
 					bind:value={manager.search_query}
 					onkeyup={manager.search_keyup}
@@ -482,18 +544,16 @@
 					<div class="relative pt-14">
 						{#if manager.selected.length > 0}
 							<div
-								class="bg-zinc-700 rounded-md p-3 py-1.5 flex gap-4 items-center absolute z-10 top-2 left-0 w-full"
+								class="bg-muted rounded-md p-3 py-1.5 flex gap-4 items-center absolute z-10 top-2 left-0 w-full"
 								transition:scale={{ start: 0.99 }}
 							>
 								<div class="text-sm">
-									{manager.selected.length}
-									{manager.selected.length === 1 ? 'item' : 'items'} selected
+									{selected_label} selected
 								</div>
 								<Button
 									size="sm"
 									variant="ghost"
-									onclick={() =>
-										(manager.selected = manager.assets?.map((asset) => asset.id) || [])}
+									onclick={() => (manager.selected = manager.assets?.map((asset) => asset) || [])}
 									>Select All</Button
 								>
 								<Button size="sm" variant="ghost" onclick={() => (manager.selected = [])}
@@ -551,26 +611,30 @@
 											'grid gap-1 rounded hover:bg-muted transition-colors p-3 w-full border border-transparent',
 											{
 												'bg-primary/20 hover:bg-primary/30 border-primary/50 hover:border-primary/70':
-													manager.content?.id === asset.id,
+													manager.active_asset_ids.includes(asset.id),
 											}
 										)}
 									>
 										<button
 											class="peer/ellipsis"
 											onclick={() => {
-												manager.select_asset(asset)
-												manager.plugin?.actions?.setModalOpen(false)
+												if (manager.replace_index_target) {
+													manager.replace_asset_at(parseInt(manager.replace_index_target), asset)
+													return
+												} else if (manager.multiple) {
+													manager.toggle_selected(asset)
+												} else {
+													manager.select_asset(asset)
+													manager.plugin?.actions?.setModalOpen(false)
+												}
 											}}
 										>
 											{@render AssetPreview(asset)}
 										</button>
 										<Checkbox
 											class="absolute top-6 left-6 opacity-0 pointer-events-none translate-y-1 transition-[translate,opacity] peer-hover/ellipsis:opacity-100 peer-hover/ellipsis:pointer-events-auto peer-hover/ellipsis:translate-y-0 duration-400 hover:opacity-100 hover:pointer-events-auto hover:translate-y-0 aria-checked:opacity-100 aria-checked:pointer-events-auto aria-checked:translate-y-0"
-											onCheckedChange={() =>
-												manager.selected.includes(asset.id)
-													? manager.selected.splice(manager.selected.indexOf(asset.id), 1)
-													: manager.selected.push(asset.id)}
-											checked={manager.selected.includes(asset.id)}
+											onCheckedChange={() => manager.toggle_selected(asset)}
+											checked={manager.selected.includes(asset)}
 										/>
 										<DropdownMenu.Root>
 											<DropdownMenu.Trigger>
@@ -652,7 +716,7 @@
 				</footer>
 			{/if}
 		</div>
-	{:else if manager.active_asset}
+	{:else if manager.active_asset && manager.item_details_open}
 		<div class="grid grid-cols-12 h-full">
 			<div class="p-8 col-span-8 flex flex-col gap-8 overflow-y-auto">
 				<div class="flex justify-between">
@@ -685,7 +749,7 @@
 							alt={manager.active_asset.attributes.alt}
 							title={manager.active_asset.attributes.title}
 						/>
-						{#if manager.content?.focus}
+						{#if manager.active_asset.attributes.focus}
 							<span
 								class="absolute size-5 border border-black bg-primary rounded-full"
 								style:top={manager.focus_y + 'px'}
@@ -720,8 +784,11 @@
 					</div>
 				</div>
 			</div>
-			<div class="bg-black/10 border border-white/10 flex flex-col col-span-4">
-				<div class="p-8 grow-1 flex flex-col gap-5 overflow-y-auto">
+			<form
+				class="bg-black/10 border border-white/10 flex flex-col col-span-4"
+				onsubmit={manager.save_and_close}
+			>
+				<div class="p-8 grow flex flex-col gap-5 overflow-y-auto">
 					<div class="flex flex-col gap-2 mb-4">
 						Asset ID
 						<pre class="overflow-auto">{manager.active_asset.id}</pre>
@@ -732,77 +799,67 @@
 					</div>
 					<label class="flex flex-col gap-2" for="title">
 						Title/Caption
-						<Input bind:value={manager.active_asset.attributes.title} />
+						<Input value={manager.active_asset.attributes.title} name="title" />
 					</label>
 					<label class="flex flex-col gap-2" for="alt">
 						Alt text
-						<Input bind:value={manager.active_asset.attributes.alt} />
+						<Input value={manager.active_asset.attributes.alt} name="alt" />
 					</label>
 					<label class="flex flex-col gap-2" for="alt">
 						Name
-						<Input bind:value={manager.active_asset.attributes.name} />
+						<Input value={manager.active_asset.attributes.name} name="name" />
 					</label>
 					<label class="flex flex-col gap-2" for="copyright">
 						Copyright
-						<Input bind:value={manager.active_asset.attributes.copyright} />
+						<Input value={manager.active_asset.attributes.copyright} name="copyright" />
 					</label>
 					<label class="flex flex-col gap-2" for="source">
 						Source
-						<Input bind:value={manager.active_asset.attributes.source} />
+						<Input value={manager.active_asset.attributes.source} name="source" />
 					</label>
 				</div>
 				<div class="px-8 py-4 grow-0 shrink-0 flex gap-2 border-t border-white/10 justify-end">
-					<Button variant="secondary" onclick={manager.close_item_details}>Cancel</Button>
-					<Button onclick={manager.save_and_close}>Save & Close</Button>
+					<Button variant="secondary" type="button" onclick={manager.close_item_details}
+						>Cancel</Button
+					>
+					<Button type="submit" disabled={manager.loading}>
+						{manager.loading ? 'Saving...' : 'Save & Close'}
+					</Button>
 				</div>
-			</div>
+			</form>
 		</div>
-	{:else if manager.content?._data}
-		<div
-			class="p-4 grid grid-cols-[106px_1fr] w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
-		>
-			{@render AssetPreview(manager.content._data, false)}
-			<div class="grid">{@render AssetMeta(manager.content._data)}</div>
-			<ul class={actions_menu_classes}>
-				<li>
-					<button
-						onclick={manager.open_asset_picker}
-						title="Replace asset"
-						aria-label="Replace asset"
+	{:else if manager.multiple}
+		{#if Array.isArray(manager.content) && manager.content.length > 0}
+			{#key manager.content.length}
+				{@const [sortable] = dnd(manager.content as any, {
+					onDragEnd: manager.order,
+					handlerSelector: '.handle',
+				})}
+				<div class="rounded border border-input bg-card overflow-hidden">
+					<div class="p-2" use:sortable>
+						{#each manager.content as asset, index (asset.id)}
+							<div
+								class="group relative grid grid-cols-[auto_1fr_auto] items-center py-1.5"
+								data-index={index}
+							>
+								<button class="handle size-6 mr-2 flex items-center justify-center">
+									<GripVerticalIcon class="size-4" />
+								</button>
+								{@render AssetCard(asset)}
+							</div>
+						{/each}
+					</div>
+					<Button onclick={manager.open_asset_picker} class="w-full rounded-none">Add Assets</Button
 					>
-						<RefreshCwIcon size={18} />
-					</button>
-				</li>
-				<li>
-					<button
-						title="Settings"
-						aria-label="Settings"
-						onclick={() => manager.active_asset_details(manager.content!._data)}
-					>
-						<Settings2Icon size={18} />
-					</button>
-				</li>
-				<li>
-					<button
-						onclick={() => manager.select_asset(null)}
-						title="Remove asset"
-						aria-label="Remove asset"
-					>
-						<Trash2Icon size={18} />
-					</button>
-				</li>
-			</ul>
-		</div>
+				</div>
+			{/key}
+		{:else}
+			{@render AddAssetCard()}
+		{/if}
+	{:else if !Array.isArray(manager.content) && manager.content}
+		{@render AssetCard(manager.content)}
 	{:else}
-		<button
-			class="p-4 grid grid-cols-[106px_1fr] w-full border border-input rounded hover:border-primary transition-colors bg-input-background text-card-foreground items-center justify-items-start gap-5 font-medium"
-			onclick={manager.open_asset_picker}
-			title="Add asset"
-			aria-label="Add asset"
-		>
-			{@render AssetPreview()}
-			+ Add Asset
-		</button>
+		{@render AddAssetCard()}
 	{/if}
 {/if}
 

@@ -145,7 +145,7 @@
 	}
 
 	body {
-		@apply !bg-background text-base text-foreground;
+		@apply bg-background! text-base text-foreground;
 	}
 
 	button {
