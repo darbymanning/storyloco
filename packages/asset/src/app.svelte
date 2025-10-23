@@ -9,22 +9,32 @@
 		FocusIcon,
 		ArrowLeftIcon,
 		FolderIcon,
-		TrashIcon,
 		CloudUploadIcon,
-		ChevronDownIcon,
 		ChevronLeftIcon,
 		ChevronRightIcon,
-		XIcon,
 		FileTextIcon,
 		Trash2Icon,
 		RefreshCwIcon,
 		UndoDotIcon,
 		LoaderCircleIcon,
+		HouseIcon,
 	} from '@lucide/svelte'
 	import { cn } from 'shared/utils'
-	import { Input, Skeleton as SkeletonComponent, Checkbox, Button, button_variants } from 'shared'
+	import {
+		Accordion,
+		Input,
+		Skeleton as SkeletonComponent,
+		Checkbox,
+		Button,
+		DropdownMenu,
+		Dialog,
+		button_variants,
+		ScrollArea,
+		Label,
+		Toaster,
+	} from 'shared'
 	import { AssetManager } from './app.svelte.js'
-	import type { R2Asset } from 'moxyloco/r2'
+	import type { R2Asset, R2FolderTree } from 'moxyloco/r2'
 
 	const manager = new AssetManager()
 	const loaded = $derived(manager.plugin?.type === 'loaded')
@@ -103,7 +113,7 @@
 	<figure
 		class={cn(
 			'flex items-center justify-center [&>svg]:absolute [&>svg]:size-5 bg-muted text-muted-foreground rounded w-full aspect-video relative border min-h-20',
-			{ 'opacity-50 bg-destructive': manager.show_deleted }
+			{ 'opacity-70 bg-destructive text-foreground': manager.show_deleted }
 		)}
 	>
 		{#if asset?.attributes.content_type}
@@ -130,12 +140,262 @@
 	<span class="justify-between flex text-muted-foreground text-xs">{asset.attributes.format}</span>
 {/snippet}
 
+{#snippet Folder(props: {
+	folder: R2FolderTree
+	active: (id: string) => boolean
+	onclick: (id: string) => void
+	show_menu?: boolean
+})}
+	{@const { folder, show_menu, onclick } = props}
+	{@const active = props.active(props.folder.id)}
+	<Accordion.Item value={folder.id} class="border-none">
+		<Accordion.Trigger>
+			{#snippet child({ props })}
+				<div
+					class={cn(button_variants({ variant: 'ghost' }), 'w-full justify-start px-1 group', {
+						'bg-accent dark:bg-secondary-foreground/10': active,
+					})}
+				>
+					<Button
+						{...props}
+						class={cn('rounded-full size-7', {
+							'opacity-0': !folder.children.length,
+						})}
+						variant="ghost"
+						size="icon"
+					>
+						<ChevronRightIcon
+							class={cn('rotate-0 transition-transform duration-200', {
+								'rotate-90': props['data-state'] === 'open',
+							})}
+						/>
+					</Button>
+					<button
+						class={cn('grow text-start py-1 flex items-center gap-2', {
+							'text-tertiary': active,
+						})}
+						onclick={() => onclick(folder.id)}
+					>
+						<FolderIcon size={18} />
+						{folder.name}
+						{#if folder.asset_count > 0}
+							<span class="text-xs text-muted-foreground">({folder.asset_count})</span>
+						{/if}
+					</button>
+					{#if show_menu}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										class="rounded-full size-7 opacity-0 group-hover:opacity-100 transition-opacity data-[state=open]:opacity-100"
+										variant="ghost"
+										size="icon"
+									>
+										<EllipsisIcon class="size-4" />
+									</Button>
+								{/snippet}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content>
+								<DropdownMenu.Group>
+									<DropdownMenu.Item onclick={() => manager.open_create_folder_modal(folder.id)}>
+										Create new folder
+									</DropdownMenu.Item>
+									<DropdownMenu.Separator />
+									<DropdownMenu.Item onclick={() => manager.open_rename_folder_modal(folder)}>
+										Rename
+									</DropdownMenu.Item>
+									<DropdownMenu.Item onclick={() => manager.open_move_folder_modal(folder)}>
+										Move
+									</DropdownMenu.Item>
+									<DropdownMenu.Item
+										class="text-destructive data-highlighted:text-destructive data-highlighted:bg-destructive/10"
+										onclick={() => manager.delete_folder(folder.id)}
+									>
+										Delete
+									</DropdownMenu.Item>
+								</DropdownMenu.Group>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					{/if}
+				</div>
+			{/snippet}
+		</Accordion.Trigger>
+		{#if folder.children.length}
+			<Accordion.Content class="pl-2">
+				<Accordion.Root type="multiple">
+					{#each folder.children as child}
+						{@render Folder({ ...props, folder: child })}
+					{/each}
+				</Accordion.Root>
+			</Accordion.Content>
+		{/if}
+	</Accordion.Item>
+{/snippet}
+
+<Toaster />
+
+<Dialog.Root bind:open={manager.rename_folder_modal}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Rename Folder</Dialog.Title>
+			<Dialog.Description>Please enter the new folder name in the field below.</Dialog.Description>
+		</Dialog.Header>
+		<Label class="flex flex-col gap-2 items-start">
+			Folder name
+			<Input bind:value={manager.folder_name} />
+		</Label>
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={manager.close_rename_folder_modal}>Cancel</Button>
+			<Button
+				disabled={manager.folder_name === '' || manager.loading}
+				onclick={manager.update_folder}
+			>
+				{manager.loading ? 'Saving' : 'Save'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={manager.move_folder_modal}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Move Folder</Dialog.Title>
+			<Dialog.Description
+				>Please select the new parent folder for the selected folder.</Dialog.Description
+			>
+		</Dialog.Header>
+		<ScrollArea class="max-h-[calc(100dvh-20rem)]">
+			<Button
+				variant="ghost"
+				class={cn('w-full justify-start', {
+					'text-tertiary!': manager.parent_folder_id === null,
+				})}
+				onclick={() => {
+					manager.parent_folder_id = null
+				}}
+			>
+				<HouseIcon />
+				Root
+			</Button>
+			<Accordion.Root type="multiple">
+				{#each manager.folders || [] as folder}
+					{@render Folder({
+						folder,
+						active: (id) => manager.parent_folder_id === id,
+						onclick: (id: string) => (manager.parent_folder_id = id),
+						show_menu: false,
+					})}
+				{/each}
+			</Accordion.Root>
+		</ScrollArea>
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={manager.close_create_folder_modal}>Cancel</Button>
+			<Button disabled={manager.loading} onclick={manager.update_folder}>
+				{manager.loading ? 'Moving' : 'Move'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={manager.move_asset_modal}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title
+				>Move
+				{#if manager.selected.length}
+					{manager.selected.length} assets
+				{:else}
+					{manager.active_asset?.attributes.title || manager.active_asset?.attributes.filename}
+				{/if}
+			</Dialog.Title>
+			<Dialog.Description>
+				Please select the new parent folder for the selected assets.
+			</Dialog.Description>
+		</Dialog.Header>
+		<ScrollArea class="max-h-[calc(100dvh-20rem)]">
+			<Button
+				variant="ghost"
+				class={cn('w-full justify-start', {
+					'text-tertiary!': manager.parent_folder_id === null,
+				})}
+				onclick={() => {
+					manager.parent_folder_id = null
+				}}
+			>
+				<HouseIcon />
+				Root
+			</Button>
+			<Accordion.Root type="multiple">
+				{#each manager.folders || [] as folder}
+					{@render Folder({
+						folder,
+						active: (id) => manager.parent_folder_id === id,
+						onclick: (id: string) => (manager.parent_folder_id = id),
+						show_menu: false,
+					})}
+				{/each}
+			</Accordion.Root>
+		</ScrollArea>
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={manager.close_create_folder_modal}>Cancel</Button>
+			<Button disabled={manager.loading} onclick={manager.update_asset}>
+				{manager.loading ? 'Moving' : 'Move'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={manager.create_folder_modal}>
+	<Dialog.Content>
+		<Dialog.Title>Create New Folder</Dialog.Title>
+		<Label class="flex flex-col gap-2 items-start">
+			New name
+			<Input placeholder="e.g. Icons, Videos, Landing pages" bind:value={manager.folder_name} />
+		</Label>
+		<!-- <Input class="w-full rounded-lg border border-white" placeholder="Search folders..." /> -->
+		<ScrollArea class="max-h-[calc(100dvh-20rem)]">
+			<Button
+				variant="ghost"
+				class={cn('w-full justify-start', {
+					'text-tertiary!': manager.parent_folder_id === null,
+				})}
+				onclick={() => {
+					manager.parent_folder_id = null
+				}}
+			>
+				<HouseIcon />
+				Root
+			</Button>
+			<Accordion.Root type="multiple">
+				{#each manager.folders || [] as folder}
+					{@render Folder({
+						folder,
+						active: (id) => manager.parent_folder_id === id,
+						onclick: (id: string) => (manager.parent_folder_id = id),
+						show_menu: false,
+					})}
+				{/each}
+			</Accordion.Root>
+		</ScrollArea>
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={manager.close_create_folder_modal}>Cancel</Button>
+			<Button
+				disabled={manager.folder_name === '' || manager.loading}
+				onclick={manager.create_folder}
+			>
+				{manager.loading ? 'Creating' : 'Create'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
 {#if loaded}
-	{#if manager.is_modal_open && !manager.open_item}
+	{#if manager.is_modal_open && !manager.active_asset}
 		<div class="grid grid-cols-5 grid-rows-[auto_1fr_auto] px-16 gap-x-12 h-full">
 			<header class="flex items-center gap-4 pb-4 pt-8 col-span-5">
 				<div class="text-2xl font-medium mr-auto">Assets Pro</div>
-				<Button onclick={() => (manager.folder_modal = true)} size="lg" variant="secondary">
+				<Button onclick={() => manager.open_create_folder_modal()} size="lg" variant="secondary">
 					<FolderIcon />
 					Create folder
 				</Button>
@@ -156,11 +416,12 @@
 					variant="ghost"
 					class={[
 						'text-start justify-start -mx-3',
-						{ '!text-tertiary': manager.active_folder === null && !manager.show_deleted },
+						{ 'text-tertiary!': manager.active_folder === null && !manager.show_deleted },
 					]}
 					onclick={() => {
+						sessionStorage.removeItem('active_folder')
+						manager.active_folder = null
 						manager.show_deleted = false
-						manager.select_folder(null)
 						manager.list_assets(1)
 					}}
 				>
@@ -169,14 +430,15 @@
 				</Button>
 				<Button
 					variant="ghost"
-					class={['text-start justify-start -mx-3', { '!text-tertiary': manager.show_deleted }]}
+					class={['text-start justify-start -mx-3', { 'text-tertiary!': manager.show_deleted }]}
 					onclick={() => {
+						sessionStorage.removeItem('active_folder')
+						manager.active_folder = null
 						manager.show_deleted = true
-						manager.select_folder(null)
 						manager.list_assets(1)
 					}}
 				>
-					<TrashIcon />
+					<Trash2Icon />
 					Deleted Assets
 				</Button>
 				{#await manager.list_folders()}
@@ -187,49 +449,16 @@
 						<!-- TODO: add search folders -->
 						<!-- <Input class="w-full rounded-lg border border-white" placeholder="Search folders..." /> -->
 						<div class="flex flex-col">
-							{#each manager.folders as folder, i}
-								<div
-									class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
-									class:pl-8={i !== 5}
-								>
-									{#if i === 5}
-										<button
-											onclick={() => (manager.expanded_folders[i] = !manager.expanded_folders[i])}
-										>
-											<ChevronDownIcon
-												size={18}
-												class={cn({ 'rotate-270': !manager.expanded_folders[i] })}
-											/>
-										</button>
-									{/if}
-									<button
-										class={cn('flex items-center gap-3 w-full py-2 text-start', {
-											'text-tertiary': manager.active_folder === folder.attributes.name,
-										})}
-										onclick={() => {
-											manager.show_deleted = false
-											manager.select_folder(folder.attributes.name)
-											manager.list_assets(1)
-										}}
-									>
-										<FolderIcon class="shrink-0" size={18} strokeWidth={1.5} />
-										{folder.attributes.name}
-									</button>
-								</div>
-								<!-- TODO: add subfolders -->
-								<!-- {#if i === 5 && folders[i]}
-							<div class="flex flex-col" transition:slide>
-								{#each Array(3), i}soft_delete_asset
-									<button
-										class="w-full flex items-center gap-3 py-2 hover:bg-zinc-600 rounded-md pl-12"
-									>
-										<FolderIcon size={18} strokeWidth={1.5} />
-										Folder {i + 1}
-									</button>
+							<Accordion.Root type="multiple">
+								{#each manager.folders as folder}
+									{@render Folder({
+										folder,
+										active: (id) => manager.active_folder === id,
+										onclick: manager.view_folder,
+										show_menu: true,
+									})}
 								{/each}
-							</div>
-						{/if} -->
-							{/each}
+							</Accordion.Root>
 						</div>
 					{/if}
 				{/await}
@@ -285,12 +514,17 @@
 											size="sm"
 											onclick={() => manager.hard_delete_many_assets(manager.selected)}
 										>
-											<TrashIcon size={18} />
+											<Trash2Icon size={18} />
 											Delete Permanently
 										</Button>
 									</div>
 								{:else}
-									<Button size="icon" variant="ghost" class="ml-auto rounded-full">
+									<Button
+										size="icon"
+										variant="ghost"
+										class="ml-auto rounded-full"
+										onclick={() => manager.open_move_asset_modal(manager.selected)}
+									>
 										<FolderIcon size={18} />
 									</Button>
 									<Button
@@ -299,64 +533,19 @@
 										variant="ghost"
 										onclick={() => manager.soft_delete_many_assets(manager.selected)}
 									>
-										<TrashIcon size={18} />
+										<Trash2Icon size={18} />
 									</Button>
 								{/if}
 							</div>
 						{/if}
 						<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
 							{#each manager.assets as asset, i (i + asset.id)}
-								{@const actions_open = manager.open_actions === asset.id}
 								<li
 									class="relative group size-full"
-									class:active={actions_open}
 									animate:flip={{ duration: 300 }}
 									in:fly={{ y: 20, duration: 300, delay: 100 }}
 									out:fade={{ duration: 200 }}
 								>
-									{#if asset.id}
-										{#if actions_open}
-											<ol
-												class="absolute top-14 w-full bg-card text-card-foreground rounded shadow-md z-10 border"
-												transition:fly={{ y: 20, duration: 300, delay: 100 }}
-											>
-												<li>
-													<button
-														class="p-3 w-full text-start hover:bg-muted transition-colors"
-														onclick={() => {
-															manager.open_item_details(asset)
-															manager.back = true
-														}}
-													>
-														View Details
-													</button>
-												</li>
-												<li>
-													{#if manager.show_deleted}
-														<button
-															class="p-3 w-full text-start hover:bg-muted transition-colors"
-															onclick={() => manager.restore(asset)}
-														>
-															Restore
-														</button>
-														<button
-															class="p-3 w-full text-start hover:bg-muted transition-colors"
-															onclick={() => manager.hard_delete_asset(asset)}
-														>
-															Delete Permanently
-														</button>
-													{:else}
-														<button
-															class="p-3 w-full text-start hover:bg-muted transition-colors"
-															onclick={() => manager.soft_delete_asset(asset)}
-														>
-															Delete
-														</button>
-													{/if}
-												</li>
-											</ol>
-										{/if}
-									{/if}
 									<div
 										class={cn(
 											'grid gap-1 rounded hover:bg-muted transition-colors p-3 w-full border border-transparent',
@@ -383,34 +572,40 @@
 													: manager.selected.push(asset.id)}
 											checked={manager.selected.includes(asset.id)}
 										/>
-										<button
-											class="
-                                    absolute
-                                    top-6
-                                    right-6
-                                    bg-secondary
-                                    border
-                                    text-muted-foreground
-                                    rounded
-                                    p-1
-                                    z-10
-
-                                    opacity-0
-                                    pointer-events-none
-                                    translate-y-1
-                                    transition-[translate,opacity]
-
-                                    group-hover:opacity-100
-                                    group-hover:pointer-events-auto
-                                    group-hover:translate-y-0
-
-                                    group-focus-within:opacity-100
-                                    group-focus-within:pointer-events-auto
-                                    group-focus-within:translate-y-0
-                                 "
-											onclick={() => manager.toggle_actions(asset.id)}
-											><EllipsisIcon size="20" /></button
-										>
+										<DropdownMenu.Root>
+											<DropdownMenu.Trigger>
+												{#snippet child({ props })}
+													<Button
+														variant="secondary"
+														size="icon"
+														{...props}
+														class={cn(props.class as never, 'absolute top-6 right-6')}
+													>
+														<EllipsisIcon size={18} />
+													</Button>
+												{/snippet}
+											</DropdownMenu.Trigger>
+											<DropdownMenu.Content>
+												<DropdownMenu.Item onclick={() => manager.active_asset_details(asset)}>
+													View Details
+												</DropdownMenu.Item>
+												{#if manager.show_deleted}
+													<DropdownMenu.Item onclick={() => manager.restore(asset)}>
+														Restore
+													</DropdownMenu.Item>
+													<DropdownMenu.Item onclick={() => manager.hard_delete_asset(asset)}>
+														Delete Permanently
+													</DropdownMenu.Item>
+												{:else}
+													<DropdownMenu.Item onclick={() => manager.soft_delete_asset(asset)}>
+														Delete
+													</DropdownMenu.Item>
+													<DropdownMenu.Item onclick={() => manager.open_move_asset_modal(asset)}>
+														Move to folder
+													</DropdownMenu.Item>
+												{/if}
+											</DropdownMenu.Content>
+										</DropdownMenu.Root>
 										{@render AssetMeta(asset)}
 									</div>
 								</li>
@@ -423,7 +618,7 @@
 				<footer
 					class="flex items-center col-start-2 col-span-4 py-1 border-t-[0.5px] border-white/50"
 				>
-					<div class="grow-1">
+					<div class="grow">
 						{manager.meta.page}-{manager.meta.total} of {manager.meta.total} items
 					</div>
 					{#if manager.meta.total > manager.limit}
@@ -457,92 +652,7 @@
 				</footer>
 			{/if}
 		</div>
-		{#if manager.folder_modal}
-			<button
-				class="fixed inset-0 bg-white/10 z-10"
-				onclick={() => (manager.folder_modal = false)}
-				aria-label="Close modal"
-				transition:fade
-			></button>
-			<div
-				class="flex flex-col gap-4 fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-800 z-20 rounded-lg border border-white/10 p-8 min-w-[600px] shadow-xl"
-				transition:fly={{ y: 20 }}
-			>
-				<div class="flex justify-between gap-4">
-					<h2 class="text-xl font-medium">Create New Folder</h2>
-					<button onclick={() => (manager.folder_modal = false)}>
-						<XIcon size={18} />
-					</button>
-				</div>
-				<div class="flex flex-col gap-4 pb-8">
-					<label class="flex flex-col gap-2">
-						New name
-						<Input
-							class="w-full rounded-lg border border-white"
-							placeholder="e.g. Icons, Videos, Landing pages"
-							bind:value={manager.folder_name}
-						/>
-					</label>
-					<!-- TODO: add search folders -->
-					<!-- <Input class="w-full rounded-lg border border-white" placeholder="Search folders..." /> -->
-					<div>
-						{#each manager.folders || [] as folder, i}
-							<div
-								class="flex items-center gap-2 pl-2 hover:bg-zinc-600 rounded-md"
-								class:pl-8={i !== 5}
-							>
-								{#if i === 5}
-									<button
-										onclick={() => (manager.expanded_folders[i] = !manager.expanded_folders[i])}
-									>
-										<ChevronDownIcon
-											size={18}
-											class={cn({ 'rotate-270': !manager.expanded_folders[i] })}
-										/>
-									</button>
-								{/if}
-								<button class="flex items-center gap-3 w-full py-2">
-									<FolderIcon class="shrink-0" size={18} strokeWidth={1.5} />
-									{folder.attributes.name}
-								</button>
-							</div>
-							<!-- TODO: add subfolders -->
-							<!-- {#if i === 5 && folders[i]}
-								<div class="flex flex-col" transition:slide>
-									{#each Array(3), i}
-										<button
-											class="w-full flex items-center gap-3 py-2 hover:bg-zinc-600 rounded-md pl-12"
-										>
-											<FolderIcon size={18} strokeWidth={1.5} />
-											Folder {i + 1}
-										</button>
-									{/each}
-								</div>
-							{/if} -->
-						{/each}
-					</div>
-				</div>
-				<div class="flex gap-4 justify-end bg-white/5 rounded-b-lg px-8 py-4 -m-8">
-					<Button
-						variant="secondary"
-						onclick={() => {
-							manager.folder_modal = false
-							manager.folder_name = ''
-						}}>Cancel</Button
-					>
-					<Button
-						disabled={manager.folder_name === '' || manager.loading}
-						onclick={async () => {
-							manager.loading = true
-							await manager.create_folder(manager.folder_name)
-							manager.loading = false
-							manager.folder_modal = false
-						}}>{manager.loading ? 'Creating' : 'Create'}</Button
-					>
-				</div>
-			</div>
-		{/if}
-	{:else if manager.open_item}
+	{:else if manager.active_asset}
 		<div class="grid grid-cols-12 h-full">
 			<div class="p-8 col-span-8 flex flex-col gap-8 overflow-y-auto">
 				<div class="flex justify-between">
@@ -557,7 +667,7 @@
 							<ArrowLeftIcon size="20" />
 						</button>
 					{/if}
-					<div class="text-2xl">{manager.open_item.attributes.filename}</div>
+					<div class="text-2xl">{manager.active_asset.attributes.filename}</div>
 					{#if manager.is_image}
 						<button class="p-0" onclick={manager.set_focus}>
 							<FocusIcon size="20" />
@@ -571,9 +681,9 @@
 					>
 						<img
 							class="size-full object-contain"
-							src={manager.open_item.links?.self}
-							alt={manager.open_item.attributes.alt}
-							title={manager.open_item.attributes.title}
+							src={manager.active_asset.links?.self}
+							alt={manager.active_asset.attributes.alt}
+							title={manager.active_asset.attributes.title}
 						/>
 						{#if manager.content?.focus}
 							<span
@@ -589,24 +699,24 @@
 					</figure>
 				{/if}
 				<div class="flex gap-6 justify-center">
-					{#if manager.open_item.attributes.width && manager.open_item.attributes.height}
+					{#if manager.active_asset.attributes.width && manager.active_asset.attributes.height}
 						<div class="flex flex-col gap-1">
 							<div class="text-zinc-400">Width & Height</div>
 							<div>
-								{manager.open_item.attributes.width} x {manager.open_item.attributes.height}
+								{manager.active_asset.attributes.width} x {manager.active_asset.attributes.height}
 							</div>
 						</div>
-					{:else if manager.open_item.attributes.size_bytes}
+					{:else if manager.active_asset.attributes.size_bytes}
 						<div class="flex flex-col gap-1">
 							<div class="text-zinc-400">Size</div>
 							<div>
-								{filesize(manager.open_item.attributes.size_bytes, { standard: 'jedec' })}
+								{filesize(manager.active_asset.attributes.size_bytes, { standard: 'jedec' })}
 							</div>
 						</div>
 					{/if}
 					<div class="flex flex-col gap-1">
 						<div class="text-zinc-400">Format</div>
-						<div>.{manager.open_item.attributes.format}</div>
+						<div>.{manager.active_asset.attributes.format}</div>
 					</div>
 				</div>
 			</div>
@@ -614,31 +724,31 @@
 				<div class="p-8 grow-1 flex flex-col gap-5 overflow-y-auto">
 					<div class="flex flex-col gap-2 mb-4">
 						Asset ID
-						<pre class="overflow-auto">{manager.open_item.id}</pre>
+						<pre class="overflow-auto">{manager.active_asset.id}</pre>
 					</div>
 					<div class="flex flex-col gap-2 mb-4">
 						Asset URL
-						<pre class="overflow-auto">{manager.open_item.links?.self}</pre>
+						<pre class="overflow-auto">{manager.active_asset.links?.self}</pre>
 					</div>
 					<label class="flex flex-col gap-2" for="title">
 						Title/Caption
-						<Input bind:value={manager.open_item.attributes.title} />
+						<Input bind:value={manager.active_asset.attributes.title} />
 					</label>
 					<label class="flex flex-col gap-2" for="alt">
 						Alt text
-						<Input bind:value={manager.open_item.attributes.alt} />
+						<Input bind:value={manager.active_asset.attributes.alt} />
 					</label>
 					<label class="flex flex-col gap-2" for="alt">
 						Name
-						<Input bind:value={manager.open_item.attributes.name} />
+						<Input bind:value={manager.active_asset.attributes.name} />
 					</label>
 					<label class="flex flex-col gap-2" for="copyright">
 						Copyright
-						<Input bind:value={manager.open_item.attributes.copyright} />
+						<Input bind:value={manager.active_asset.attributes.copyright} />
 					</label>
 					<label class="flex flex-col gap-2" for="source">
 						Source
-						<Input bind:value={manager.open_item.attributes.source} />
+						<Input bind:value={manager.active_asset.attributes.source} />
 					</label>
 				</div>
 				<div class="px-8 py-4 grow-0 shrink-0 flex gap-2 border-t border-white/10 justify-end">
@@ -667,7 +777,7 @@
 					<button
 						title="Settings"
 						aria-label="Settings"
-						onclick={() => manager.open_item_details(manager.content!._data)}
+						onclick={() => manager.active_asset_details(manager.content!._data)}
 					>
 						<Settings2Icon size={18} />
 					</button>

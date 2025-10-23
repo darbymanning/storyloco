@@ -1,7 +1,9 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { Asset } from '../types.js'
 import ky from 'ky'
-import type { R2Asset, R2Folder, Paths } from 'moxyloco/r2'
+import type { R2Asset, Paths, R2FolderTree } from 'moxyloco/r2'
+import { SvelteSet } from 'svelte/reactivity'
+import { toast } from 'shared'
 
 type Plugin = FieldPluginResponse<Asset | null>
 
@@ -9,7 +11,14 @@ export class AssetManager {
 	plugin: Plugin | null = $state(null)
 	content: Asset | null = $state(null)
 	selected: Array<string> = $state([])
-	expanded_folders: Array<boolean> = $state([])
+	expanded_folders: Set<string> = $state(new SvelteSet())
+	toggle_folder_expansion = (folder_id: string) => {
+		if (this.expanded_folders.has(folder_id)) {
+			this.expanded_folders.delete(folder_id)
+		} else {
+			this.expanded_folders.add(folder_id)
+		}
+	}
 	show_deleted = $state(false)
 	search_query: string = $state('')
 	loading_assets = $state(false)
@@ -19,11 +28,58 @@ export class AssetManager {
 	folder_modal = $state(false)
 	folder_name = $state('')
 	loading = $state(false)
+	create_folder_modal = $state(false)
+	rename_folder_modal = $state(false)
+	move_folder_modal = $state(false)
+	active_folder_id = $state<string | null>(null)
+	parent_folder_id = $state<string | null>(null)
+	move_asset_modal = $state(false)
+
+	close_rename_folder_modal = () => {
+		this.rename_folder_modal = false
+		this.folder_name = ''
+		this.active_folder_id = null
+	}
+	open_rename_folder_modal = (folder: R2FolderTree) => {
+		this.rename_folder_modal = true
+		this.active_folder_id = folder.id
+		this.folder_name = folder.name
+		this.parent_folder_id = folder.parent_id || null
+	}
+	open_move_folder_modal = (folder: R2FolderTree) => {
+		this.move_folder_modal = true
+		this.active_folder_id = folder.id
+		this.folder_name = folder.name
+		this.parent_folder_id = folder.parent_id || null
+	}
+	close_move_folder_modal = () => {
+		this.move_folder_modal = false
+		this.parent_folder_id = null
+	}
+	open_create_folder_modal = (parent_folder_id?: string) => {
+		this.create_folder_modal = true
+		this.parent_folder_id = parent_folder_id || null
+	}
+	close_create_folder_modal = () => {
+		this.create_folder_modal = false
+		this.parent_folder_id = null
+	}
+	open_move_asset_modal = (asset_or_assets: R2Asset | Array<string>) => {
+		this.move_asset_modal = true
+		if (!Array.isArray(asset_or_assets)) {
+			this.selected = [asset_or_assets.id]
+		}
+	}
+	close_move_asset_modal = () => {
+		this.move_asset_modal = false
+		this.active_asset = undefined
+		this.selected = []
+	}
 
 	assets: Array<R2Asset> | undefined = $state(undefined)
-	folders: Array<R2Folder> | undefined = $state(undefined)
+	folders: Array<R2FolderTree> | undefined = $state(undefined)
 	meta: Paths.ListAssets.Responses.$200['meta'] = $state()
-	open_item: R2Asset | undefined = $derived.by(() => {
+	active_asset: R2Asset | undefined = $derived.by(() => {
 		// State doesnt persist between modal opens, so we use sessionStorage to store which view we need
 		if (sessionStorage.getItem('view') === 'details' && this.is_modal_open) {
 			return this.content?._data
@@ -31,7 +87,7 @@ export class AssetManager {
 	})
 	active_folder = $derived(sessionStorage.getItem('active_folder') || null)
 	open_actions: string | null = $state(null)
-	is_image = $derived(this.open_item?.attributes.content_type?.startsWith('image/'))
+	is_image = $derived(this.active_asset?.attributes.content_type?.startsWith('image/'))
 	limit = 96
 	#initial = $state(true)
 	#search_timeout: number | null = $state(null)
@@ -58,29 +114,37 @@ export class AssetManager {
 		})
 	}
 
-	select_folder = (folder: string | null) => {
-		if (folder) sessionStorage.setItem('active_folder', folder)
-		else sessionStorage.removeItem('active_folder')
-		this.active_folder = folder
+	view_folder = (folder_id: string) => {
+		if (folder_id) sessionStorage.setItem('active_folder', folder_id)
+		this.active_folder = folder_id
+		this.show_deleted = false
+		this.list_assets(1)
 	}
 
-	open_item_details = (item?: R2Asset) => {
+	active_asset_details = (item?: R2Asset) => {
 		if (item) sessionStorage.setItem('view', 'details')
 		if (!this.is_modal_open) this.plugin?.actions?.setModalOpen(true)
 		if (!item) return
-		this.open_item = item
+		this.active_asset = item
 		this.set_asset(item)
 	}
 
 	close_item_details = () => {
 		sessionStorage.setItem('view', 'picker')
 		this.plugin?.actions?.setModalOpen(false)
-		this.open_item = undefined
+		this.active_asset = undefined
 	}
 
 	open_asset_picker = () => {
 		sessionStorage.setItem('view', 'picker')
 		this.plugin?.actions?.setModalOpen(true)
+	}
+
+	close_modals = () => {
+		this.close_move_asset_modal()
+		this.close_rename_folder_modal()
+		this.close_create_folder_modal()
+		this.close_move_folder_modal()
 	}
 
 	private initialize_plugin() {
@@ -112,7 +176,27 @@ export class AssetManager {
 			headers: {
 				authorization: `Bearer ${this.#secrets?.r2_secret}`,
 			},
+			hooks: {
+				beforeError: [
+					async (error) => {
+						const msg = await error.response.json<{ error: string }>()
+						if (typeof msg === 'object' && 'error' in msg) {
+							toast.error(msg.error)
+						} else {
+							toast.error('An unknown error occurred')
+						}
+
+						return error
+					},
+				],
+			},
 		})
+	}
+
+	load = async () => {
+		if (!this.#secrets) return
+		await this.list_assets(1)
+		await this.list_folders()
 	}
 
 	update = () => {
@@ -169,20 +253,75 @@ export class AssetManager {
 
 	update_asset = async (): Promise<void> => {
 		if (!this.#secrets) return
+		this.loading = true
 
-		await this.r2.patch<R2Asset>(`${this.#secrets.r2_bucket}/assets/${this.open_item?.id}`, {
-			json: this.open_item?.attributes,
-		})
+		if (this.selected.length) {
+			const json: Paths.UpdateAssetsBulk.RequestBody = {
+				assets: this.selected,
+				metadata: {
+					folder_id: this.parent_folder_id || '',
+				},
+			}
+
+			await this.r2.patch<Paths.UpdateAssetsBulk.Responses.$204>(
+				`${this.#secrets.r2_bucket}/assets`,
+				{ json }
+			)
+		} else {
+			const json: Paths.UpdateAssetMetadata.RequestBody = {
+				...this.active_asset?.attributes,
+				folder_id: this.parent_folder_id || '',
+			}
+			await this.r2.patch<Paths.UpdateAssetMetadata.Responses.$200>(
+				`${this.#secrets.r2_bucket}/assets/${this.active_asset?.id}`,
+				{
+					json,
+				}
+			)
+		}
+		await this.load()
+		this.close_move_asset_modal()
+		this.loading = false
 	}
 
-	create_folder = async (folder: string): Promise<void> => {
+	update_folder = async (): Promise<void> => {
 		if (!this.#secrets) return
-		const current_folder = this.active_folder
-		const path = current_folder ? `${current_folder}/${folder}` : folder
-		const req = await this.r2.post(`${this.#secrets.r2_bucket}/folders`, {
-			json: { path },
-		})
-		if (req?.ok) await this.list_folders()
+		if (!this.folder_name) return
+		if (!this.active_folder_id) return
+		this.loading = true
+		try {
+			const req = await this.r2.patch<R2FolderTree>(
+				`${this.#secrets.r2_bucket}/folders/${this.active_folder_id}`,
+				{
+					json: { name: this.folder_name, parent_id: this.parent_folder_id },
+				}
+			)
+
+			if (req.ok) await this.load()
+			this.loading = false
+			this.close_modals()
+		} catch (error) {
+			this.loading = false
+		}
+	}
+
+	create_folder = async (): Promise<void> => {
+		if (!this.#secrets) return
+		if (!this.folder_name) return
+		this.loading = true
+
+		const json: Paths.CreateFolder.RequestBody = {
+			name: this.folder_name,
+			parent_id: this.parent_folder_id,
+		}
+		const req = await this.r2.post<Paths.CreateFolder.Responses.$201>(
+			`${this.#secrets.r2_bucket}/folders`,
+			{ json }
+		)
+		if (req.ok) await this.load()
+		this.loading = false
+		this.close_create_folder_modal()
+		this.folder_name = ''
 	}
 
 	list_folders = async () => {
@@ -190,7 +329,7 @@ export class AssetManager {
 		const res = await this.r2
 			.get<Paths.ListFolders.Responses.$200>(`${this.#secrets.r2_bucket}/folders`)
 			.json()
-		this.folders = res.data
+		this.folders = res.data?.structured
 	}
 
 	list_assets = async (page?: number) => {
@@ -201,7 +340,7 @@ export class AssetManager {
 			['page', page?.toString() || '1'],
 		])
 
-		if (this.active_folder) params.set('folder_path', this.active_folder)
+		if (this.active_folder) params.set('folder_id', this.active_folder)
 		if (this.show_deleted) params.set('deleted', 'true')
 		if (this.search_query) params.set('filter[q]', this.search_query)
 
@@ -235,7 +374,7 @@ export class AssetManager {
 
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}`)
 		if (this.content?.id === asset.id) this.select_asset(null)
-		await this.list_assets()
+		await this.load()
 	}
 
 	hard_delete_asset = async (asset: R2Asset) => {
@@ -243,7 +382,7 @@ export class AssetManager {
 		const confirm = window.confirm('Are you sure you want to delete this asset permanently?')
 		if (!confirm) return
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}?hard=true`)
-		await this.list_assets()
+		await this.load()
 	}
 
 	hard_delete_many_assets = async (asset_ids: Array<string>) => {
@@ -251,7 +390,7 @@ export class AssetManager {
 		const confirm = window.confirm('Are you sure you want to delete these assets permanently?')
 		if (!confirm) return
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets?hard=true`, { json: asset_ids })
-		await this.list_assets()
+		await this.load()
 		this.selected = []
 	}
 
@@ -264,18 +403,26 @@ export class AssetManager {
 
 		await this.r2.delete(`${this.#secrets.r2_bucket}/assets`, { json: assets })
 		if (assets.some((e) => e === this.content?.id)) this.select_asset(null)
-		await this.list_assets()
+		await this.load()
 		this.selected = []
+	}
+
+	delete_folder = async (folder_id: string) => {
+		if (!this.#secrets) return
+		const confirm = window.confirm('Are you sure you want to delete this folder?')
+		if (!confirm) return
+		await this.r2.delete(`${this.#secrets.r2_bucket}/folders/${folder_id}`)
+		await this.list_folders()
 	}
 
 	save_and_close = async () => {
 		if (!this.content) return
 
-		this.content.alt = this.open_item?.attributes.alt
-		this.content.title = this.open_item?.attributes.title
-		this.content.source = this.open_item?.attributes.source
-		this.content.copyright = this.open_item?.attributes.copyright
-		this.content.name = this.open_item?.attributes.name
+		this.content.alt = this.active_asset?.attributes.alt
+		this.content.title = this.active_asset?.attributes.title
+		this.content.source = this.active_asset?.attributes.source
+		this.content.copyright = this.active_asset?.attributes.copyright
+		this.content.name = this.active_asset?.attributes.name
 
 		this.update()
 		await this.update_asset()
@@ -304,26 +451,27 @@ export class AssetManager {
 		const body = new FormData()
 		for (const file of target.files) body.append('file', file)
 
-		if (this.active_folder) body.append('folder_path', this.active_folder)
+		if (this.active_folder) body.append('folder_id', this.active_folder)
 
 		if (!this.#secrets) return
 		const req = await this.r2.post(`${this.#secrets.r2_bucket}/assets`, { body })
 
 		if (!req.ok) return
 
-		this.list_assets()
+		this.load()
 		target.value = ''
 	}
 
 	restore = async (asset: R2Asset) => {
 		if (!this.#secrets) return
 		await this.r2.post(`${this.#secrets.r2_bucket}/assets/${asset.id}/restore`)
-		this.list_assets()
+		this.load()
 	}
 
 	restore_many_assets = async (asset_ids: Array<string>) => {
 		if (!this.#secrets) return
-		await this.r2.post(`${this.#secrets.r2_bucket}/restore`, { json: asset_ids })
+		await this.r2.post(`${this.#secrets.r2_bucket}/assets/restore`, { json: asset_ids })
+		this.load()
 	}
 
 	next_page = () => {

@@ -22,7 +22,6 @@ export default defineConfig({
 		host: true,
 	},
 	resolve: {
-		preserveSymlinks: true,
 		alias: {
 			'shared/global.css': path.resolve(__dirname, '../shared/src/lib/global.css'),
 			'shared/utils': path.resolve(__dirname, '../shared/src/lib/utils.ts'),
