@@ -837,7 +837,7 @@
 				})}
 				<div class="rounded border border-input bg-card overflow-hidden">
 					<div class="p-2" use:sortable>
-						{#each manager.content as asset, index (asset.id)}
+						{#each manager.content as asset, index (index)}
 							<div
 								class="group relative grid grid-cols-[auto_1fr_auto] items-center py-1.5"
 								data-index={index}
