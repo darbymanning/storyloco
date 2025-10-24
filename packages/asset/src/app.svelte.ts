@@ -189,7 +189,19 @@ export class AssetManager {
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
 
-				this.content = state.data?.content || null
+				if (state.data?.content) {
+					if (Array.isArray(state.data.content)) {
+						if (!Array.isArray(this.content)) {
+							this.content = []
+						}
+						this.content.splice(0, this.content.length, ...state.data.content)
+					} else {
+						this.content = state.data.content
+					}
+				} else {
+					this.content = null
+				}
+
 				if (!this.#initial) return
 
 				this.#initial = false
@@ -238,7 +250,7 @@ export class AssetManager {
 
 	reorder = () => {
 		this.update()
-		window.location.reload()
+		// window.location.reload()
 	}
 
 	insert_selected_assets = () => {
@@ -403,9 +415,11 @@ export class AssetManager {
 
 	remove_asset = (asset: R2Asset) => {
 		if (Array.isArray(this.content)) {
-			this.content = this.content.filter((item) => item._data.id !== asset.id)
+			const index = this.content.findIndex((item) => item._data.id === asset.id)
+			if (index !== -1) {
+				this.content.splice(index, 1)
+			}
 			this.update()
-			window.location.reload()
 		} else if (this.content?._data.id === asset.id) {
 			this.content = null
 			this.update()
