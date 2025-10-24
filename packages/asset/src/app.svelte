@@ -829,30 +829,27 @@
 			</form>
 		</div>
 	{:else if manager.multiple}
+		{@const [sortable] = dnd(manager.content as any, {
+			onDragEnd: manager.reorder,
+			handlerSelector: '.handle',
+		})}
 		{#if Array.isArray(manager.content) && manager.content.length > 0}
-			{#key manager.content.length}
-				{@const [sortable] = dnd(manager.content as any, {
-					onDragEnd: manager.order,
-					handlerSelector: '.handle',
-				})}
-				<div class="rounded border border-input bg-card overflow-hidden">
-					<div class="p-2" use:sortable>
-						{#each manager.content as asset, index (index)}
-							<div
-								class="group relative grid grid-cols-[auto_1fr_auto] items-center py-1.5"
-								data-index={index}
-							>
-								<button class="handle size-6 mr-2 flex items-center justify-center">
-									<GripVerticalIcon class="size-4" />
-								</button>
-								{@render AssetCard(asset)}
-							</div>
-						{/each}
-					</div>
-					<Button onclick={manager.open_asset_picker} class="w-full rounded-none">Add Assets</Button
-					>
+			<div class="rounded border border-input bg-card overflow-hidden">
+				<div class="p-2" use:sortable>
+					{#each manager.content as asset, index (index)}
+						<div
+							class="group relative grid grid-cols-[auto_1fr_auto] items-center py-1.5"
+							data-index={index}
+						>
+							<button class="handle size-6 mr-2 flex items-center justify-center">
+								<GripVerticalIcon class="size-4" />
+							</button>
+							{@render AssetCard(asset)}
+						</div>
+					{/each}
 				</div>
-			{/key}
+				<Button onclick={manager.open_asset_picker} class="w-full rounded-none">Add Assets</Button>
+			</div>
 		{:else}
 			{@render AddAssetCard()}
 		{/if}

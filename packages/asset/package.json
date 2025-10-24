@@ -9,7 +9,7 @@
       "@tsconfig/svelte": "5.0.5",
       "@types/lodash-es": "4.17.12",
       "filesize": "11.0.13",
-      "fluid-dnd": "2.6.2",
+      "fluid-dnd": "2.4.0",
       "ky": "1.13.0",
       "lodash-es": "4.17.21",
       "moxyloco": "0.7.0",

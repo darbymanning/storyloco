@@ -189,14 +189,7 @@ export class AssetManager {
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
 
-				const incoming_content = state.data?.content
-
-				if (this.content) {
-					merge(this.content, incoming_content)
-				} else if (incoming_content) {
-					this.content = incoming_content
-				}
-
+				this.content = state.data?.content || null
 				if (!this.#initial) return
 
 				this.#initial = false
@@ -237,17 +230,15 @@ export class AssetManager {
 		await this.list_folders()
 	}
 
-	order = () => {
+	update = () => {
 		if (this.plugin?.type !== 'loaded') return
 		const state = $state.snapshot(this.content)
 		this.plugin.actions.setContent(state)
 	}
 
-	update = (event?: any) => {
-		if (this.plugin?.type !== 'loaded') return
-		const state = $state.snapshot(this.content)
-		this.content = state
-		this.plugin.actions.setContent(state)
+	reorder = () => {
+		this.update()
+		window.location.reload()
 	}
 
 	insert_selected_assets = () => {
@@ -413,10 +404,12 @@ export class AssetManager {
 	remove_asset = (asset: R2Asset) => {
 		if (Array.isArray(this.content)) {
 			this.content = this.content.filter((item) => item._data.id !== asset.id)
+			this.update()
+			window.location.reload()
 		} else if (this.content?._data.id === asset.id) {
 			this.content = null
+			this.update()
 		}
-		this.update()
 	}
 
 	list_assets = async (page?: number) => {
