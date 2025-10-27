@@ -129,7 +129,7 @@
 						'rounded shrink-0 size-full absolute object-cover',
 						{ 'opacity-50': is_selected },
 					]}
-					src={asset.links?.self}
+					src="{asset.links?.self}/m/400x200"
 					alt={asset.attributes?.alt}
 				/>
 			{:else}
@@ -745,7 +745,7 @@
 					>
 						<img
 							class="size-full object-contain"
-							src={manager.active_asset.links?.self}
+							src="{manager.active_asset.links?.self}/m/1200x800"
 							alt={manager.active_asset.attributes.alt}
 							title={manager.active_asset.attributes.title}
 						/>
