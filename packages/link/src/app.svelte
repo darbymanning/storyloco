@@ -25,14 +25,29 @@
 	import NoResults from './no_results.svelte'
 	import { slide } from 'svelte/transition'
 	import { LinkManager } from './app.svelte.js'
+	import { AssetManager } from '../../asset/src/app.svelte.js'
 
 	const manager = new LinkManager()
 
 	// generate skeleton widths once
 	const skeleton_widths = Array.from({ length: 20 }, () => Math.floor(Math.random() * 60 + 10))
 
-	// derived state
-	const loaded = $derived(manager.plugin?.type === 'loaded')
+	$effect(() => {
+		if (manager.is_modal_open && manager.content.type === 'asset') actions.select_asset()
+	})
+
+	const actions = {
+		async open_picker(): Promise<void> {
+			if (!manager.plugin) return
+			if (!manager.plugin.data?.isModalOpen) await manager.plugin.actions?.setModalOpen(true)
+		},
+
+		async select_asset(): Promise<void> {
+			const asset = await AssetManager.select_asset(manager.plugin)
+			if (!asset) return
+			manager.select_asset(asset)
+		},
+	}
 </script>
 
 {#snippet THead()}
@@ -52,7 +67,7 @@
 
 	{#snippet Column(index: number)}
 		<td style="--width: {skeleton_widths[index]}%">
-			<SkeletonUI class="dark:bg-muted-foreground w-[var(--width)] min-w-7 h-7" />
+			<SkeletonUI class="dark:bg-muted-foreground w-(--width) min-w-7 h-7" />
 		</td>
 	{/snippet}
 
@@ -107,11 +122,11 @@
 
 {#snippet AssetSelect(content: AssetLink)}
 	<button
-		class={cn('w-full text-start', { 'text-muted-foreground': !content.asset?.name })}
-		onclick={manager.select_asset}
+		class={cn('w-full text-start grid', { 'text-muted-foreground': !content.asset?.filename })}
+		onclick={actions.open_picker}
 	>
 		{#if content.asset}
-			{content.asset.name || content.asset.filename.split('/').pop()}
+			<span class="truncate">{content.asset.name || content.asset.filename.split('/').pop()}</span>
 		{:else}
 			Select an asset…
 		{/if}
@@ -411,10 +426,12 @@
 							title="Select link type…"
 							class="absolute inset-0 opacity-0 cursor-pointer peer"
 							bind:value={manager.content.type}
-							oninput={(event) => {
+							onchange={(event) => {
 								if (!event.target || !(event.target instanceof HTMLSelectElement)) return
-								manager.clear()
-								manager.content.type = event.target.value as LinkType
+								manager.content = {
+									type: event.target.value as LinkType,
+									text: manager.content.text || '',
+								}
 								manager.update()
 							}}
 							id="type"
@@ -444,7 +461,7 @@
 	</section>
 {/snippet}
 
-{#if loaded}
+{#if manager.loaded}
 	{#if manager.is_modal_open}
 		{@render Modal()}
 	{:else}

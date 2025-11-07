@@ -1,16 +1,16 @@
 {
-	"options": [
-		{
-			"name": "MOXY_R2_SECRET_ID",
-			"value": "af97f88e-da1b-4b60-a9af-00de2c5b0578"
-		},
-		{
-			"name": "R2_BUCKET",
-			"value": "asset-plugin-test"
-		},
-		{
-			"name": "multiple",
-			"value": "true"
-		}
-	]
+   "options": [
+      {
+         "name": "MOXY_R2_SECRET_ID",
+         "value": "52315565-f6b0-4381-8958-69d721ae3ded"
+      },
+      {
+         "name": "R2_BUCKET",
+         "value": "asset-plugin-test"
+      },
+      {
+         "name": "multiple",
+         "value": "true"
+      }
+   ]
 }

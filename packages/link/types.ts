@@ -1,4 +1,4 @@
-import type { Asset } from '@storyblok/field-plugin'
+import type { Asset } from '../asset/types'
 
 interface BaseLink {
 	url?: string

@@ -4,15 +4,23 @@ import ky from 'ky'
 import type { R2Asset, Paths, R2FolderTree } from 'moxyloco/r2'
 import { SvelteSet } from 'svelte/reactivity'
 import { toast } from 'shared'
-import { merge } from 'lodash-es'
+import AssetPicker from './app.svelte'
+import { mount, unmount } from 'svelte'
 
 type Content = Asset | Array<Asset> | null
 type Plugin = FieldPluginResponse<Content>
 
+export interface Props {
+	plugin?: Plugin
+	onselect?: (asset: Asset) => void
+	oncancel?: () => void
+}
+
 export class AssetManager {
 	plugin: Plugin | null = $state(null)
 	readonly loaded = $derived(this.plugin?.type === 'loaded')
-	readonly multiple = $derived(this.plugin?.data?.options.multiple === 'true')
+	readonly link = $derived(this.plugin?.data?.options.link === 'true')
+	readonly multiple = $derived(this.plugin?.data?.options.multiple === 'true' && !this.link)
 	content: Content = $state(null)
 	selected: Array<R2Asset> = $state([])
 	toggle_selected = (asset: R2Asset) => {
@@ -82,15 +90,86 @@ export class AssetManager {
 	move_asset_modal = $state(false)
 	item_details_open = $derived.by(() => sessionStorage.getItem('view') === 'details')
 	replace_index_target = $derived.by(() => sessionStorage.getItem('replace_index_target') || null)
+	onselect?: (asset: Asset) => void
+	oncancel?: () => void
+	set_modal_open = $derived.by(() => this.plugin?.actions?.setModalOpen || (() => {}))
 
-	constructor() {
-		this.initialize_plugin()
+	constructor({ plugin, onselect, oncancel }: Props) {
+		if (plugin) {
+			this.plugin = plugin
+			this.list_assets(1)
+		}
+		if (onselect) this.onselect = onselect
+		if (oncancel) this.oncancel = oncancel
+		if (!plugin) this.initialize_plugin()
 
 		$effect(() => {
 			document.documentElement.setAttribute(
 				'data-modal-open',
 				this.is_modal_open ? 'true' : 'false'
 			)
+		})
+	}
+
+	private initialize_plugin() {
+		createFieldPlugin<Asset | null>({
+			enablePortalModal: true,
+			validateContent(content) {
+				if (typeof content !== 'object') return { content: null }
+				return { content: content as Asset }
+			},
+			onUpdateState: (state) => {
+				this.plugin = state as Plugin
+
+				if (state.data?.content) {
+					if (Array.isArray(state.data.content)) {
+						if (!Array.isArray(this.content)) {
+							this.content = []
+						}
+						this.content.splice(0, this.content.length, ...state.data.content)
+					} else {
+						this.content = state.data.content
+					}
+				} else {
+					this.content = null
+				}
+
+				if (!this.#initial) return
+
+				this.#initial = false
+				// initial fetch for picker view
+				this.list_assets(1)
+			},
+		})
+	}
+
+	static async select_asset(plugin: any) {
+		return new Promise<Asset | null>(async (resolve) => {
+			const app = document.body.querySelector('#app') as HTMLElement
+			if (document.getElementById('asset_picker_mount') || !app) return
+			const target = document.createElement('div')
+			target.id = 'asset_picker_mount'
+			document.body.appendChild(target)
+			app.style.display = 'none'
+
+			const picker = mount(AssetPicker, {
+				target,
+				props: {
+					plugin,
+					onselect(asset) {
+						resolve(asset)
+						target.remove()
+						app.style.display = 'block'
+					},
+					async oncancel() {
+						resolve(null)
+						await unmount(picker, { outro: true })
+						target.remove()
+						document.body.removeChild(target)
+						app.style.display = 'block'
+					},
+				},
+			})
 		})
 	}
 
@@ -147,7 +226,7 @@ export class AssetManager {
 			sessionStorage.setItem('active_asset', JSON.stringify(item))
 		}
 
-		if (!this.is_modal_open) this.plugin?.actions?.setModalOpen(true)
+		if (!this.is_modal_open) this.set_modal_open(true)
 		if (!item) return
 		this.active_asset = item
 		if (!this.multiple) this.set_asset(item)
@@ -155,21 +234,22 @@ export class AssetManager {
 
 	close_item_details = () => {
 		sessionStorage.setItem('view', 'picker')
-		this.plugin?.actions?.setModalOpen(false)
+		this.set_modal_open(false)
 		this.active_asset = null
 	}
 
-	#get_card_index = (event: Event): string | undefined => {
+	#get_card_index = (event?: Event): string | undefined => {
+		if (!event) return undefined
 		const card = (event.target as HTMLElement)?.closest('[data-index]')
 		return (card as HTMLElement)?.dataset.index
 	}
 
-	open_asset_picker = async (event: Event) => {
+	open_asset_picker = async (event?: Event) => {
 		const index = this.#get_card_index(event)
 		if (index) sessionStorage.setItem('replace_index_target', index)
 		else sessionStorage.removeItem('replace_index_target')
 		sessionStorage.setItem('view', 'picker')
-		await this.plugin?.actions?.setModalOpen(true)
+		await this.set_modal_open(true)
 	}
 
 	close_modals = () => {
@@ -177,38 +257,6 @@ export class AssetManager {
 		this.close_rename_folder_modal()
 		this.close_create_folder_modal()
 		this.close_move_folder_modal()
-	}
-
-	private initialize_plugin() {
-		createFieldPlugin<Asset | null>({
-			enablePortalModal: true,
-			validateContent(content) {
-				if (typeof content !== 'object') return { content: null }
-				return { content: content as Asset }
-			},
-			onUpdateState: (state) => {
-				this.plugin = state as Plugin
-
-				if (state.data?.content) {
-					if (Array.isArray(state.data.content)) {
-						if (!Array.isArray(this.content)) {
-							this.content = []
-						}
-						this.content.splice(0, this.content.length, ...state.data.content)
-					} else {
-						this.content = state.data.content
-					}
-				} else {
-					this.content = null
-				}
-
-				if (!this.#initial) return
-
-				this.#initial = false
-				// initial fetch for picker view
-				this.list_assets(1)
-			},
-		})
 	}
 
 	get r2() {
@@ -243,14 +291,9 @@ export class AssetManager {
 	}
 
 	update = () => {
-		if (this.plugin?.type !== 'loaded') return
+		if (!this.plugin?.actions) return
 		const state = $state.snapshot(this.content)
 		this.plugin.actions.setContent(state)
-	}
-
-	reorder = () => {
-		this.update()
-		// window.location.reload()
 	}
 
 	insert_selected_assets = () => {
@@ -270,7 +313,7 @@ export class AssetManager {
 		}
 
 		this.selected = []
-		if (this.is_modal_open) this.plugin?.actions?.setModalOpen(false)
+		if (this.is_modal_open) this.set_modal_open(false)
 	}
 
 	#turn_r2_asset_into_asset = (asset: R2Asset): Asset => {
@@ -312,6 +355,7 @@ export class AssetManager {
 		}
 
 		this.content = this.#turn_r2_asset_into_asset(asset)
+		if (this.onselect) this.onselect(this.content)
 
 		this.update()
 	}
@@ -329,7 +373,7 @@ export class AssetManager {
 
 	select_asset = (asset: R2Asset | null) => {
 		this.set_asset(asset)
-		if (this.is_modal_open) this.plugin?.actions?.setModalOpen(false)
+		if (this.is_modal_open) this.set_modal_open(false)
 	}
 
 	update_asset = async (): Promise<void> => {

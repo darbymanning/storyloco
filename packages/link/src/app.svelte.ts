@@ -3,12 +3,14 @@ import type { ISbStories } from '@storyblok/js'
 import type { Link, LinkType, Rel, Target } from '../types.js'
 import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon } from '@lucide/svelte'
 import { format_date, format_elapse } from 'kitto'
+import type { Asset } from '../../asset/types.js'
 
 type Plugin = FieldPluginResponse<Link | null>
 
 export class LinkManager {
 	plugin = $state<Plugin | null>(null)
 	content = $state<Link>({ type: 'internal' })
+	loaded = $derived(this.plugin?.type === 'loaded')
 
 	private initial = $state(true)
 
@@ -53,7 +55,6 @@ export class LinkManager {
 
 	// derived state
 	is_modal_open = $derived(this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen)
-	loaded = $derived(this.plugin?.type === 'loaded')
 	token = $derived(this.plugin?.data?.token || import.meta.env.VITE_STORYBLOK_API_TOKEN)
 	Icon = $derived(this.icon_map.get(this.content.type))
 
@@ -246,16 +247,11 @@ export class LinkManager {
 		this.update()
 	}
 
-	select_asset = async () => {
-		if (!this.plugin?.actions) return
-		const asset = await this.plugin.actions.selectAsset()
-
-		if (!asset) return
+	select_asset = async (asset: Asset) => {
+		if (this.content.type !== 'asset') return
 
 		this.content.url = asset.filename
-		if (this.content.type === 'asset') {
-			this.content.asset = asset
-		}
+		this.content.asset = asset
 		this.update()
 	}
 
