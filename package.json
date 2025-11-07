@@ -30,7 +30,8 @@
       "packages/vite/dist",
       "packages/ticketsource/types.ts",
       "packages/input/types.ts",
-      "packages/time/types.ts"
+      "packages/time/types.ts",
+      "packages/seo/types.ts"
    ],
    "exports": {
       ".": {
@@ -79,18 +80,21 @@
       "./time": {
          "types": "./packages/time/types.ts",
          "svelte": "./packages/time/src/app.svelte.ts"
+      },
+      "./seo": {
+         "types": "./packages/seo/types.ts"
       }
    },
    "devDependencies": {
-      "@types/node": "24.7.0",
-      "@typescript-eslint/eslint-plugin": "8.46.0",
-      "@typescript-eslint/parser": "8.46.0",
-      "eslint": "9.37.0",
+      "@types/node": "24.10.0",
+      "@typescript-eslint/eslint-plugin": "8.46.3",
+      "@typescript-eslint/parser": "8.46.3",
+      "eslint": "9.39.1",
       "eslint-plugin-prettier": "5.5.4",
       "kitto": "1.0.0-rc.17",
       "prettier": "3.6.2",
       "typescript": "5.9.3",
-      "vite": "7.1.9"
+      "vite": "7.2.0"
    },
    "peerDependencies": {
       "@storyblok/svelte": "^5.2.4",
