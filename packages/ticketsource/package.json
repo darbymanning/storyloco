@@ -1,5 +1,5 @@
 {
-   "name": "ticketsource-field",
+   "name": "uiloco-ticketsource",
    "version": "0.1.1",
    "devDependencies": {
       "@storyblok/field-plugin": "1.7.0",
@@ -24,7 +24,7 @@
       "dev": "vite",
       "build": "vite build",
       "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-      "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --skipPrompts --scope my-plugins",
+      "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --skipPrompts --scope partner-portal",
       "format": "prettier . --write"
    },
    "type": "module"

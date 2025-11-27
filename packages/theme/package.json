@@ -1,26 +1,26 @@
 {
-  "name": "theme-field",
-  "version": "0.0.0",
-  "devDependencies": {
-    "@storyblok/field-plugin": "1.7.0",
-    "@sveltejs/vite-plugin-svelte": "6.1.3",
-    "@tsconfig/svelte": "5.0.5",
-    "prettier": "3.6.2",
-    "prettier-plugin-svelte": "3.4.0",
-    "radashi": "12.6.2",
-    "shared": "../shared",
-    "svelte": "5.38.5",
-    "svelte-check": "4.3.1",
-    "typescript": "5.9.2",
-    "vite": "7.1.3",
-    "vite-plugin-css-injected-by-js": "3.5.2"
-  },
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --skipPrompts --scope my-plugins",
-    "format": "prettier . --write"
-  },
-  "type": "module"
+   "name": "uiloco-theme",
+   "version": "0.0.0",
+   "devDependencies": {
+      "@storyblok/field-plugin": "1.7.0",
+      "@sveltejs/vite-plugin-svelte": "6.1.3",
+      "@tsconfig/svelte": "5.0.5",
+      "prettier": "3.6.2",
+      "prettier-plugin-svelte": "3.4.0",
+      "radashi": "12.6.2",
+      "shared": "../shared",
+      "svelte": "5.38.5",
+      "svelte-check": "4.3.1",
+      "typescript": "5.9.2",
+      "vite": "7.1.3",
+      "vite-plugin-css-injected-by-js": "3.5.2"
+   },
+   "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+      "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --skipPrompts --scope partner-portal",
+      "format": "prettier . --write"
+   },
+   "type": "module"
 }

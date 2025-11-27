@@ -7,7 +7,7 @@
 		HourglassIcon,
 		Trash2Icon,
 		RefreshCwIcon,
-		CheckCircle2Icon,
+		CheckIcon,
 		EllipsisIcon,
 		Settings2Icon,
 	} from '@lucide/svelte'
@@ -88,7 +88,7 @@
 	<figure
 		class={cn([
 			'flex items-center justify-center [&>svg]:absolute [&>svg]:size-5 bg-muted text-muted-foreground rounded w-full aspect-video relative border',
-			{ 'bg-primary [&>svg]:text-primary-foreground': video && is_selected },
+			{ 'bg-primary [&>svg]:text-foreground': video && is_selected },
 		])}
 	>
 		{#if playback_id && video.status === 'ready'}
@@ -110,7 +110,7 @@
 		{:else if video.status === 'preparing'}
 			<HourglassIcon />
 		{:else if is_selected}
-			<CheckCircle2Icon />
+			<CheckIcon />
 		{/if}
 	</figure>
 {/snippet}

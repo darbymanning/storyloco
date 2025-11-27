@@ -1,5 +1,5 @@
 {
-   "name": "asset-field",
+   "name": "uiloco-asset",
    "version": "0.0.1",
    "devDependencies": {
       "@lucide/svelte": "0.546.0",
@@ -29,7 +29,7 @@
       "dev": "vite",
       "build": "vite build",
       "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-      "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --skipPrompts --scope my-plugins",
+      "deploy": "bun run build && bunx @storyblok/field-plugin-cli@latest deploy --dotEnvPath '../../.env' --skipPrompts --scope partner-portal",
       "format": "prettier . --write"
    },
    "type": "module"
