@@ -8,6 +8,7 @@ export class SEOManager {
 	content = $state<SEO>({})
 	loaded = $derived(this.plugin?.type === 'loaded')
 	is_modal_open = $derived(this.loaded && this.plugin?.data?.isModalOpen)
+	has_r2 = $derived(!!this.plugin?.data?.options.R2_BUCKET)
 
 	constructor() {
 		this.initialize_plugin()

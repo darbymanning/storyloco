@@ -1,6 +1,6 @@
 {
    "name": "storyloco",
-   "version": "1.14.3",
+   "version": "1.14.5",
    "description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
    "keywords": [
       "storyblok",
@@ -97,7 +97,7 @@
       "vite": "7.2.0"
    },
    "peerDependencies": {
-      "@storyblok/svelte": "^5.2.4",
+      "@storyblok/svelte": "5.2.14",
       "@storyblok/field-plugin": "^1.6.0",
       "svelte": "^5.0.0"
    },
@@ -113,6 +113,7 @@
    ],
    "dependencies": {
       "chalk": "5.6.2",
-      "ora": "9.0.0"
+      "ora": "9.0.0",
+      "path-to-regexp": "8.3.0"
    }
 }

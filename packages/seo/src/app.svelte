@@ -9,11 +9,22 @@
 		if (seo.is_modal_open) actions.select_asset()
 	})
 
+	const og = (url: string) => `${url}/m/799x551/filters:quality(85)`
+	const twitter = (url: string) => `${url}/m/1600x900/filters:quality(85)`
+
 	const actions = {
 		async open_picker(type: 'og' | 'twitter'): Promise<void> {
-			sessionStorage.setItem('seo_picker_type', type)
-			if (!seo.plugin) return
-			if (!seo.plugin.data?.isModalOpen) await seo.plugin.actions?.setModalOpen(true)
+			if (seo.has_r2) {
+				sessionStorage.setItem('seo_picker_type', type)
+				if (!seo.plugin) return
+				if (!seo.plugin.data?.isModalOpen) await seo.plugin.actions?.setModalOpen(true)
+			} else {
+				const asset = await seo.plugin?.actions?.selectAsset()
+				if (!asset) return
+				if (type === 'og') seo.content.og_image = og(asset.filename)
+				else if (type === 'twitter') seo.content.twitter_image = twitter(asset.filename)
+				seo.update()
+			}
 		},
 
 		async select_asset(): Promise<void> {
@@ -23,9 +34,8 @@
 			const asset = await AssetManager.select_asset(seo.plugin)
 			if (!asset) return
 
-			if (type === 'og') seo.content.og_image = `${asset.filename}/m/799x551/filters:quality(85)`
-			else if (type === 'twitter')
-				seo.content.twitter_image = `${asset.filename}/m/1600x900/filters:quality(85)`
+			if (type === 'og') seo.content.og_image = og(asset.filename)
+			else if (type === 'twitter') seo.content.twitter_image = twitter(asset.filename)
 
 			seo.update()
 			sessionStorage.removeItem('seo_picker_type')
