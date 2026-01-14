@@ -236,12 +236,19 @@ export class LinkManager {
 		}
 
 		if (this.content.email) {
-			const url = new URL(`mailto:${this.content.email}`)
-			if (this.content.subject) url.searchParams.set('subject', this.content.subject)
-			if (this.content.body) url.searchParams.set('body', this.content.body)
-			if (this.content.cc) url.searchParams.set('cc', this.content.cc)
-			if (this.content.bcc) url.searchParams.set('bcc', this.content.bcc)
-			this.content.url = url.toString()
+			const params = new URLSearchParams()
+			if (this.content.subject) params.set('subject', this.content.subject)
+			if (this.content.body) params.set('body', this.content.body)
+			if (this.content.cc) params.set('cc', this.content.cc)
+			if (this.content.bcc) params.set('bcc', this.content.bcc)
+
+			const query_string = Array.from(params.entries())
+				.map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+				.join('&')
+
+			this.content.url = query_string
+				? `mailto:${this.content.email}?${query_string}`
+				: `mailto:${this.content.email}`
 		}
 
 		this.update()
