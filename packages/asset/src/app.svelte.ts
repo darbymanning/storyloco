@@ -261,9 +261,7 @@ export class AssetManager {
 
 	get r2() {
 		return ky.create({
-			prefixUrl: import.meta.env.DEV
-				? 'http://localhost:5173/api/r2/'
-				: 'https://assets.uilo.co/api/r2/',
+			prefixUrl: 'https://assets.uilo.co/api/r2/',
 			headers: {
 				authorization: `Bearer ${this.#secrets?.r2_secret}`,
 			},
