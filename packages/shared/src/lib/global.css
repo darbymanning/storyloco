@@ -54,7 +54,7 @@
 
 [data-theme='dark'] {
 	--teal-muted: oklch(74.591% 0.11569 187.182);
-	--background: oklch(0.32 0 0);
+	--background: oklch(32.303% 0.00881 285.843);
 	--foreground: oklch(0.984 0.003 247.858);
 	--card: oklch(26.239% 0.00928 285.704);
 	--card-foreground: oklch(0.984 0.003 247.858);
