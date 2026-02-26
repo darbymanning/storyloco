@@ -145,5 +145,8 @@ async function resolve_redirect(url: URL): Promise<string | null> {
 export const handle_redirects: Handle = async ({ event, resolve }) => {
 	const target = await resolve_redirect(event.url)
 	if (!target) return await resolve(event)
+
+	logger.info(`Redirecting ${event.url.pathname}${event.url.search || ""} -> ${target}`)
+
 	return new Response(null, { status: 308, headers: { Location: target } })
 }
