@@ -148,10 +148,6 @@ export default function redirects({
 								.map((e) => [e.name, e.value] as [string, string])
 						).entries()
 					)
-
-					logger.start("Generating redirects")
-					logger.succeed("Redirects virtual module generated")
-
 					return `export const redirects = ${JSON.stringify(redirects_data, null, 2)}`
 				} catch (err) {
 					const message =
@@ -175,8 +171,17 @@ export default function redirects({
 							.map((e) => [e.name, e.value] as [string, string])
 					).entries()
 				)
+
 				logger.start("Generating redirects")
 				logger.succeed("Redirects virtual module generated")
+
+				if (redirects_data.length === 0) {
+					logger.info("No redirects configured")
+				} else {
+					for (const [from, to] of redirects_data) {
+						logger.info(`${from} -> ${to}`)
+					}
+				}
 			} catch (err) {
 				const message =
 					err instanceof Error && typeof err.message === "string" ? err.message : "Unknown error"
