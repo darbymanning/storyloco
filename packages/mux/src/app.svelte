@@ -16,7 +16,6 @@
 	import { Input, Label, Skeleton as SkeletonComponent, Switch } from 'shared'
 	import { MuxManager } from './app.svelte.js'
 	import type { MuxAsset } from './app.svelte.js'
-
 	const manager = new MuxManager()
 
 	const loaded = $derived(manager.plugin?.type === 'loaded' && manager.mux)
@@ -298,7 +297,7 @@
 						<Switch
 							id="autoplay"
 							checked={manager.content.autoplay}
-							onCheckedChange={(autoplay) => manager.update({ autoplay })}
+							onCheckedChange={(autoplay: boolean) => manager.update({ autoplay })}
 						/>
 						<Label for="autoplay">Autoplay</Label>
 					</div>
@@ -306,7 +305,7 @@
 						<Switch
 							id="playsinline"
 							checked={manager.content.playsinline}
-							onCheckedChange={(playsinline) => manager.update({ playsinline })}
+							onCheckedChange={(playsinline: boolean) => manager.update({ playsinline })}
 						/>
 						<Label for="playsinline">Playsinline</Label>
 					</div>
@@ -314,7 +313,7 @@
 						<Switch
 							id="muted"
 							checked={manager.content.muted}
-							onCheckedChange={(muted) => manager.update({ muted })}
+							onCheckedChange={(muted: boolean) => manager.update({ muted })}
 						/>
 						<Label for="muted">Muted</Label>
 					</div>
@@ -322,7 +321,7 @@
 						<Switch
 							id="loop"
 							checked={manager.content.loop}
-							onCheckedChange={(loop) => manager.update({ loop })}
+							onCheckedChange={(loop: boolean) => manager.update({ loop })}
 						/>
 						<Label for="loop">Loop</Label>
 					</div>
@@ -352,7 +351,7 @@
 							<ul class={actions_menu_classes}>
 								<li>
 									<button
-										onclick={manager.select_poster}
+										onclick={() => manager.select_poster()}
 										title="Select poster"
 										aria-label="Select poster"
 									>
@@ -362,7 +361,7 @@
 								{#if !manager.is_mux_poster}
 									<li>
 										<button
-											onclick={manager.delete_poster}
+											onclick={() => manager.delete_poster()}
 											title="Delete poster"
 											aria-label="Delete poster"
 										>

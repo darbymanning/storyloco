@@ -160,10 +160,10 @@ export class MuxManager {
 	}
 
 	async select_poster() {
-		if (!this.content?.mux_video) return
-		const asset = await this.plugin?.actions?.selectAsset()
-		if (!asset) this.update({ poster: this.get_poster(this.content.mux_video) })
-		else this.update({ poster: asset.filename })
+		if (!this.content?.mux_video || !this.plugin?.actions) return
+		const asset = await this.plugin.actions.selectAsset()
+		if (asset) this.update({ poster: asset.filename })
+		else this.update({ poster: this.get_poster(this.content.mux_video) })
 	}
 
 	async delete_poster() {
