@@ -1,0 +1,10 @@
+{
+	"useTabs": true,
+	"singleQuote": true,
+	"trailingComma": "es5",
+	"semi": false,
+	"printWidth": 100,
+	"sortPackageJson": false,
+	"ignorePatterns": [],
+	"svelte": true
+}

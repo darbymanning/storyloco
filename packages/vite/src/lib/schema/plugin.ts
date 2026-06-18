@@ -4,7 +4,7 @@ import path from "node:path"
 import { $ } from "../shared/shell.js"
 import exec from "../shared/x.js"
 import { Logger } from "../shared/logger.js"
-import * as prettier from "prettier"
+import { format } from "oxfmt"
 
 const name = "vite-storyblok-schema"
 const logger = new Logger(name)
@@ -236,7 +236,7 @@ import type { ISbStoryData } from '@storyblok/js';`,
 					// Make _uid and component optional (helps us reuse Storyblok types for non-storyblok components)
 					content = content.replace(/^([a-zA-Z0-9_]+):/gm, "$1?:")
 
-					const formatted = await prettier.format(content, { parser: "typescript" })
+					const { code: formatted } = await format(path.basename(schema_ts_file), content)
 
 					// Write the final file
 					logger.start("Finalising schema file...")

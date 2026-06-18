@@ -28,7 +28,9 @@
 					<summary
 						class="cursor-pointer list-none text-xs text-muted-foreground flex items-center gap-1 [&::-webkit-details-marker]:hidden"
 					>
-						<span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
+						<span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true"
+							>▸</span
+						>
 						Nested bloks
 					</summary>
 					<div class="mt-1 grid gap-1">
@@ -53,7 +55,9 @@
 				<summary
 					class="cursor-pointer list-none text-xs text-muted-foreground flex items-center gap-1 [&::-webkit-details-marker]:hidden"
 				>
-					<span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
+					<span class="inline-block transition-transform group-open:rotate-90" aria-hidden="true"
+						>▸</span
+					>
 					Nested bloks
 				</summary>
 				<div class="mt-1 grid gap-1">

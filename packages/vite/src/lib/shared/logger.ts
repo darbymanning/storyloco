@@ -1,8 +1,18 @@
 import ora, { type Ora } from "ora"
-import chalk from "chalk"
+import { styleText } from "node:util"
+
+type Format = Extract<Parameters<typeof styleText>[0], string>
+type ColorFn = (text: string) => string
+type Color = Record<Format, ColorFn>
+
+const color = new Proxy({} as Color, {
+	get(_, format: Format) {
+		return (text: string) => styleText(format, text)
+	},
+})
 
 export class Logger {
-	static color = chalk
+	static color = color
 
 	private readonly name: string
 	private readonly spinner: Ora

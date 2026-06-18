@@ -2,5 +2,5 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-   VITE_STORYBLOK_API_TOKEN?: string
+	VITE_STORYBLOK_API_TOKEN?: string
 }

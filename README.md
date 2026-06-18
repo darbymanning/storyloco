@@ -208,7 +208,7 @@ The plugin will:
 - Pull your component schema from Storyblok
 - Generate TypeScript definitions with proper types
 - Use your custom plugin types when available
-- Format the output with Prettier
+- Format the output with oxfmt
 - Lock the generated file to prevent manual edits
 - Regenerate automatically when components change
 
@@ -403,7 +403,7 @@ bun run build
 - **Components**: Shadcn Svelte, Bits UI primitives
 - **Build Tool**: Vite
 - **Package Manager**: Bun (recommended)
-- **Linting**: ESLint + Prettier
+- **Linting**: ESLint + oxfmt
 
 ## 📄 License
 

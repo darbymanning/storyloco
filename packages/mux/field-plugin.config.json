@@ -1,12 +1,12 @@
 {
-   "options": [
-      {
-         "name": "MOXY_MUX_SECRET_ID",
-         "value": "bab2cb10-21cf-4a98-90fb-cf28672a3e6c"
-      },
-      {
-         "name": "MOXY_VIMEO_SECRET_ID",
-         "value": ""
-      }
-   ]
+	"options": [
+		{
+			"name": "MOXY_MUX_SECRET_ID",
+			"value": "bab2cb10-21cf-4a98-90fb-cf28672a3e6c"
+		},
+		{
+			"name": "MOXY_VIMEO_SECRET_ID",
+			"value": ""
+		}
+	]
 }
