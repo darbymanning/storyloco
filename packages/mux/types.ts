@@ -1,7 +1,70 @@
-import type Mux from '@mux/mux-node'
+/**
+ * Vendored subset of the Mux `Asset` type (previously from `@mux/mux-node`).
+ * Kept self-contained so consumers don't need the Mux SDK installed just to read
+ * these types. Only the fields the plugin actually touches are modelled — the real
+ * SDK `Asset` remains structurally assignable to this.
+ */
+export interface MuxPlaybackID {
+	/* Unique identifier for the PlaybackID */
+	id: string
+
+	/* How the playback ID is secured */
+	policy: 'public' | 'signed' | 'drm'
+
+	/* DRM configuration used by this playback ID (only when `policy` is `drm`) */
+	drm_configuration_id?: string
+}
+
+export interface MuxAssetErrors {
+	/* Error messages with more details */
+	messages?: Array<string>
+
+	/* The type of error that occurred for this asset */
+	type?: string
+}
+
+export interface MuxAssetMeta {
+	/* Identifier for the creator of the asset */
+	creator_id?: string
+
+	/* Identifier linking the asset to your own data */
+	external_id?: string
+
+	/* The asset title */
+	title?: string
+}
+
+export interface MuxAsset {
+	/* Unique identifier for the Asset */
+	id: string
+
+	/* Time the Asset was created (Unix timestamp, seconds since epoch) */
+	created_at: string
+
+	/* The status of the asset */
+	status: 'preparing' | 'ready' | 'errored'
+
+	/* Object describing any errors that happened when processing this asset */
+	errors?: MuxAssetErrors
+
+	/* The aspect ratio of the asset in the form `width:height` (e.g. `16:9`) */
+	aspect_ratio?: string
+
+	/* The duration of the asset in seconds */
+	duration?: number
+
+	/* Playback ID objects used to build HLS playback URLs */
+	playback_ids?: Array<MuxPlaybackID>
+
+	/* Customer provided metadata about this asset */
+	meta?: MuxAssetMeta
+
+	/* Arbitrary passthrough value included in the asset details and webhooks */
+	passthrough?: string
+}
 
 export interface Video {
-	mux_video?: Mux.Video.Assets.Asset
+	mux_video?: MuxAsset
 	playback_id?: string
 	m3u8_url?: string
 	title?: string

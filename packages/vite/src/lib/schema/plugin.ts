@@ -4,10 +4,35 @@ import path from "node:path"
 import { $ } from "../shared/shell.js"
 import exec from "../shared/x.js"
 import { Logger } from "../shared/logger.js"
-import { format } from "oxfmt"
 
 const name = "vite-storyblok-schema"
 const logger = new Logger(name)
+
+/**
+ * Formats generated code as a nicety, not a necessity. Prefers oxfmt if it's
+ * installed, falls back to prettier if that happens to be around, and otherwise
+ * leaves the code untouched. Never throws — formatting is entirely optional and
+ * these tools are intentionally not hard dependencies.
+ */
+async function format_code(filename: string, content: string): Promise<string> {
+	try {
+		const oxfmt = await import("oxfmt")
+		const { code } = await oxfmt.format(filename, content)
+		return code
+	} catch {
+		/* oxfmt not available — try the next option */
+	}
+
+	try {
+		const specifier = "prettier"
+		const prettier = await import(specifier)
+		return await prettier.format(content, { filepath: filename })
+	} catch {
+		/* prettier not available either — leave the code as-is */
+	}
+
+	return content
+}
 
 interface Options {
 	storyblok_personal_access_token?: string
@@ -236,7 +261,7 @@ import type { ISbStoryData } from '@storyblok/js';`,
 					// Make _uid and component optional (helps us reuse Storyblok types for non-storyblok components)
 					content = content.replace(/^([a-zA-Z0-9_]+):/gm, "$1?:")
 
-					const { code: formatted } = await format(path.basename(schema_ts_file), content)
+					const formatted = await format_code(path.basename(schema_ts_file), content)
 
 					// Write the final file
 					logger.start("Finalising schema file...")

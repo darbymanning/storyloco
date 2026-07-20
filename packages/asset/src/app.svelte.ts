@@ -1,7 +1,7 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { Asset } from '../types.js'
 import ky from 'ky'
-import type { R2Asset, Paths, R2FolderTree } from 'moxyloco/r2'
+import type { R2Asset, Paths, R2FolderTree } from '../r2.js'
 import { SvelteSet } from 'svelte/reactivity'
 import { toast } from 'shared'
 import AssetPicker from './app.svelte'

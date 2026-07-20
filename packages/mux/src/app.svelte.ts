@@ -1,10 +1,10 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import Mux from '@mux/mux-node'
-import type { Video, VimeoVideo } from '../types.js'
+import type { MuxAsset, Video, VimeoVideo } from '../types.js'
 import { format_date, format_elapse } from 'kitto'
 import ky from 'ky'
 
-export type MuxAsset = Mux.Video.Assets.Asset
+export type { MuxAsset }
 
 type Plugin = FieldPluginResponse<Video | null>
 

@@ -6,7 +6,7 @@
 	const seo = new SEOManager()
 
 	$effect(() => {
-		if (seo.is_modal_open) actions.select_asset()
+		if (seo.has_r2 && seo.is_modal_open) actions.select_asset()
 	})
 
 	const og = (url: string) => `${url}/m/799x551/filters:quality(85)`

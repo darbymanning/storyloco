@@ -35,7 +35,7 @@
 		Toaster,
 	} from 'shared'
 	import { AssetManager, type Props } from './app.svelte.js'
-	import type { R2Asset, R2FolderTree } from 'moxyloco/r2'
+	import type { R2Asset, R2FolderTree } from '../r2.js'
 	import { useDragAndDrop as dnd } from 'fluid-dnd/svelte'
 	import type { Asset } from '../types.js'
 

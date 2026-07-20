@@ -12,13 +12,12 @@
 		"fluid-dnd": "2.4.0",
 		"ky": "1.13.0",
 		"lodash-es": "4.17.21",
-		"moxyloco": "0.7.0",
 		"oxfmt": "0.55.0",
 		"shared": "../shared",
 		"svelte": "5.41.3",
 		"svelte-check": "4.3.3",
 		"typescript": "5.9.3",
-		"vite": "7.1.12",
+		"vite": "7.2.2",
 		"vite-plugin-css-injected-by-js": "3.5.2"
 	},
 	"files": [

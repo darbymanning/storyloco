@@ -1,4 +1,4 @@
-import type { R2Asset, R2AssetAttributes } from 'moxyloco/r2'
+import type { R2Asset, R2AssetAttributes } from './r2.js'
 
 interface StoryblokAsset {
 	/* The numeric ID */
