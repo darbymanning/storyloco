@@ -330,8 +330,7 @@
 				bind:value={manager.content.body}
 				oninput={manager.update_email}
 				id="body"
-				placeholder="Body to use on the email"
-			></textarea>
+				placeholder="Body to use on the email"></textarea>
 		</div>
 		<div class="grid gap-2">
 			<Label for="cc">CC</Label>

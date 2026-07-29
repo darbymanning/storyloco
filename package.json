@@ -32,7 +32,8 @@
 		"packages/ticketsource/types.ts",
 		"packages/input/types.ts",
 		"packages/time/types.ts",
-		"packages/seo/types.ts"
+		"packages/seo/types.ts",
+		"packages/hubspot_form/types.ts"
 	],
 	"exports": {
 		".": {
@@ -84,16 +85,20 @@
 		},
 		"./seo": {
 			"types": "./packages/seo/types.ts"
+		},
+		"./hubspot_form": {
+			"types": "./packages/hubspot_form/types.ts",
+			"svelte": "./packages/hubspot_form/src/app.svelte.ts"
 		}
 	},
 	"devDependencies": {
 		"@types/node": "26.1.1",
-		"@typescript-eslint/eslint-plugin": "8.64.0",
-		"@typescript-eslint/parser": "8.64.0",
+		"@typescript-eslint/eslint-plugin": "8.65.0",
+		"@typescript-eslint/parser": "8.65.0",
 		"eslint": "10.7.0",
 		"kitto": "1.6.0",
 		"oxfmt": "0.59.0",
-		"typescript": "5.9.3",
+		"typescript": "6.0.3",
 		"vite": "8.1.5"
 	},
 	"peerDependencies": {

@@ -1,0 +1,12 @@
+{
+	"options": [
+		{
+			"name": "HUBSPOT_PROXY_URL",
+			"value": ""
+		},
+		{
+			"name": "HUBSPOT_PROXY_TOKEN",
+			"value": ""
+		}
+	]
+}
