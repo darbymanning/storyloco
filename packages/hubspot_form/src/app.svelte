@@ -23,41 +23,44 @@
 		forms.filter((form) => form.name.toLowerCase().includes(query.trim().toLowerCase()))
 	)
 
-	// the list collapses to the selected chip; picking reopens it
-	const open = $derived(picking || !manager.content)
-
 	function choose(id: string) {
 		manager.select(id)
 		picking = false
 		query = ''
 	}
 
-	function repick() {
-		picking = true
-		requestAnimationFrame(() => filter_element?.focus())
+	function toggle() {
+		picking = !picking
+		if (picking) requestAnimationFrame(() => filter_element?.focus())
 	}
 </script>
 
 <!-- Inline, in-flow UI only: the plugin iframe sizes to the document, and
 	popovers/top-layer pickers would clip at the iframe edge. -->
 <div class="grid gap-2">
-	{#if manager.content}
-		<div
-			class="flex items-center justify-between gap-2 rounded border border-border bg-muted/10 px-2 py-1.5 text-sm"
+	<div
+		class="flex min-h-11.5 items-center justify-between gap-2 rounded-lg border border-input bg-input-background px-3 text-sm"
+	>
+		<button
+			type="button"
+			class="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 self-stretch text-left"
+			aria-expanded={picking}
+			onclick={toggle}
 		>
-			<button
-				type="button"
-				class="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 text-left"
-				aria-expanded={open}
-				onclick={repick}
-			>
+			{#if manager.content}
 				<span class="truncate" title={manager.content.name}>{manager.content.name}</span>
-				<ChevronDown
-					class="text-muted-foreground size-4 shrink-0 transition-transform {open
-						? 'rotate-180'
-						: ''}"
-				/>
-			</button>
+			{:else}
+				<span class="text-muted-foreground">
+					{manager.loading ? 'Loading forms…' : 'Select a form…'}
+				</span>
+			{/if}
+			<ChevronDown
+				class="text-muted-foreground size-4 shrink-0 transition-transform {picking
+					? 'rotate-180'
+					: ''}"
+			/>
+		</button>
+		{#if manager.content}
 			<button
 				type="button"
 				class="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
@@ -66,13 +69,13 @@
 			>
 				<X class="size-4" />
 			</button>
-		</div>
-	{/if}
-	{#if open}
+		{/if}
+	</div>
+	{#if picking}
 		<input
 			bind:this={filter_element}
 			bind:value={query}
-			class="rounded outline-none focus:border-ring border-input border bg-input-background w-full px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-wait"
+			class="min-h-11.5 w-full rounded-lg outline-none focus:border-ring border-input border bg-input-background px-3 text-sm disabled:opacity-50 disabled:cursor-wait"
 			type="text"
 			placeholder={manager.loading ? 'Loading forms…' : `Filter ${forms.length} forms…`}
 			aria-label="Filter forms"
@@ -80,7 +83,7 @@
 		/>
 		{#if !manager.loading && forms.length}
 			<div
-				class="grid max-h-64 gap-0.5 overflow-x-hidden overflow-y-auto rounded-md border border-border p-1"
+				class="grid max-h-64 gap-0.5 overflow-x-hidden overflow-y-auto rounded-lg border border-input p-1"
 				role="listbox"
 				aria-label="Forms"
 			>
@@ -90,7 +93,7 @@
 						type="button"
 						role="option"
 						aria-selected={selected}
-						class="flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground {selected
+						class="flex cursor-pointer items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground {selected
 							? 'bg-accent text-accent-foreground'
 							: ''}"
 						onclick={() => choose(form.id)}
