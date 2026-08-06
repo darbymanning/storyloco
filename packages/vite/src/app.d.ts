@@ -3,7 +3,11 @@
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		// Consumers declare this themselves; it's here so storyloco's own `version` hook
+		// and `server` helpers typecheck against the shape they expect.
+		interface Locals {
+			version: import("$lib/storyblok.svelte.js").Version
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}

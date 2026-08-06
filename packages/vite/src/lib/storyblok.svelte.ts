@@ -7,9 +7,12 @@ import {
 	storyblokEditable as editable,
 	useStoryblokApi,
 	type ISbStoryData,
+	type SbBlokData,
 } from "@storyblok/svelte"
 import type { Component } from "svelte"
 import { SvelteMap } from "svelte/reactivity"
+import { createAttachmentKey as attach } from "svelte/attachments"
+import { error } from "@sveltejs/kit"
 
 /**
  * Wrapper interface for storyblok stories with reactive state management
@@ -37,6 +40,26 @@ export interface Storyblok<T extends ISbStoryData> {
 /** Type for dynamic component imports */
 type Import<T = unknown> = () => Promise<T>
 
+/** Everything a client needs, so a project doesn't have to subclass to configure one. */
+export interface ClientOptions {
+	/** Your Storyblok access token */
+	token: string
+	/**
+	 * The block and template components to register.
+	 *
+	 * Call `import.meta.glob` at your own call site and pass the result — Vite has to see
+	 * the literal pattern to rewrite it, so the glob can't live in here.
+	 */
+	components?: Record<string, Import>
+	/** Relation fields to resolve on every request, e.g. `["shared.items"]` */
+	relations?: Array<string>
+	/**
+	 * Content types that render through another component, e.g. `{ news: "blog" }` when
+	 * news posts reuse the blog template. Applied by `template`.
+	 */
+	aliases?: Record<string, string>
+}
+
 /** Type alias for the storyblok api instance */
 type API = ReturnType<typeof useStoryblokApi>
 
@@ -47,10 +70,12 @@ type API = ReturnType<typeof useStoryblokApi>
 export class StoryblokClient {
 	/** Map of registered Svelte components by name */
 	components = new SvelteMap<string, Component>()
-	/** Internal flag to prevent multiple initializations */
-	#initialized = false
+	/** The in-flight or settled setup, shared by every caller of `init` */
+	#ready: Promise<void> | undefined
 	/** Array of relation field names to resolve when fetching stories */
 	relations: Array<string> = []
+	/** Content types that render through another component's template */
+	aliases: Record<string, string> = {}
 
 	/**
 	 * Check if the current URL is in Storyblok preview mode
@@ -61,46 +86,83 @@ export class StoryblokClient {
 		return url.searchParams.has("_storyblok")
 	}
 
+	/**
+	 * Resolve a story to its component by `component` name.
+	 *
+	 * Falls back when the name isn't registered, so a content type added in Storyblok
+	 * before its component exists renders as a generic page rather than blanking.
+	 */
+	template(story: ISbStoryData | null, fallback = "page"): Component | null | undefined {
+		if (!story) return null
+
+		const name = story.content.component || fallback
+
+		return this.components.get(this.aliases[name] ?? name) ?? this.components.get(fallback)
+	}
+
 	/** Storyblok access token for API authentication */
 	#access_token: string
 	/** Map of component import functions */
 	#component_imports: Record<string, Import>
 
-	// API method declarations - these are assigned during initialization
+	/** Every API method below goes through here, so callers never `await init()` first. */
+	async #api(): Promise<API> {
+		await this.init()
+		return useStoryblokApi()
+	}
+
 	/** Fetch a single story or collection of stories */
-	declare get: API["get"]
+	get: API["get"] = async (...args) => (await this.#api()).get(...args)
 	/** Fetch all stories matching criteria (handles pagination automatically) */
-	declare getAll: API["getAll"]
+	getAll: API["getAll"] = async (...args) => (await this.#api()).getAll(...args)
 	/** Fetch a specific story by slug */
-	declare getStory: API["getStory"]
+	getStory: API["getStory"] = async (...args) => (await this.#api()).getStory(...args)
 	/** Make a POST request to the Storyblok API */
-	declare post: API["post"]
+	post: API["post"] = async (...args) => (await this.#api()).post(...args)
 	/** Make a PUT request to the Storyblok API */
-	declare put: API["put"]
+	put: API["put"] = async (...args) => (await this.#api()).put(...args)
 	/** Make a DELETE request to the Storyblok API */
-	declare delete: API["delete"]
+	delete: API["delete"] = async (...args) => (await this.#api()).delete(...args)
+
+	/** The standalone `handle_error`, on the instance so `.catch(client.handle_error)` works */
+	handle_error = handle_error
 
 	/**
-	 * Create a new StoryblokClient instance
-	 * @param access_token - Your Storyblok access token
-	 * @param component_imports - Map of component paths to their import functions
+	 * Configured here rather than by subclassing, so setup is one expression.
+	 *
+	 * @example
+	 * ```typescript
+	 * export const client = new StoryblokClient({
+	 * 	token: PUBLIC_STORYBLOK_ACCESS_TOKEN,
+	 * 	relations: ["shared.items"],
+	 * 	components: import.meta.glob(["$blocks/**\/*.svelte", "$templates/*.svelte"]),
+	 * })
+	 * ```
 	 */
-	constructor(
-		access_token: string,
-		component_imports: Record<string, Import> = import.meta.glob("$lib/blocks/*.svelte")
-	) {
-		this.#access_token = access_token
-		this.#component_imports = component_imports
-		this.init()
+	constructor({ token, components = {}, relations = [], aliases = {} }: ClientOptions) {
+		this.#access_token = token
+		this.#component_imports = components
+		this.relations = relations
+		this.aliases = aliases
+
+		// Eager, but handled so a failure surfaces to whoever awaits `init` rather than
+		// as an unhandled rejection
+		this.init().catch(() => {})
 	}
 
 	/**
-	 * Initialize the client by loading components and setting up the API
-	 * This method is idempotent and can be called multiple times safely
+	 * Load the components and set up the SDK.
+	 *
+	 * Safe to call any number of times, including concurrently — the first call starts the
+	 * work and every later one awaits that same promise. Server callers never need it; the
+	 * API methods await it themselves. The browser does, since `components` must be
+	 * populated before the first render.
 	 */
-	async init() {
-		if (this.#initialized) return
+	init(): Promise<void> {
+		return (this.#ready ??= this.#setup())
+	}
 
+	async #setup(): Promise<void> {
 		// Load all components from the provided imports
 		for (const [path, fn] of Object.entries(this.#component_imports)) {
 			const name = path.split("/").pop()?.replace(".svelte", "") ?? ""
@@ -116,17 +178,6 @@ export class StoryblokClient {
 			use: [apiPlugin],
 			components: Object.fromEntries(this.components),
 		})
-
-		// Bind API methods to this instance
-		const api = useStoryblokApi()
-		this.get = api.get.bind(api)
-		this.getAll = api.getAll.bind(api)
-		this.getStory = api.getStory.bind(api)
-		this.post = api.post?.bind(api)
-		this.put = api.put?.bind(api)
-		this.delete = api.delete?.bind(api)
-
-		this.#initialized = true
 	}
 
 	/** Storyblok editable function for making content editable in preview mode */
@@ -163,6 +214,114 @@ export class StoryblokClient {
 		}
 	}
 }
+
+/** The Storyblok content version to read. `event.locals.version` from `storyloco/hooks`. */
+export type Version = "draft" | "published"
+
+/**
+ * Richtext, with `attrs` typed so an embedded blok's fields are reachable — the CLI types
+ * it as `Record<string, unknown>`. `Blocks` is your generated block union.
+ */
+export interface Richtext<Blocks = unknown> {
+	type: string
+	text?: string
+	attrs?: { body: Blocks }
+	content?: Array<Richtext<Blocks>>
+	marks?: Array<Richtext<Blocks>>
+}
+
+/** Adds the `story.url` that `resolve_links: "url"` injects but the CLI doesn't declare. */
+export type Resolved<T extends { story?: unknown }> = T & {
+	story?: NonNullable<T["story"]> & { url?: string }
+}
+
+/** Structural, so a generated `StoryblokMultilink` satisfies it. */
+interface Link {
+	linktype?: string
+	url?: string
+	cached_url?: string
+	// The index signature stops TypeScript rejecting the generated `story` as a weak type
+	story?: { url?: string; [key: string]: unknown }
+}
+
+/**
+ * Resolve a multilink to an href. Story links become root-relative, everything else passes
+ * through. Prefers `story.url` over `cached_url`, which goes stale when a target moves —
+ * so pair with `resolve_links: "url"`.
+ */
+export function href(link?: Link): string | undefined {
+	if (!link) return undefined
+
+	return link.linktype === "story"
+		? `/${link.story?.url || link.cached_url}`
+		: link.url || link.cached_url
+}
+
+/**
+ * Turn a Storyblok error into a SvelteKit one, for `.catch(handle_error)`.
+ *
+ * A missing story is a 404; anything else is a 500, since the CMS being unreachable isn't
+ * something to show a visitor a Storyblok status code for.
+ */
+export function handle_error(err: unknown): never {
+	console.error(err)
+
+	const status = typeof err === "object" && err !== null && "status" in err ? err.status : undefined
+
+	if (status === 404) error(404, "Story not found")
+
+	error(500, "Internal server error")
+}
+
+/** Declaring these keeps `SbBlokData`'s index signature from widening every access. */
+interface BlokFields {
+	anchor?: string
+}
+
+/**
+ * Spread onto a block's root element to wire it up for the visual editor.
+ *
+ * Prefer this to `use:editable`: being an attachment it spreads, so the element keeps its
+ * own attributes and a project can wrap it. Also sets a stable `id` from the block's
+ * `anchor`, falling back to `_uid`.
+ *
+ * @example
+ * ```svelte
+ * <script lang="ts">
+ * 	import { attrs } from "storyloco"
+ * 	import type { Blok, Hero } from "$lib/components.schema.js"
+ *
+ * 	let { blok }: { blok: Blok<Hero> } = $props()
+ * </script>
+ *
+ * <section {...attrs(blok)}>
+ * 	<h1>{blok.headline}</h1>
+ * </section>
+ * ```
+ */
+export function attrs<T extends BlokFields>(blok: SbBlokData & T) {
+	return {
+		[attach()](node: HTMLElement) {
+			editable(node, blok)
+		},
+		id: blok.anchor || blok._uid,
+	}
+}
+
+// Map section fields onto CSS custom properties by wrapping `attrs`, rather than reaching
+// past it — the field names and design tokens are yours:
+//
+// interface SectionFields extends BlokFields {
+// 	theme?: number | string
+// 	pad_top?: number | string
+// }
+//
+// export function section<T extends SectionFields>(blok: Blok<T>) {
+// 	let style = ""
+// 	if (blok.theme) style += `--theme: var(--c-${blok.theme});`
+// 	if (blok.pad_top) style += `--pt: var(--s-${blok.pad_top});`
+// 	return { ...attrs(blok), style }
+// }
 
 /** Re-export commonly used Storyblok utilities */
 export { editable, Block, richtext }

@@ -1,6 +1,6 @@
 {
 	"name": "storyloco",
-	"version": "1.17.0",
+	"version": "2.0.0",
 	"description": "A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, and Tailwind CSS",
 	"keywords": [
 		"storyblok",
@@ -79,6 +79,10 @@
 			"types": "./packages/vite/dist/hooks.d.ts",
 			"import": "./packages/vite/dist/hooks.js"
 		},
+		"./server": {
+			"types": "./packages/vite/dist/server.d.ts",
+			"import": "./packages/vite/dist/server.js"
+		},
 		"./time": {
 			"types": "./packages/time/types.ts",
 			"svelte": "./packages/time/src/app.svelte.ts"
@@ -104,7 +108,9 @@
 	"peerDependencies": {
 		"@storyblok/svelte": "7.2.2",
 		"@storyblok/field-plugin": "^1.7.1",
-		"svelte": "^5.0.0"
+		"svelte": "^5.0.0",
+		"@sveltejs/kit": "^2.0.0",
+		"storyblok-js-client": "^7.0.0"
 	},
 	"scripts": {
 		"add-plugin": "npx @storyblok/field-plugin-cli@latest add --dir \"./packages\" --structure monorepo",

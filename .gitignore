@@ -24,3 +24,6 @@ vite.config.ts.timestamp-*
 
 packages/vite/src/lib/components.schema.json
 packages/vite/src/lib/components.schema.ts
+
+# Local release tarballs from `bun pm pack`
+*.tgz

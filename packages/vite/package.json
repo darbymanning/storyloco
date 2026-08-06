@@ -35,7 +35,9 @@
 	},
 	"peerDependencies": {
 		"@storyblok/svelte": "^7.0.0",
-		"svelte": "^5.0.0"
+		"svelte": "^5.0.0",
+		"@sveltejs/kit": "^2.0.0",
+		"storyblok-js-client": "^7.0.0"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.4.0",
