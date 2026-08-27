@@ -229,6 +229,25 @@ import type { ISbStoryData } from '@storyblok/js';`,
 			const output_path_parts = out_dir.split("/")
 			const import_path = output_path_parts.map(() => `..`).join("/")
 
+			// Replicates the storyblok CLI's `getComponentType` (no prefix/suffix), so these
+			// entries reference the interface names it generates below.
+			const type_name = (component: string) => {
+				const sanitized = component
+					.replace(/[^a-z0-9]/gi, "_")
+					.replace(/_+/g, "_")
+					.replace(/^_+|_+$/g, "")
+				const camel = sanitized
+					.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
+					.replace(/_/g, "")
+				const pascal = camel ? camel[0].toUpperCase() + camel.slice(1) : camel
+				return /^\d/.test(pascal) ? `_${pascal}` : pascal
+			}
+
+			const content_types: Array<string> = new_components
+				.filter((component: { is_root?: boolean }) => component.is_root)
+				.map((component: { name: string }) => component.name)
+				.sort()
+
 			const header = `
 			               /**
 			                * AUTO-GENERATED FILE. DO NOT EDIT.
@@ -237,9 +256,23 @@ import type { ISbStoryData } from '@storyblok/js';`,
 			                */
 
 			               import type { StoryblokCustomPlugins } from "${import_path}/vite.config.js"
-			               import type { SbBlokData } from "@storyblok/svelte"
 
-			               export type Blok<T> = SbBlokData & T
+			               /**
+			                * No \`SbBlokData\` intersection: its string index signature would reject the
+			                * generated interfaces, which (deliberately) declare no index signature.
+			                */
+			               export type Blok<T> = T & { component?: string; _uid?: string; _editable?: string }
+
+			               /**
+			                * Content-type (root) components keyed by component name — the bloks a story
+			                * can be. The CLI types every component identically, so this comes from the
+			                * space's component list instead.
+			                */
+			               export interface ContentTypes {
+			               ${content_types.map((name) => `"${name}": ${type_name(name)}`).join("\n")}
+			               }
+
+			               export type ContentType = ContentTypes[keyof ContentTypes]
 			             `
 
 			let content = component_types.replace(

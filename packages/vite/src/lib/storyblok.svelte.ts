@@ -299,10 +299,11 @@ interface BlokFields {
  * </section>
  * ```
  */
-export function attrs<T extends BlokFields>(blok: SbBlokData & T) {
+export function attrs<T extends BlokFields>(blok: T & { _uid?: string; _editable?: string }) {
 	return {
 		[attach()](node: HTMLElement) {
-			editable(node, blok)
+			// SbBlokData is nominal ceremony here — editable only reads `_editable`.
+			editable(node, blok as unknown as SbBlokData)
 		},
 		id: blok.anchor || blok._uid,
 	}
