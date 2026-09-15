@@ -73,6 +73,7 @@
       "devDependencies": {
         "@storyblok/field-plugin": "1.6.0",
         "@sveltejs/vite-plugin-svelte": "6.2.1",
+        "@tailwindcss/vite": "4.3.3",
         "@tsconfig/svelte": "5.0.4",
         "oxfmt": "0.55.0",
         "shared": "../shared",
