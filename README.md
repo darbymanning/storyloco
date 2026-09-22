@@ -176,6 +176,9 @@ await storyblok.story('layout')
 // A list. `total` is the unpaged count, for "showing n of m"
 const { stories, total } = await storyblok.stories({ content_type: 'blog', per_page: 2 })
 
+// Everything that matches, paged through the API's 100-per-page cap
+const products = await storyblok.all<Product>({ content_type: 'product' })
+
 // The link tree, flattened — Storyblok returns it keyed by uuid
 const links = await storyblok.links({ starts_with: 'blog/' })
 ```

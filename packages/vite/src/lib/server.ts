@@ -33,6 +33,7 @@ export function version(): Version {
  * await storyblok.story("layout")
  * await storyblok.find<Product>(`products/${slug}`) // null when missing
  * await storyblok.stories<Blog>({ content_type: "blog", per_page: 2 })
+ * await storyblok.all<Product>({ content_type: "product" }) // every page
  *
  * const { client, version } = storyblok()
  * await client.get("cdn/links", { version })
@@ -101,6 +102,24 @@ export function setup(client: StoryblokClient) {
 				stories: response.data.stories as Array<ISbStoryData<T>>,
 				total: response.total ?? 0,
 			}
+		},
+
+		/**
+		 * Every story matching the params, paged through the API's 100-per-page cap.
+		 * `stories` for one page with a total; this for the whole set.
+		 */
+		async all<T>(params: ISbStoriesParams = {}) {
+			const stories = await client
+				.getAll("cdn/stories", {
+					version: version(),
+					resolve_links: "url",
+					resolve_assets: 1,
+					per_page: 100,
+					...params,
+				})
+				.catch(handle_error)
+
+			return stories as Array<ISbStoryData<T>>
 		},
 	})
 }
