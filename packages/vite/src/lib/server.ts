@@ -1,7 +1,14 @@
 import { getRequestEvent } from "$app/server"
+import { error } from "@sveltejs/kit"
 import type { ISbStoriesParams, ISbStoryData, ISbStoryParams } from "@storyblok/svelte"
 import type { ISbLink, ISbLinks, ISbLinksParams } from "storyblok-js-client"
 import { handle_error, type StoryblokClient, type Version } from "./storyblok.svelte.js"
+
+type Content = ISbStoryData["content"]
+
+function is_not_found(err: unknown) {
+	return typeof err === "object" && err !== null && "status" in err && err.status === 404
+}
 
 /** The content version for the current request, as set by the `version` hook. */
 export function version(): Version {
@@ -24,6 +31,7 @@ export function version(): Version {
  *
  * // anywhere on the server
  * await storyblok.story("layout")
+ * await storyblok.find<Product>(`products/${slug}`) // null when missing
  * await storyblok.stories<Blog>({ content_type: "blog", per_page: 2 })
  *
  * const { client, version } = storyblok()
@@ -33,26 +41,38 @@ export function version(): Version {
 export function setup(client: StoryblokClient) {
 	const context = () => ({ client, version: version() })
 
-	return Object.assign(context, {
-		/**
-		 * A single story by full slug. Resolves the client's `relations`, unlike `stories`.
-		 *
-		 * `T` is the story's content type; it defaults to the SDK's permissive one, so an
-		 * unparameterised call behaves as before.
-		 */
-		async story<T = ISbStoryData["content"]>(slug: string, params: ISbStoryParams = {}) {
-			const response = await client
-				.get(`cdn/stories/${slug}`, {
-					version: version(),
-					resolve_links: "url",
-					resolve_relations: client.relations,
-					resolve_assets: 1,
-					...params,
-				})
-				.catch(handle_error)
+	/**
+	 * A single story by full slug, or `null` when there isn't one. Resolves the client's
+	 * `relations`, unlike `stories`. For slugs that are allowed not to exist — a miss is
+	 * routine, so it's neither raised nor logged. `T` is the story's content type.
+	 */
+	async function find<T = Content>(slug: string, params: ISbStoryParams = {}) {
+		const response = await client
+			.get(`cdn/stories/${slug}`, {
+				version: version(),
+				resolve_links: "url",
+				resolve_relations: client.relations,
+				resolve_assets: 1,
+				...params,
+			})
+			.catch((err: unknown) => {
+				if (is_not_found(err)) return null
+				return handle_error(err)
+			})
 
-			return response.data.story as ISbStoryData<T>
-		},
+		return (response?.data.story ?? null) as ISbStoryData<T> | null
+	}
+
+	/** A single story by full slug; a missing one is a 404. `find` for stories that may not exist. */
+	async function story<T = Content>(slug: string, params: ISbStoryParams = {}) {
+		const found = await find<T>(slug, params)
+		if (!found) error(404, "Story not found")
+		return found
+	}
+
+	return Object.assign(context, {
+		story,
+		find,
 
 		/**
 		 * The link tree as a flat array — Storyblok returns it keyed by uuid, which is
