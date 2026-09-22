@@ -1,0 +1,12 @@
+{
+	"options": [
+		{
+			"name": "currencies",
+			"value": "GBP,USD,EUR"
+		},
+		{
+			"name": "default_currency",
+			"value": "GBP"
+		}
+	]
+}

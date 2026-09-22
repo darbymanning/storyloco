@@ -15,6 +15,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **🏗️ Plans** - Floor plan manager with drag-and-drop sorting for types, floors, dimensions, and rooms
 - **📝 Input** - Comprehensive form input field with support for all HTML input types, checkboxes, radio buttons, selects, and textareas
 - **⏰ Time** - Simple time input field with step control
+- **💷 Currency** - Amount input with a currency selector; configure allowed codes via the `currencies` and `default_currency` options
 
 ### Vite Plugins
 
@@ -185,6 +186,14 @@ Your params are spread last, so any default can be overridden:
 await storyblok.story('layout', { resolve_assets: 0 })
 ```
 
+`story` treats a missing story as a 404. Where a slug is allowed not to exist, `find` returns
+`null` instead — the miss is then neither raised nor logged:
+
+```typescript
+const product = await storyblok.find<Product>(`products/${slug}`)
+if (!product) error(404, 'Product not found')
+```
+
 It's callable too, for anything the methods don't cover:
 
 ```typescript
@@ -258,6 +267,7 @@ export interface StoryblokCustomPlugins {
 		twitter_description: string
 	}
 	'loco-time': string
+	'loco-currency': import('storyloco/currency').Currency
 	'loco-asset': import('storyloco/asset').Asset
 }
 
