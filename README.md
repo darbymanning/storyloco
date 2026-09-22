@@ -197,6 +197,18 @@ const product = await storyblok.find<Product>(`products/${slug}`)
 if (!product) error(404, 'Product not found')
 ```
 
+The content type can be a union. Each member becomes its own story type, so `is_component`
+can narrow the result — checking `story.content.component` yourself narrows only `content`,
+not the story:
+
+```typescript
+import { is_component } from 'storyloco'
+
+const story = await storyblok.find<Product | Category>(`products/${slug}`)
+if (is_component(story, 'product')) story.content.sku // ISbStoryData<Product>
+if (is_component(story, 'category')) story.content.description // ISbStoryData<Category>
+```
+
 It's callable too, for anything the methods don't cover:
 
 ```typescript

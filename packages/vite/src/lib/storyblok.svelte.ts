@@ -230,6 +230,30 @@ export interface Richtext<Blocks = unknown> {
 	marks?: Array<Richtext<Blocks>>
 }
 
+/**
+ * A story per member of `T`, so a union of content types is a union of stories —
+ * `Story<Product | Category>` is `ISbStoryData<Product> | ISbStoryData<Category>`, which
+ * `is_component` can narrow. `ISbStoryData<Product | Category>` can't be.
+ */
+export type Story<T> = T extends unknown ? ISbStoryData<T> : never
+
+/**
+ * Narrow a story (or a union of them) by its content's `component`. TypeScript won't
+ * narrow the story through the nested discriminant on its own.
+ *
+ * @example
+ * ```ts
+ * const story = await storyblok.find<Product | Category>(`products/${slug}`)
+ * if (is_component(story, "product")) story.content.sku // ISbStoryData<Product>
+ * ```
+ */
+export function is_component<S extends ISbStoryData<{ component?: string }>, K extends string>(
+	story: S | null | undefined,
+	component: K
+): story is Extract<S, { content: { component?: K } }> {
+	return story?.content.component === component
+}
+
 /** Adds the `story.url` that `resolve_links: "url"` injects but the CLI doesn't declare. */
 export type Resolved<T extends { story?: unknown }> = T & {
 	story?: NonNullable<T["story"]> & { url?: string }

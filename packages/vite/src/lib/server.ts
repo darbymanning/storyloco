@@ -2,7 +2,7 @@ import { getRequestEvent } from "$app/server"
 import { error } from "@sveltejs/kit"
 import type { ISbStoriesParams, ISbStoryData, ISbStoryParams } from "@storyblok/svelte"
 import type { ISbLink, ISbLinks, ISbLinksParams } from "storyblok-js-client"
-import { handle_error, type StoryblokClient, type Version } from "./storyblok.svelte.js"
+import { handle_error, type Story, type StoryblokClient, type Version } from "./storyblok.svelte.js"
 
 type Content = ISbStoryData["content"]
 
@@ -32,6 +32,7 @@ export function version(): Version {
  * // anywhere on the server
  * await storyblok.story("layout")
  * await storyblok.find<Product>(`products/${slug}`) // null when missing
+ * await storyblok.find<Product | Category>(slug) // a union of stories; narrow with is_component
  * await storyblok.stories<Blog>({ content_type: "blog", per_page: 2 })
  * await storyblok.all<Product>({ content_type: "product" }) // every page
  *
@@ -61,7 +62,7 @@ export function setup(client: StoryblokClient) {
 				return handle_error(err)
 			})
 
-		return (response?.data.story ?? null) as ISbStoryData<T> | null
+		return (response?.data.story ?? null) as Story<T> | null
 	}
 
 	/** A single story by full slug; a missing one is a 404. `find` for stories that may not exist. */
@@ -99,7 +100,7 @@ export function setup(client: StoryblokClient) {
 				.catch(handle_error)
 
 			return {
-				stories: response.data.stories as Array<ISbStoryData<T>>,
+				stories: response.data.stories as Array<Story<T>>,
 				total: response.total ?? 0,
 			}
 		},
@@ -119,7 +120,7 @@ export function setup(client: StoryblokClient) {
 				})
 				.catch(handle_error)
 
-			return stories as Array<ISbStoryData<T>>
+			return stories as Array<Story<T>>
 		},
 	})
 }
