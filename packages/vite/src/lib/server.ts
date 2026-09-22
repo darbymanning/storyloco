@@ -1,10 +1,15 @@
 import { getRequestEvent } from "$app/server"
 import { error } from "@sveltejs/kit"
-import type { ISbStoriesParams, ISbStoryData, ISbStoryParams } from "@storyblok/svelte"
+import type { ISbStoriesParams, ISbStoryParams } from "@storyblok/svelte"
 import type { ISbLink, ISbLinks, ISbLinksParams } from "storyblok-js-client"
-import { handle_error, type Story, type StoryblokClient, type Version } from "./storyblok.svelte.js"
-
-type Content = ISbStoryData["content"]
+import {
+	handle_error,
+	type Content,
+	type ContentFor,
+	type Story,
+	type StoryblokClient,
+	type Version,
+} from "./storyblok.svelte.js"
 
 function is_not_found(err: unknown) {
 	return typeof err === "object" && err !== null && "status" in err && err.status === 404
@@ -33,7 +38,7 @@ export function version(): Version {
  * await storyblok.story("layout")
  * await storyblok.find<Product>(`products/${slug}`) // null when missing
  * await storyblok.find<Product | Category>(slug) // a union of stories; narrow with is_component
- * await storyblok.stories<Blog>({ content_type: "blog", per_page: 2 })
+ * await storyblok.stories({ content_type: "blog", per_page: 2 }) // typed from the generated schema
  * await storyblok.all<Product>({ content_type: "product" }) // every page
  *
  * const { client, version } = storyblok()
@@ -72,9 +77,56 @@ export function setup(client: StoryblokClient) {
 		return found
 	}
 
+	type Listing<T> = { stories: Array<Story<T>>; total: number }
+
+	/**
+	 * A list of stories. `total` is the unpaged count, for "showing n of m".
+	 *
+	 * With a `content_type` the generated schema registers, the stories are typed as it —
+	 * no type argument needed. Otherwise `T`, defaulting to the SDK's permissive content.
+	 */
+	function stories<K extends string>(
+		params: ISbStoriesParams & { content_type: K }
+	): Promise<Listing<ContentFor<K>>>
+	function stories<T = Content>(params?: ISbStoriesParams): Promise<Listing<T>>
+	async function stories(params: ISbStoriesParams = {}) {
+		const response = await client
+			.get("cdn/stories", {
+				version: version(),
+				resolve_links: "url",
+				resolve_assets: 1,
+				...params,
+			})
+			.catch(handle_error)
+
+		return { stories: response.data.stories, total: response.total ?? 0 }
+	}
+
+	/**
+	 * Every story matching the params, paged through the API's 100-per-page cap.
+	 * `stories` for one page with a total; this for the whole set. Typed like `stories`.
+	 */
+	function all<K extends string>(
+		params: ISbStoriesParams & { content_type: K }
+	): Promise<Array<Story<ContentFor<K>>>>
+	function all<T = Content>(params?: ISbStoriesParams): Promise<Array<Story<T>>>
+	async function all(params: ISbStoriesParams = {}) {
+		return client
+			.getAll("cdn/stories", {
+				version: version(),
+				resolve_links: "url",
+				resolve_assets: 1,
+				per_page: 100,
+				...params,
+			})
+			.catch(handle_error)
+	}
+
 	return Object.assign(context, {
 		story,
 		find,
+		stories,
+		all,
 
 		/**
 		 * The link tree as a flat array — Storyblok returns it keyed by uuid, which is
@@ -86,41 +138,6 @@ export function setup(client: StoryblokClient) {
 				.catch(handle_error)
 
 			return Object.values((response.data as ISbLinks).links ?? {}) as Array<ISbLink>
-		},
-
-		/** A list of stories. `total` is the unpaged count, for "showing n of m". */
-		async stories<T>(params: ISbStoriesParams = {}) {
-			const response = await client
-				.get("cdn/stories", {
-					version: version(),
-					resolve_links: "url",
-					resolve_assets: 1,
-					...params,
-				})
-				.catch(handle_error)
-
-			return {
-				stories: response.data.stories as Array<Story<T>>,
-				total: response.total ?? 0,
-			}
-		},
-
-		/**
-		 * Every story matching the params, paged through the API's 100-per-page cap.
-		 * `stories` for one page with a total; this for the whole set.
-		 */
-		async all<T>(params: ISbStoriesParams = {}) {
-			const stories = await client
-				.getAll("cdn/stories", {
-					version: version(),
-					resolve_links: "url",
-					resolve_assets: 1,
-					per_page: 100,
-					...params,
-				})
-				.catch(handle_error)
-
-			return stories as Array<Story<T>>
 		},
 	})
 }

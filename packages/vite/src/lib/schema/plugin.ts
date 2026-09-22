@@ -273,6 +273,11 @@ import type { ISbStoryData } from '@storyblok/js';`,
 			               }
 
 			               export type ContentType = ContentTypes[keyof ContentTypes]
+
+			               /** Lets storyloco type reads by \`content_type\` without a type argument. */
+			               declare module "storyloco" {
+			                 interface Registry extends ContentTypes {}
+			               }
 			             `
 
 			let content = component_types.replace(

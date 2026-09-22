@@ -231,6 +231,29 @@ export interface Richtext<Blocks = unknown> {
 }
 
 /**
+ * Content types by component name, for narrowing reads by `content_type`. Empty here;
+ * the schema plugin's generated file merges the space's `ContentTypes` into it, so
+ * `storyblok.stories({ content_type: "product" })` is typed as products without a type
+ * argument. Until a schema is generated every name falls back to the SDK's content type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Registry {}
+
+/** The SDK's permissive content type: any component, any fields. */
+export type Content = ISbStoryData["content"]
+
+/** Each name in a comma-separated `content_type`. */
+type Names<S extends string> = S extends `${infer A},${infer B}` ? A | Names<B> : S
+
+/**
+ * The content behind a `content_type` param. Registered names map to their generated
+ * types (a list to their union); anything else is the permissive `Content`.
+ */
+export type ContentFor<K extends string> = [Names<K>] extends [keyof Registry]
+	? Registry[Names<K>]
+	: Content
+
+/**
  * A story per member of `T`, so a union of content types is a union of stories —
  * `Story<Product | Category>` is `ISbStoryData<Product> | ISbStoryData<Category>`, which
  * `is_component` can narrow. `ISbStoryData<Product | Category>` can't be.
