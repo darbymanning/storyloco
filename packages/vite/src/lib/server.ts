@@ -6,6 +6,7 @@ import {
 	handle_error,
 	type Content,
 	type ContentFor,
+	type ContentTypeParam,
 	type Story,
 	type StoryblokClient,
 	type Version,
@@ -78,6 +79,8 @@ export function setup(client: StoryblokClient) {
 	}
 
 	type Listing<T> = { stories: Array<Story<T>>; total: number }
+	/** List params with `content_type` held to registered names once a schema exists. */
+	type ListParams = Omit<ISbStoriesParams, "content_type"> & { content_type?: ContentTypeParam }
 
 	/**
 	 * A list of stories. `total` is the unpaged count, for "showing n of m".
@@ -85,10 +88,10 @@ export function setup(client: StoryblokClient) {
 	 * With a `content_type` the generated schema registers, the stories are typed as it —
 	 * no type argument needed. Otherwise `T`, defaulting to the SDK's permissive content.
 	 */
-	function stories<K extends string>(
+	function stories<K extends ContentTypeParam>(
 		params: ISbStoriesParams & { content_type: K }
 	): Promise<Listing<ContentFor<K>>>
-	function stories<T = Content>(params?: ISbStoriesParams): Promise<Listing<T>>
+	function stories<T = Content>(params?: ListParams): Promise<Listing<T>>
 	async function stories(params: ISbStoriesParams = {}) {
 		const response = await client
 			.get("cdn/stories", {
@@ -106,10 +109,10 @@ export function setup(client: StoryblokClient) {
 	 * Every story matching the params, paged through the API's 100-per-page cap.
 	 * `stories` for one page with a total; this for the whole set. Typed like `stories`.
 	 */
-	function all<K extends string>(
+	function all<K extends ContentTypeParam>(
 		params: ISbStoriesParams & { content_type: K }
 	): Promise<Array<Story<ContentFor<K>>>>
-	function all<T = Content>(params?: ISbStoriesParams): Promise<Array<Story<T>>>
+	function all<T = Content>(params?: ListParams): Promise<Array<Story<T>>>
 	async function all(params: ISbStoriesParams = {}) {
 		return client
 			.getAll("cdn/stories", {

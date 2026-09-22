@@ -186,8 +186,8 @@ const links = await storyblok.links({ starts_with: 'blog/' })
 Reads with a `content_type` are typed from your generated schema: the plugin registers
 the space's content types with storyloco, so `stories({ content_type: 'product' })` yields
 product stories and `content_type: 'product,category'` a union of both — no type argument
-needed. Until a schema has been generated, or for a name it doesn't know, the content falls
-back to the SDK's permissive type. An explicit type argument always wins.
+needed, and unknown names are rejected. Until a schema has been generated, any name is
+accepted and the content is the SDK's permissive type. An explicit type argument always wins.
 
 Your params are spread last, so any default can be overridden:
 

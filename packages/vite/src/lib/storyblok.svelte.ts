@@ -245,13 +245,20 @@ export type Content = ISbStoryData["content"]
 /** Each name in a comma-separated `content_type`. */
 type Names<S extends string> = S extends `${infer A},${infer B}` ? A | Names<B> : S
 
+/** Registered content type names; `never` until a schema has been generated. */
+export type Known = keyof Registry & string
+
+/**
+ * What a `content_type` param accepts: any string until a schema registers names, then a
+ * registered name (autocompleted) or a comma-separated list starting with one.
+ */
+export type ContentTypeParam = [Known] extends [never] ? string : Known | `${Known},${string}`
+
 /**
  * The content behind a `content_type` param. Registered names map to their generated
  * types (a list to their union); anything else is the permissive `Content`.
  */
-export type ContentFor<K extends string> = [Names<K>] extends [keyof Registry]
-	? Registry[Names<K>]
-	: Content
+export type ContentFor<K extends string> = [Names<K>] extends [Known] ? Registry[Names<K>] : Content
 
 /**
  * A story per member of `T`, so a union of content types is a union of stories —
