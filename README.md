@@ -59,6 +59,21 @@ import type { SEO } from 'storyloco/seo'
 import type { Video, Heading, Link, Input, Asset, SEO } from 'storyloco'
 ```
 
+### Write Currency Values
+
+Map spreadsheet cells or plain numbers to the currency field's stored shape, e.g. for a Management API import:
+
+```ts
+import { to_currency } from 'storyloco/currency/utils'
+
+to_currency('£1,234.50') // currency defaults to GBP
+// { plugin: 'uiloco-currency', currency: 'GBP', amount: 1234.5, formatted: '£1,234.50' }
+to_currency('', 'GBP') // null
+to_currency('POA', 'GBP') // throws, as do negatives and too many decimal places
+```
+
+`format_currency(amount, code)` gives the same `formatted` string the plugin writes.
+
 ### Use Storyblok Client
 
 #### 1. Create your Storyblok client

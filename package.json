@@ -29,6 +29,8 @@
 		"packages/theme/types.ts",
 		"packages/shared/dist",
 		"packages/vite/dist",
+		"packages/vite/src/lib/currency.ts",
+		"!packages/vite/dist/**/*.test.*",
 		"packages/ticketsource/types.ts",
 		"packages/input/types.ts",
 		"packages/time/types.ts",
@@ -98,6 +100,10 @@
 		"./currency": {
 			"types": "./packages/currency/types.ts",
 			"svelte": "./packages/currency/src/app.svelte.ts"
+		},
+		"./currency/utils": {
+			"types": "./packages/vite/dist/currency.d.ts",
+			"import": "./packages/vite/dist/currency.js"
 		}
 	},
 	"devDependencies": {

@@ -1,5 +1,6 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { Currency } from '../types.js'
+import { format_currency } from '../../vite/src/lib/currency.js'
 
 type Plugin = FieldPluginResponse<Currency | null | ''>
 
@@ -146,14 +147,7 @@ export class CurrencyManager {
 
 		const amount =
 			typeof this.amount === 'number' && !Number.isNaN(this.amount) ? this.amount : null
-		const formatted =
-			amount === null
-				? null
-				: new Intl.NumberFormat('en', {
-						style: 'currency',
-						currency: this.currency,
-						currencyDisplay: 'narrowSymbol',
-					}).format(amount)
+		const formatted = amount === null ? null : format_currency(amount, this.currency)
 		this.plugin.actions.setContent({ currency: this.currency, amount, formatted })
 	}
 }
