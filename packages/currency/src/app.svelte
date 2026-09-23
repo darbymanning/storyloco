@@ -27,11 +27,6 @@
 				{/each}
 			</select>
 		</div>
-	{:else}
-		<div class="{box} w-32 shrink-0">
-			{manager.flag}
-			{manager.currency}
-		</div>
 	{/if}
 	<div class="relative grow">
 		<span
