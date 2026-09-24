@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Connect } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { plugins } from '@storyblok/field-plugin/vite'
 import css_injected_by_js from 'vite-plugin-css-injected-by-js'
@@ -18,10 +18,10 @@ export default defineConfig({
 				// unshifted so it runs before Vite's CORS middleware answers the preflight
 				server.middlewares.stack.unshift({
 					route: '',
-					handle: (_req, res, next) => {
+					handle: ((_req, res, next) => {
 						res.setHeader('Access-Control-Allow-Private-Network', 'true')
 						next()
-					},
+					}) satisfies Connect.NextHandleFunction,
 				})
 			},
 		},
