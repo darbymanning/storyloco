@@ -1,0 +1,16 @@
+{
+	"options": [
+		{
+			"name": "min",
+			"value": "1"
+		},
+		{
+			"name": "max",
+			"value": ""
+		},
+		{
+			"name": "auto_sort",
+			"value": "true"
+		}
+	]
+}

@@ -16,6 +16,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **📝 Input** - Comprehensive form input field with support for all HTML input types, checkboxes, radio buttons, selects, and textareas
 - **⏰ Time** - Simple time input field with step control
 - **💷 Currency** - Amount input with a currency selector; configure allowed codes via the `currencies` and `default_currency` options
+- **📅 Dates** - List of dates, each with an optional time, end date and end time, plus a timezone picker; configure via the `min`, `max` and `auto_sort` options
 
 ### Vite Plugins
 
@@ -73,6 +74,20 @@ to_currency('POA', 'GBP') // throws, as do negatives and too many decimal places
 ```
 
 `format_currency(amount, code)` gives the same `formatted` string the plugin writes.
+
+### Display Dates
+
+Timed entries carry UTC instants, so the site formats them natively in the field's zone. All-day entries are dates, not moments: use `start_date`/`end_date` as they are.
+
+```ts
+import type { DateEntry, Dates } from 'storyloco/dates'
+
+const show = ({ timezone }: Dates, entry: DateEntry) =>
+	entry.utc_start
+		? new Intl.DateTimeFormat('en-GB', { timeZone: timezone, dateStyle: 'medium', timeStyle: 'short' })
+				.formatRange(new Date(entry.utc_start), new Date(entry.utc_end ?? entry.utc_start))
+		: [entry.start_date, entry.end_date].filter(Boolean).join(' – ')
+```
 
 ### Use Storyblok Client
 
@@ -304,6 +319,7 @@ export interface StoryblokCustomPlugins {
 	}
 	'loco-time': string
 	'loco-currency': import('storyloco/currency').Currency
+	'loco-dates': import('storyloco/dates').Dates
 	'loco-asset': import('storyloco/asset').Asset
 }
 

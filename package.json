@@ -36,7 +36,8 @@
 		"packages/time/types.ts",
 		"packages/seo/types.ts",
 		"packages/hubspot_form/types.ts",
-		"packages/currency/types.ts"
+		"packages/currency/types.ts",
+		"packages/dates/types.ts"
 	],
 	"exports": {
 		".": {
@@ -104,6 +105,10 @@
 		"./currency/utils": {
 			"types": "./packages/vite/dist/currency.d.ts",
 			"import": "./packages/vite/dist/currency.js"
+		},
+		"./dates": {
+			"types": "./packages/dates/types.ts",
+			"svelte": "./packages/dates/src/app.svelte.ts"
 		}
 	},
 	"devDependencies": {
