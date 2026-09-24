@@ -25,6 +25,6 @@ in the field's `timezone`. Editors pick that from the settings button; it starts
 
 ## Options
 
-- `min` — rows that can't be removed (blank or `0` lets editors remove them all); the manifest ships `1`
+- `min` — rows that can't be removed (blank means `1`; `0` lets editors remove them all)
 - `max` — most dates allowed (blank for no limit)
 - `auto_sort` — `true` (default) keeps dates in start order; `false` lets editors drag to reorder

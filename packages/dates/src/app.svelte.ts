@@ -22,9 +22,10 @@ export class DatesManager {
 	#loaded = false
 
 	options = $derived(this.plugin?.type === 'loaded' ? this.plugin.data.options : {})
-	// blank or missing: no limit / no minimum
+	// blank or missing: no limit
 	max = $derived(Number(this.options.max) || Infinity)
-	min = $derived(Number(this.options.min) || 0)
+	// blank or missing: 1, since Storyblok copies option keys to a field but not the manifest's values; only an explicit 0 allows none
+	min = $derived(String(this.options.min ?? '').trim() === '' ? 1 : Number(this.options.min) || 0)
 	auto_sort = $derived(this.options.auto_sort !== 'false')
 	// UTC can't be worked out without one, so it starts as the editor's own
 	timezone = $state(Intl.DateTimeFormat().resolvedOptions().timeZone)
