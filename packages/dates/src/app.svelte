@@ -20,9 +20,12 @@
 
 	const icon_button =
 		'size-9 shrink-0 rounded-full flex items-center justify-center transition-colors outline-none'
+	const small_button =
+		'size-6 shrink-0 rounded-md flex items-center justify-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
 </script>
 
-<div class="grid gap-2">
+<!-- grid-cols-1 throughout: implicit grid columns never shrink below a native date input's natural width -->
+<div class="grid grid-cols-1 gap-2">
 	{#if !manager.entries.length}
 		<p
 			class="rounded-md border border-dashed border-input p-4 text-center text-sm text-muted-foreground"
@@ -38,31 +41,43 @@
 	>
 		{#each manager.entries as entry, index (entry.id)}
 			{@const invalid = manager.is_invalid(entry)}
+			<!-- @container: the editor panel can be narrow; date and time need ~230px to sit side by side -->
 			<div
-				class={cn('group grid items-center gap-2 p-2', {
-					'grid-cols-[auto_1fr_auto]': !manager.auto_sort,
-					'grid-cols-[1fr_auto]': manager.auto_sort,
-				})}
+				class="@container group grid grid-cols-1 gap-1.5 p-3"
 				data-index={index}
 				out:slide={{ duration: 200 }}
 				onfocusout={(event) => {
 					if (!event.currentTarget.contains(event.relatedTarget as Node)) manager.settle()
 				}}
 			>
-				{#if !manager.auto_sort}
-					<button
-						class="handle {icon_button} cursor-grab"
-						aria-label="Drag to reorder"
-						title="Drag to reorder"
-					>
-						<GripVerticalIcon
-							class="size-4 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-						/>
-					</button>
-				{/if}
-
-				<div class="grid grid-cols-[2.5rem_1fr_7rem] items-center gap-2">
-					<Label for="start_date_{entry.id}">Start</Label>
+				<!-- handle and trash share the label line, so the inputs get the full width -->
+				<div class="flex h-6 items-center gap-1">
+					{#if !manager.auto_sort}
+						<button
+							class="handle {small_button} -ml-1 cursor-grab hover:bg-muted/50"
+							aria-label="Drag to reorder"
+							title="Drag to reorder"
+						>
+							<GripVerticalIcon class="size-4" />
+						</button>
+					{/if}
+					<Label for="start_date_{entry.id}" class="text-xs text-muted-foreground">Start</Label>
+					{#if manager.can_remove}
+						<button
+							class="{small_button} ml-auto -mr-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+							aria-label="Remove date"
+							title="Remove date"
+							onclick={() => {
+								// not dnd's remove: it splices after a 200ms animation, so the save would miss it
+								manager.entries.splice(index, 1)
+								manager.update()
+							}}
+						>
+							<TrashIcon class="size-4" />
+						</button>
+					{/if}
+				</div>
+				<div class="grid grid-cols-1 gap-2 @min-[14.5rem]:grid-cols-[minmax(0,1fr)_5.25rem]">
 					<Input
 						id="start_date_{entry.id}"
 						type="date"
@@ -76,8 +91,10 @@
 						bind:value={entry.start_time}
 						oninput={manager.update}
 					/>
+				</div>
 
-					<Label for="end_date_{entry.id}">End</Label>
+				<Label for="end_date_{entry.id}" class="mt-1 text-xs text-muted-foreground">End</Label>
+				<div class="grid grid-cols-1 gap-2 @min-[14.5rem]:grid-cols-[minmax(0,1fr)_5.25rem]">
 					<Input
 						id="end_date_{entry.id}"
 						type="date"
@@ -96,30 +113,10 @@
 						bind:value={entry.end_time}
 						oninput={manager.update}
 					/>
-					{#if invalid}
-						<p class="col-start-2 col-span-2 text-xs text-destructive">Ends before it starts</p>
-					{/if}
 				</div>
-
-				<button
-					class={cn(
-						icon_button,
-						'hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive',
-						{ 'invisible pointer-events-none': !manager.can_remove }
-					)}
-					disabled={!manager.can_remove}
-					aria-label="Remove date"
-					title="Remove date"
-					onclick={() => {
-						// not dnd's remove: it splices after a 200ms animation, so the save would miss it
-						manager.entries.splice(index, 1)
-						manager.update()
-					}}
-				>
-					<TrashIcon
-						class="size-4 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-					/>
-				</button>
+				{#if invalid}
+					<p class="text-xs text-destructive">Ends before it starts</p>
+				{/if}
 			</div>
 		{/each}
 	</div>
@@ -142,7 +139,7 @@
 			{/if}
 
 			<!-- the zone stays visible: every time above is read in it -->
-			<span class="ml-auto truncate text-xs text-muted-foreground">
+			<span class="ml-auto min-w-0 truncate text-xs text-muted-foreground">
 				{zone.flag}
 				{zone.city} · {zone.abbr || zone.offset}
 			</span>
