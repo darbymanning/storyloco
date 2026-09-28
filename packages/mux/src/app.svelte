@@ -150,6 +150,14 @@
 						</form>
 					{/if}
 				{/if}
+				{#if manager.youtube_upload_state === 'loading'}
+					<p>Importing from YouTube… this can take a few minutes, keep this open.</p>
+				{:else}
+					<form class="grid gap-2" onsubmit={manager.add_youtube_url}>
+						<Label for="youtube_url">Or import from YouTube</Label>
+						<Input id="youtube_url" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ" />
+					</form>
+				{/if}
 			</div>
 			{#await manager.list()}
 				{@render Skeleton()}

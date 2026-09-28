@@ -2,7 +2,7 @@ import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-pl
 import Mux from '@mux/mux-node'
 import type { MuxAsset, Video, VimeoVideo } from '../types.js'
 import { format_date, format_elapse } from 'kitto'
-import ky from 'ky'
+import ky, { HTTPError } from 'ky'
 
 export type { MuxAsset }
 
@@ -16,6 +16,7 @@ export class MuxManager {
 	timeout = $state<NodeJS.Timeout | null>(null)
 	video_options_open = $state(false)
 	vimeo_upload_state: null | 'loading' = $state(null)
+	youtube_upload_state: null | 'loading' = $state(null)
 
 	#poll: NodeJS.Timeout | null = $state(null)
 	#initial = $state(true)
@@ -250,5 +251,44 @@ export class MuxManager {
 
 		await this.list()
 		this.vimeo_upload_state = null
+	}
+
+	add_youtube_url = async (e: Event) => {
+		e.preventDefault()
+		const form = e.target
+		if (!(form instanceof HTMLFormElement)) return
+
+		// handles watch?v=, youtu.be/, shorts/, embed/, live/ and m./music. subdomains
+		const match = form.youtube_url.value.match(
+			/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/|v\/))([\w-]{11})/
+		)
+		const video_id = match?.[1]
+		if (!video_id) return window.alert('That doesn’t look like a YouTube URL')
+
+		this.youtube_upload_state = 'loading'
+		try {
+			// moxy downloads the video and pushes it into a Mux direct upload, so this can take a while
+			const { upload_id } = await ky
+				.post('https://moxy.uilo.co/api/youtube', {
+					json: { video_id },
+					headers: { authorization: `Bearer ${this.#secrets?.mux_secret}` },
+					timeout: false,
+				})
+				.json<{ upload_id: string }>()
+
+			// the asset appears once Mux has picked up the finished upload
+			while ((await this.mux.video.uploads.retrieve(upload_id)).status === 'waiting') {
+				await new Promise((resolve) => setTimeout(resolve, 1000))
+			}
+			await this.list()
+		} catch (error) {
+			const message =
+				error instanceof HTTPError
+					? ((await error.response.json().catch(() => null))?.message ?? error.message)
+					: String(error)
+			window.alert(message)
+		} finally {
+			this.youtube_upload_state = null
+		}
 	}
 }
