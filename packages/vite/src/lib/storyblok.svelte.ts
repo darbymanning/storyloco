@@ -58,7 +58,20 @@ export interface ClientOptions {
 	 * news posts reuse the blog template. Applied by `template`.
 	 */
 	aliases?: Record<string, string>
+	/**
+	 * The body of the errors storyloco raises, for projects whose `App.Error` needs more
+	 * than a message — e.g. `(status) => ({ message: "Not found", code: "NOT_FOUND" })`.
+	 * `cause` is the Storyblok error, when there was one.
+	 */
+	error?: ErrorBody
 }
+
+/** Shapes the body of a 404 (missing story) or 500 (anything else Storyblok threw) */
+export type ErrorBody = (status: 404 | 500, cause?: unknown) => App.Error
+
+const default_error: ErrorBody = (status) => ({
+	message: status === 404 ? "Story not found" : "Internal server error",
+})
 
 /** Type alias for the storyblok api instance */
 type API = ReturnType<typeof useStoryblokApi>
@@ -124,8 +137,11 @@ export class StoryblokClient {
 	/** Make a DELETE request to the Storyblok API */
 	delete: API["delete"] = async (...args) => (await this.#api()).delete(...args)
 
-	/** The standalone `handle_error`, on the instance so `.catch(client.handle_error)` works */
-	handle_error = handle_error
+	/** Shapes the body of every error storyloco raises; see `ClientOptions.error` */
+	error: ErrorBody = default_error
+
+	/** `handle_error` with this client's `error` shape, bound so `.catch(client.handle_error)` works */
+	handle_error = (err: unknown): never => handle_error(err, this.error)
 
 	/**
 	 * Configured here rather than by subclassing, so setup is one expression.
@@ -139,11 +155,18 @@ export class StoryblokClient {
 	 * })
 	 * ```
 	 */
-	constructor({ token, components = {}, relations = [], aliases = {} }: ClientOptions) {
+	constructor({
+		token,
+		components = {},
+		relations = [],
+		aliases = {},
+		error = default_error,
+	}: ClientOptions) {
 		this.#access_token = token
 		this.#component_imports = components
 		this.relations = relations
 		this.aliases = aliases
+		this.error = error
 
 		// Eager, but handled so a failure surfaces to whoever awaits `init` rather than
 		// as an unhandled rejection
@@ -315,16 +338,17 @@ export function href(link?: Link): string | undefined {
  * Turn a Storyblok error into a SvelteKit one, for `.catch(handle_error)`.
  *
  * A missing story is a 404; anything else is a 500, since the CMS being unreachable isn't
- * something to show a visitor a Storyblok status code for.
+ * something to show a visitor a Storyblok status code for. `body` shapes the error; prefer
+ * `client.handle_error`, which passes the client's own.
  */
-export function handle_error(err: unknown): never {
+export function handle_error(err: unknown, body: ErrorBody = default_error): never {
 	console.error(err)
 
 	const status = typeof err === "object" && err !== null && "status" in err ? err.status : undefined
 
-	if (status === 404) error(404, "Story not found")
+	if (status === 404) error(404, body(404, err))
 
-	error(500, "Internal server error")
+	error(500, body(500, err))
 }
 
 /** Declaring these keeps `SbBlokData`'s index signature from widening every access. */

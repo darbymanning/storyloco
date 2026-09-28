@@ -114,6 +114,19 @@ at your call site rather than move into the client.
 `client.handle_error` is on the instance, so `.catch(client.handle_error)` works without
 wrapping anything.
 
+Errors carry only a `message` by default. If your `App.Error` needs more, pass `error` to shape
+the body of every 404 and 500 storyloco raises — it's typed against your own `App.Error`:
+
+```typescript
+export const client = new StoryblokClient({
+	token: PUBLIC_STORYBLOK_ACCESS_TOKEN,
+	error: (status) => ({
+		message: status === 404 ? 'Story not found' : 'Storyblok request failed',
+		code: status === 404 ? 'NOT_FOUND' : 'STORYBLOK'
+	})
+})
+```
+
 #### 2. Use in your Svelte components
 
 **`+page.svelte`:**
@@ -252,7 +265,7 @@ const { client, version } = storyblok()
 await client.get('cdn/datasource_entries', { version })
 ```
 
-Errors go through `handle_error`, so a missing story is a 404 and anything else a 500.
+Errors go through `client.handle_error`, so a missing story is a 404 and anything else a 500, shaped by the client's `error` option.
 
 ### Use Shared Components
 

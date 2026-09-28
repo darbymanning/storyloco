@@ -3,7 +3,6 @@ import { error } from "@sveltejs/kit"
 import type { ISbStoriesParams, ISbStoryParams } from "@storyblok/svelte"
 import type { ISbLink, ISbLinks, ISbLinksParams } from "storyblok-js-client"
 import {
-	handle_error,
 	type Content,
 	type ContentFor,
 	type ContentTypeParam,
@@ -65,7 +64,7 @@ export function setup(client: StoryblokClient) {
 			})
 			.catch((err: unknown) => {
 				if (is_not_found(err)) return null
-				return handle_error(err)
+				return client.handle_error(err)
 			})
 
 		return (response?.data.story ?? null) as Story<T> | null
@@ -74,7 +73,7 @@ export function setup(client: StoryblokClient) {
 	/** A single story by full slug; a missing one is a 404. `find` for stories that may not exist. */
 	async function story<T = Content>(slug: string, params: ISbStoryParams = {}) {
 		const found = await find<T>(slug, params)
-		if (!found) error(404, "Story not found")
+		if (!found) error(404, client.error(404))
 		return found
 	}
 
@@ -100,7 +99,7 @@ export function setup(client: StoryblokClient) {
 				resolve_assets: 1,
 				...params,
 			})
-			.catch(handle_error)
+			.catch(client.handle_error)
 
 		return { stories: response.data.stories, total: response.total ?? 0 }
 	}
@@ -122,7 +121,7 @@ export function setup(client: StoryblokClient) {
 				per_page: 100,
 				...params,
 			})
-			.catch(handle_error)
+			.catch(client.handle_error)
 	}
 
 	return Object.assign(context, {
@@ -138,7 +137,7 @@ export function setup(client: StoryblokClient) {
 		async links(params: ISbLinksParams = {}) {
 			const response = await client
 				.get("cdn/links", { version: version(), per_page: 1000, ...params })
-				.catch(handle_error)
+				.catch(client.handle_error)
 
 			return Object.values((response.data as ISbLinks).links ?? {}) as Array<ISbLink>
 		},
