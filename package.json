@@ -31,7 +31,6 @@
 		"packages/vite/dist",
 		"packages/vite/src/lib/currency.ts",
 		"!packages/vite/dist/**/*.test.*",
-		"packages/ticketsource/types.ts",
 		"packages/input/types.ts",
 		"packages/time/types.ts",
 		"packages/seo/types.ts",
@@ -52,10 +51,6 @@
 		},
 		"./plans": {
 			"types": "./packages/plans/types.ts"
-		},
-		"./ticketsource": {
-			"types": "./packages/ticketsource/types.ts",
-			"svelte": "./packages/ticketsource/src/app.svelte.ts"
 		},
 		"./input": {
 			"types": "./packages/input/types.ts",
