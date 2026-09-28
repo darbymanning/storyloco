@@ -235,6 +235,27 @@
 					{/if}
 				</div>
 			</div>
+			{#if manager.undeletable}
+				<div
+					class="flex items-start justify-between gap-3 rounded border bg-card text-card-foreground p-3 text-sm"
+					role="alert"
+				>
+					<p>
+						Mux doesn’t allow deleting videos over Mux sign-in. Delete {manager.undeletable.title}
+						in the
+						<a
+							class="text-primary underline"
+							href={manager.undeletable.url}
+							target="_blank"
+							rel="noreferrer">Mux dashboard</a
+						>.
+					</p>
+					<button
+						class="text-muted-foreground hover:text-foreground"
+						onclick={() => (manager.undeletable = null)}>Dismiss</button
+					>
+				</div>
+			{/if}
 			{#await manager.list()}
 				{@render Skeleton()}
 			{:then}

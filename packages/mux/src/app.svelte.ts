@@ -26,6 +26,12 @@ export class MuxManager {
 		percent?: number
 	} | null>(null)
 
+	// sign-in (OAuth) connections from the Mux Library space plugin can't delete: Mux answers
+	// DELETE with 404 for them. null until moxy has said which kind this field's secret is.
+	connection = $state<{ sign_in: boolean; environment_id: string | null } | null>(null)
+	// a video Mux wouldn't let us delete, so the field can point to the Mux dashboard instead
+	undeletable = $state<{ title: string; url: string } | null>(null)
+
 	#poll: NodeJS.Timeout | null = $state(null)
 	#initial = $state(true)
 	#secrets: { mux_secret: string; vimeo_secret?: string } | null = $derived.by(() => {
@@ -118,17 +124,40 @@ export class MuxManager {
 		this.plugin?.actions?.setModalOpen(false)
 	}
 
+	// ponytail: a failed lookup leaves connection null, so the field keeps its old delete behaviour
+	#load_connection = async () => {
+		this.connection ??= await ky
+			.get('https://moxy.uilo.co/api/mux-connection', {
+				headers: { authorization: `Bearer ${this.#secrets?.mux_secret}` },
+			})
+			.json<{ sign_in: boolean; environment_id: string | null }>()
+			.catch(() => null)
+	}
+
+	#dashboard_url = (id: string) =>
+		this.connection?.environment_id
+			? `https://dashboard.mux.com/environments/${this.connection.environment_id}/video/assets/${id}`
+			: 'https://dashboard.mux.com'
+
 	list = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
-		const assets = (await this.mux.video.assets.list({ limit: 0 })).data
+		const [{ data: assets }] = await Promise.all([
+			this.mux.video.assets.list({ limit: 0 }),
+			this.#load_connection(),
+		])
 
-		// finish deferred deletes (see `delete`) now Mux allows them; failures just retry next list
-		await Promise.allSettled(
-			assets
-				.filter((asset) => asset.passthrough === PENDING_DELETE && asset.status !== 'preparing')
-				.map((asset) => this.mux.video.assets.delete(asset.id))
-		)
-		this.assets = assets.filter((asset) => asset.passthrough !== PENDING_DELETE)
+		// finish deferred deletes (see `delete`) now Mux allows them; failures just retry next list.
+		// Sign-in connections can never delete, so their flagged videos stay listed rather than vanish.
+		if (!this.connection?.sign_in) {
+			await Promise.allSettled(
+				assets
+					.filter((asset) => asset.passthrough === PENDING_DELETE && asset.status !== 'preparing')
+					.map((asset) => this.mux.video.assets.delete(asset.id))
+			)
+		}
+		this.assets = this.connection?.sign_in
+			? assets
+			: assets.filter((asset) => asset.passthrough !== PENDING_DELETE)
 
 		// keeps polling for pending deletes too, so they go as soon as they're ready
 		const has_preparing = assets.some(({ status }) => status === 'preparing')
@@ -141,14 +170,32 @@ export class MuxManager {
 	delete = async (id: string) => {
 		if (this.plugin?.type !== 'loaded' || !this.plugin.data.options.MOXY_MUX_SECRET_ID || !this.mux)
 			throw new Error('Mux not initialised')
+		const asset = this.assets?.find((asset) => asset.id === id)
+		const undeletable = () =>
+			(this.undeletable = {
+				title: asset?.meta?.title || 'this video',
+				url: this.#dashboard_url(id),
+			})
+		this.undeletable = null
+		if (this.connection?.sign_in) return undeletable()
+
 		const confirm = window.confirm('Are you sure you want to delete this video?')
 		if (!confirm) return
-		const asset = this.assets?.find((asset) => asset.id === id)
+		const before = this.assets
 		if (this.assets?.length) this.assets = this.assets.filter((asset) => asset.id !== id)
-		// Mux refuses to delete (or abort) a preparing asset, so flag it and let `list` delete it once ready
-		if (asset?.status === 'preparing')
-			await this.mux.video.assets.update(id, { passthrough: PENDING_DELETE })
-		else await this.mux.video.assets.delete(id)
+		try {
+			// Mux refuses to delete (or abort) a preparing asset, so flag it and let `list` delete it once ready
+			if (asset?.status === 'preparing')
+				await this.mux.video.assets.update(id, { passthrough: PENDING_DELETE })
+			else await this.mux.video.assets.delete(id)
+		} catch (error) {
+			// a 404 for a video we can still list means Mux won't let this connection delete it
+			if ((error as { status?: number }).status === 404 && asset) {
+				this.assets = before
+				return undeletable()
+			}
+			throw error
+		}
 		if (this.content?.mux_video?.id === id) this.set_video(null)
 		await this.list()
 	}
