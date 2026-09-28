@@ -76,6 +76,8 @@ export class AssetManager {
 
 		return { r2_secret, r2_bucket }
 	})
+	// the R2 Assets space plugin fills these in; without them there's nothing to browse
+	readonly configured = $derived(!!this.#secrets?.r2_secret && !!this.#secrets?.r2_bucket)
 	focus_x = $derived(this.active_asset?.attributes.focus?.split(':')[0].split('x')[0])
 	focus_y = $derived(this.active_asset?.attributes.focus?.split(':')[0].split('x')[1])
 	back = $state(false)

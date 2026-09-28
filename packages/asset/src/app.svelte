@@ -451,7 +451,14 @@
 	</button>
 {/snippet}
 
-{#if manager.is_modal_open && !manager.active_asset}
+{#if manager.loaded && !manager.configured}
+	<div class="rounded border border-input bg-card p-4 text-sm">
+		<p class="font-medium">This field isn’t connected to storage yet</p>
+		<p class="text-muted-foreground mt-1">
+			Open <strong>R2 Assets</strong> from the Apps menu in the Storyblok sidebar to set it up.
+		</p>
+	</div>
+{:else if manager.is_modal_open && !manager.active_asset}
 	<div class="grid grid-cols-5 grid-rows-[auto_1fr_auto] px-16 gap-x-12 h-full">
 		<header class="flex items-center gap-4 pb-4 pt-8 col-span-5">
 			<div class="text-2xl font-medium mr-auto">Assets Pro</div>
