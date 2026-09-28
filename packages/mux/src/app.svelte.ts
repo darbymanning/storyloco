@@ -28,7 +28,11 @@ export class MuxManager {
 
 	// sign-in (OAuth) connections from the Mux Library space plugin can't delete: Mux answers
 	// DELETE with 404 for them. null until moxy has said which kind this field's secret is.
-	connection = $state<{ sign_in: boolean; environment_id: string | null } | null>(null)
+	connection = $state<{
+		sign_in: boolean
+		environment_id: string | null
+		organization_id: string | null
+	} | null>(null)
 	// a video Mux wouldn't let us delete, so the field can point to the Mux dashboard instead
 	undeletable = $state<{ title: string; url: string } | null>(null)
 
@@ -130,14 +134,17 @@ export class MuxManager {
 			.get('https://moxy.uilo.co/api/mux-connection', {
 				headers: { authorization: `Bearer ${this.#secrets?.mux_secret}` },
 			})
-			.json<{ sign_in: boolean; environment_id: string | null }>()
+			.json<NonNullable<MuxManager['connection']>>()
 			.catch(() => null)
 	}
 
-	#dashboard_url = (id: string) =>
-		this.connection?.environment_id
-			? `https://dashboard.mux.com/environments/${this.connection.environment_id}/video/assets/${id}`
+	// the dashboard needs the organization in the path; without it, it can land on the wrong org
+	#dashboard_url = (id: string) => {
+		const { organization_id, environment_id } = this.connection ?? {}
+		return organization_id && environment_id
+			? `https://dashboard.mux.com/organizations/${organization_id}/environments/${environment_id}/video/assets/${id}`
 			: 'https://dashboard.mux.com'
+	}
 
 	list = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
