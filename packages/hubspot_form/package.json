@@ -1,6 +1,6 @@
 {
 	"name": "uiloco-hubspot-form",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"devDependencies": {
 		"@lucide/svelte": "^0.554.0",
 		"@storyblok/field-plugin": "1.7.0",

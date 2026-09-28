@@ -1,11 +1,7 @@
 {
 	"options": [
 		{
-			"name": "HUBSPOT_PROXY_URL",
-			"value": ""
-		},
-		{
-			"name": "HUBSPOT_PROXY_TOKEN",
+			"name": "MOXY_HUBSPOT_SECRET_ID",
 			"value": ""
 		}
 	]

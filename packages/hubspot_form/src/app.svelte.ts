@@ -12,27 +12,25 @@ export class HubspotFormManager {
 	#loading_forms = $state(false)
 	// deriveds must stay pure (assigning state inside one throws), so missing
 	// options are their own derived and fold into `error` below
-	#missing_options = $derived(
-		this.plugin?.type === 'loaded' &&
-			!(this.plugin.data.options.HUBSPOT_PROXY_URL && this.plugin.data.options.HUBSPOT_PROXY_TOKEN)
+	#portal: string | null = null
+	// the HubSpot Forms space plugin fills this in; without it there's no portal to list
+	missing_options = $derived(
+		this.plugin?.type === 'loaded' && !this.plugin.data.options.MOXY_HUBSPOT_SECRET_ID
 	)
 	#api = $derived.by(() => {
-		if (this.plugin?.type !== 'loaded' || this.#missing_options) return null
-		const { HUBSPOT_PROXY_URL, HUBSPOT_PROXY_TOKEN } = this.plugin.data.options
+		if (this.plugin?.type !== 'loaded' || this.missing_options) return null
 
 		return ky.create({
-			prefixUrl: HUBSPOT_PROXY_URL,
+			prefixUrl: 'https://moxy.uilo.co/api/hubspot/',
 			headers: {
-				Authorization: `Bearer ${HUBSPOT_PROXY_TOKEN}`,
+				Authorization: `Bearer ${this.plugin.data.options.MOXY_HUBSPOT_SECRET_ID}`,
 			},
 		})
 	})
-	error = $derived(
-		this.#missing_options
-			? 'HUBSPOT_PROXY_URL and HUBSPOT_PROXY_TOKEN options are required'
-			: this.#fetch_error
+	error = $derived(this.missing_options ? null : this.#fetch_error)
+	loading = $derived(
+		this.#loading_forms || (this.forms === null && !this.error && !this.missing_options)
 	)
-	loading = $derived(this.#loading_forms || (this.forms === null && !this.error))
 
 	constructor() {
 		$effect(() => {
@@ -49,14 +47,20 @@ export class HubspotFormManager {
 		this.#loading_forms = true
 
 		try {
-			const response = await this.#api.get('forms').json<{ results: Array<HubspotForm> }>()
+			const response = await this.#api
+				.get('forms')
+				.json<{ portal: string; results: Array<HubspotForm> }>()
+			this.#portal = response.portal
 			this.forms = response.results
 			this.#fetch_error = null
 		} catch (error: any) {
+			const status = error?.response?.status
 			this.#fetch_error =
-				error?.response?.status === 401
-					? 'HUBSPOT_PROXY_TOKEN was rejected by the proxy'
-					: 'Could not load forms from the proxy'
+				status === 401
+					? 'This field’s HubSpot connection was replaced. Open HubSpot Forms from the Apps menu to set it up again.'
+					: status === 409
+						? 'HubSpot no longer accepts this space’s connection. Reconnect it in HubSpot Forms.'
+						: 'Could not load forms from HubSpot'
 		} finally {
 			this.#loading_forms = false
 		}
@@ -72,7 +76,8 @@ export class HubspotFormManager {
 	}
 
 	select = (id: string) => {
-		this.content = this.forms?.find((form) => form.id === id) ?? null
+		const form = this.forms?.find((form) => form.id === id)
+		this.content = form ? { ...form, ...(this.#portal && { portal: this.#portal }) } : null
 		if (this.plugin?.type !== 'loaded') return
 		this.plugin.actions.setContent(this.content ? $state.snapshot(this.content) : null)
 	}
