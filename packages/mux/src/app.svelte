@@ -11,6 +11,10 @@
 		EllipsisIcon,
 		Settings2Icon,
 		UploadIcon,
+		SearchIcon,
+		PlusIcon,
+		ExternalLinkIcon,
+		XIcon,
 	} from '@lucide/svelte'
 	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
@@ -27,38 +31,13 @@
 	const manager = new MuxManager()
 
 	const loaded = $derived(manager.plugin?.type === 'loaded' && manager.mux)
-
-	const actions_menu_classes = `
-      absolute
-      right-4
-      top-4
-      flex
-      items-center
-      bg-card
-      text-card-foreground
-      border
-      rounded
-      divide-x
-      opacity-0
-      pointer-events-none
-      -translate-y-10
-      transition-[translate,opacity]
-      overflow-hidden
-
-      [&>li]:flex
-      [&_button]:p-2
-      [&_button]:hover:bg-muted
-      [&_button]:outline-none
-      [&_button]:focus:bg-muted
-
-      group-hover:opacity-100
-      group-hover:pointer-events-auto
-      group-hover:translate-y-0
-
-      group-focus-within:opacity-100
-      group-focus-within:pointer-events-auto
-      group-focus-within:translate-y-0
-   `
+	let search = $state('')
+	const shown = $derived(
+		(manager.assets ?? []).filter((video) =>
+			(video.meta?.title ?? '').toLowerCase().includes(search.trim().toLowerCase())
+		)
+	)
+	const title_of = (video?: MuxAsset) => video?.meta?.title || 'Untitled video'
 </script>
 
 <svelte:window
@@ -73,67 +52,89 @@
 />
 
 {#snippet Skeleton()}
-	<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
-		{#each Array(12)}
-			<li>
-				<div class="p-3 grid gap-2">
-					<SkeletonComponent class="aspect-video size-full" />
-					<div class="flex gap-2 justify-between">
-						<SkeletonComponent class="w-24 h-4" />
-						<SkeletonComponent class="w-16 h-4" />
-					</div>
+	<ol class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4" aria-busy="true">
+		{#each Array(8)}
+			<li class="overflow-hidden rounded-lg border bg-card">
+				<SkeletonComponent class="aspect-video w-full rounded-none" />
+				<div class="grid gap-2 p-3">
+					<SkeletonComponent class="h-4 w-3/4" />
+					<SkeletonComponent class="h-3 w-1/2" />
 				</div>
 			</li>
 		{/each}
 	</ol>
 {/snippet}
 
-{#snippet AssetPreview(video?: MuxAsset)}
+<!-- thumbnail with its duration or status on top; `selectable` adds the picker's selected state -->
+{#snippet AssetPreview(video?: MuxAsset, selectable = false)}
 	{@const playback_id = video?.playback_ids?.[0]?.id}
-	{@const is_selected = manager.content?.mux_video?.id === video?.id}
+	{@const is_selected = selectable && manager.content?.mux_video?.id === video?.id}
 
 	<figure
-		class={cn([
-			'flex items-center justify-center [&>svg]:absolute [&>svg]:size-5 bg-muted text-muted-foreground rounded w-full aspect-video relative border',
-			{ 'bg-primary [&>svg]:text-foreground': video && is_selected },
-		])}
+		class={cn(
+			'bg-muted text-muted-foreground relative flex aspect-video w-full items-center justify-center overflow-hidden',
+			selectable ? 'rounded-none' : 'rounded-md border'
+		)}
 	>
-		{#if playback_id && video.status === 'ready'}
+		{#if playback_id && video?.status === 'ready'}
 			<img
-				class={['rounded shrink-0 size-full absolute cover', { 'opacity-50': is_selected }]}
-				src="https://image.mux.com/{playback_id}/thumbnail.jpg?width=240&height=135&fit_mode=smartcrop"
-				alt={video.meta?.title}
+				class="absolute inset-0 size-full object-cover"
+				src="https://image.mux.com/{playback_id}/thumbnail.webp?width=480&height=270&fit_mode=smartcrop"
+				alt=""
+				loading="lazy"
 			/>
+			<!-- the animated preview only loads on hover, then fades in over the still -->
 			<img
-				class="rounded shrink-0 size-full absolute cover hover:opacity-100 transition-opacity opacity-0"
-				src="https://image.mux.com/{playback_id}/animated.gif?width=240&height=135&fit_mode=smartcrop"
-				alt={video.meta?.title}
+				class="absolute inset-0 size-full object-cover opacity-0 transition-opacity duration-300 hover:opacity-100"
+				src="https://image.mux.com/{playback_id}/animated.webp?width=480&height=270&fit_mode=smartcrop"
+				alt=""
+				loading="lazy"
 			/>
-		{/if}
-		{#if !video}
-			<VideoIcon />
+			{#if video.duration}
+				<span
+					class="pointer-events-none absolute right-1.5 bottom-1.5 rounded bg-black/70 px-1.5 text-[11px] font-medium text-white tabular-nums"
+					>{manager.format_duration(video.duration)}</span
+				>
+			{/if}
+		{:else if !video}
+			<VideoIcon class="size-5" />
 		{:else if video.status === 'errored'}
-			<VideoOffIcon />
-		{:else if video.status === 'preparing'}
-			<HourglassIcon />
-		{:else if is_selected}
-			<CheckIcon />
+			<VideoOffIcon class="size-5" />
+		{:else}
+			<HourglassIcon class="size-5 animate-pulse" />
+		{/if}
+		{#if video && video.status !== 'ready'}
+			<span
+				class={cn(
+					'absolute top-1.5 left-1.5 rounded-full px-2 text-[11px] font-medium',
+					video.status === 'errored'
+						? 'bg-destructive text-white'
+						: 'bg-amber-100 text-amber-900 dark:bg-amber-400/20 dark:text-amber-200'
+				)}>{video.status === 'errored' ? 'Errored' : 'Processing'}</span
+			>
+		{/if}
+		{#if is_selected}
+			<span
+				class="bg-primary text-primary-foreground absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-full shadow"
+				aria-label="Selected"><CheckIcon class="size-3.5" /></span
+			>
 		{/if}
 	</figure>
 {/snippet}
 
 {#snippet ImportForm(id: string, label: string, placeholder: string, onsubmit: (e: Event) => void)}
-	<form class="grid gap-2" {onsubmit}>
+	<form class="grid content-start gap-2" {onsubmit}>
 		<Label for={id}>{label}</Label>
 		<div class="flex gap-2">
-			<Input {id} {placeholder} class="flex-1" />
+			<Input {id} {placeholder} type="url" required class="flex-1" />
 			<Button type="submit" variant="secondary" class="h-11.5">Import</Button>
 		</div>
+		<p class="text-muted-foreground text-xs">Public videos only. They're copied into Mux.</p>
 	</form>
 {/snippet}
 
 {#snippet ImportProgress(label: string, percent?: number)}
-	<div class="bg-card grid gap-3 rounded-md border p-4" role="status">
+	<div class="bg-card grid content-start gap-3 rounded-md border p-4" role="status">
 		<div class="flex items-baseline justify-between gap-4 text-sm">
 			<span class="font-medium">{label}</span>
 			{#if percent !== undefined}
@@ -154,46 +155,65 @@
 	</div>
 {/snippet}
 
-{#snippet AssetMeta(video: MuxAsset)}
-	<p class="font-medium truncate">
-		{video.meta?.title}
-	</p>
-	<span class="justify-between flex text-muted-foreground text-xs">
+{#snippet Meta(video: MuxAsset)}
+	<p class="text-muted-foreground truncate text-xs">
 		{#if video.status === 'errored'}
-			{video.errors?.messages}
+			{video.errors?.messages?.join(' ') || 'Mux couldn’t process this video'}
 		{:else if video.status === 'preparing'}
-			Preparing...
-		{:else if video.duration}
-			<span>
-				{manager.format_duration(video.duration)}
-			</span>
-			<time datetime={video.created_at}>
-				{manager.date(video.created_at)}
-			</time>
+			Processing…
+		{:else}
+			<time datetime={video.created_at}>{manager.date(video.created_at)}</time>
 		{/if}
-	</span>
+	</p>
+{/snippet}
+
+{#snippet Setting(
+	id: string,
+	label: string,
+	hint: string,
+	key: 'autoplay' | 'playsinline' | 'muted' | 'loop'
+)}
+	<div class="flex items-start gap-3">
+		<Switch
+			{id}
+			class="mt-0.5"
+			checked={manager.content?.[key]}
+			onCheckedChange={(value: boolean) => manager.update({ [key]: value })}
+		/>
+		<div class="grid gap-0.5">
+			<Label for={id}>{label}</Label>
+			<p class="text-muted-foreground text-xs">{hint}</p>
+		</div>
+	</div>
 {/snippet}
 
 {#if loaded}
 	{#if manager.is_modal_open}
-		<div class="p-8 grid gap-8">
-			<div class="grid gap-5">
-				<!-- headless uploader; the visible parts are composed from its sub-elements so they take our
-				styles (mux-uploader only forwards the file-select slot, and its heading size is hardcoded) -->
-				<mux-uploader
-					id="mux-uploader"
-					class="hidden"
-					onsuccess={manager.list}
-					endpoint={manager.get_upload_endpoint}
-				></mux-uploader>
+		<div class="grid gap-6 p-8">
+			<header class="grid gap-1 pr-8">
+				<h1 class="text-lg font-semibold">Choose a video</h1>
+				<p class="text-muted-foreground text-sm">
+					Pick one from this space's Mux library, upload a new one or import it from YouTube.
+				</p>
+			</header>
+
+			<!-- headless uploader; the visible parts are composed from its sub-elements so they take our
+			styles (mux-uploader only forwards the file-select slot, and its heading size is hardcoded) -->
+			<mux-uploader
+				id="mux-uploader"
+				class="hidden"
+				onsuccess={manager.list}
+				endpoint={manager.get_upload_endpoint}
+			></mux-uploader>
+			<div class="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-5">
 				<mux-uploader-drop
 					mux-uploader="mux-uploader"
 					overlay
 					overlay-text="Drop to upload"
-					class="border-input bg-input-background hover:border-primary flex flex-col items-center gap-3 rounded-md border border-dashed px-6 py-8 transition-colors"
+					class="border-input bg-input-background hover:border-primary flex flex-col items-center justify-center gap-2 rounded-md border border-dashed px-6 py-5 transition-colors"
 				>
-					<span slot="heading" class="grid justify-items-center gap-2 text-sm font-medium">
-						<UploadIcon class="text-muted-foreground size-5" />
+					<span slot="heading" class="flex items-center gap-2 text-sm font-medium">
+						<UploadIcon class="text-muted-foreground size-4" />
 						Drop a video file here
 					</span>
 					<span slot="separator" class="text-muted-foreground text-xs">or</span>
@@ -207,188 +227,230 @@
 					<mux-uploader-progress mux-uploader="mux-uploader" type="bar" class="w-full"
 					></mux-uploader-progress>
 				</mux-uploader-drop>
-				<div class="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-5">
-					{#if manager.youtube_upload_state === 'loading'}
-						{@render ImportProgress(
-							manager.youtube_progress_label,
-							manager.youtube_progress?.percent
-						)}
+				{#if manager.youtube_upload_state === 'loading'}
+					{@render ImportProgress(
+						manager.youtube_progress_label,
+						manager.youtube_progress?.percent
+					)}
+				{:else}
+					{@render ImportForm(
+						'youtube_url',
+						'Import from YouTube',
+						'https://www.youtube.com/watch?v=…',
+						manager.add_youtube_url
+					)}
+				{/if}
+				{#if manager.has_vimeo}
+					{#if manager.vimeo_upload_state === 'loading'}
+						{@render ImportProgress('Importing from Vimeo…')}
 					{:else}
 						{@render ImportForm(
-							'youtube_url',
-							'Import from YouTube',
-							'https://www.youtube.com/watch?v=…',
-							manager.add_youtube_url
+							'vimeo_url',
+							'Import from Vimeo',
+							'https://vimeo.com/123456789',
+							manager.add_vimeo_url
 						)}
 					{/if}
-					{#if manager.has_vimeo}
-						{#if manager.vimeo_upload_state === 'loading'}
-							{@render ImportProgress('Importing from Vimeo…')}
-						{:else}
-							{@render ImportForm(
-								'vimeo_url',
-								'Import from Vimeo',
-								'https://vimeo.com/123456789',
-								manager.add_vimeo_url
-							)}
-						{/if}
-					{/if}
-				</div>
+				{/if}
 			</div>
+
 			{#if manager.undeletable}
 				<div
-					class="flex items-start justify-between gap-3 rounded border bg-card text-card-foreground p-3 text-sm"
+					class="bg-card text-card-foreground flex items-start justify-between gap-3 rounded-md border p-3 text-sm"
 					role="alert"
 				>
 					<p>
 						Mux doesn’t allow deleting videos over Mux sign-in. Delete {manager.undeletable.title}
 						in the
 						<a
-							class="text-primary underline"
+							class="text-primary inline-flex items-center gap-1 underline"
 							href={manager.undeletable.url}
 							target="_blank"
-							rel="noreferrer">Mux dashboard</a
+							rel="noreferrer">Mux dashboard <ExternalLinkIcon class="size-3" /></a
 						>.
 					</p>
 					<button
 						class="text-muted-foreground hover:text-foreground"
-						onclick={() => (manager.undeletable = null)}>Dismiss</button
+						aria-label="Dismiss"
+						onclick={() => (manager.undeletable = null)}><XIcon class="size-4" /></button
 					>
 				</div>
 			{/if}
-			{#await manager.list()}
-				{@render Skeleton()}
-			{:then}
-				{#if !manager.assets || manager.assets.length === 0}
-					<p class="text-muted-foreground">No videos found</p>
-				{:else}
-					<ol class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-2">
-						{#each manager.assets as video (video.id)}
-							{@const actions_open = manager.open_actions === video.id}
-							<li
-								class="relative group size-full"
-								class:active={actions_open}
-								animate:flip={{ duration: 300 }}
-								in:fly={{ y: 20, duration: 300, delay: 100 }}
-								out:fade={{ duration: 200 }}
-							>
-								{#if video.id}
+
+			<section class="grid gap-4">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<h2 class="text-sm font-semibold">
+						Library
+						{#if manager.assets}<span class="text-muted-foreground ml-1 font-normal tabular-nums"
+								>{search
+									? `${shown.length} of ${manager.assets.length}`
+									: manager.assets.length}</span
+							>{/if}
+					</h2>
+					<label class="relative w-full max-w-72">
+						<span class="sr-only">Search videos</span>
+						<SearchIcon
+							class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+						/>
+						<Input type="search" placeholder="Search by title" bind:value={search} class="pl-9" />
+					</label>
+				</div>
+
+				{#await manager.list()}
+					{@render Skeleton()}
+				{:then}
+					{#if !manager.assets?.length}
+						<p
+							class="text-muted-foreground rounded-md border border-dashed p-8 text-center text-sm"
+						>
+							No videos yet. Upload one above to get started.
+						</p>
+					{:else if !shown.length}
+						<p
+							class="text-muted-foreground rounded-md border border-dashed p-8 text-center text-sm"
+						>
+							No videos match “{search}”.
+						</p>
+					{:else}
+						<ol class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+							{#each shown as video (video.id)}
+								{@const actions_open = manager.open_actions === video.id}
+								{@const is_selected = manager.content?.mux_video?.id === video.id}
+								<li
+									class={cn(
+										'group bg-card relative overflow-hidden rounded-lg border transition-[border-color,box-shadow] hover:shadow-md',
+										is_selected ? 'border-primary ring-primary ring-1' : 'hover:border-primary/60'
+									)}
+									animate:flip={{ duration: 300 }}
+									in:fly={{ y: 20, duration: 300, delay: 100 }}
+									out:fade={{ duration: 200 }}
+								>
 									<button
-										class="
-                                 absolute
-                                 top-6
-                                 right-6
-                                 bg-muted
-                                 text-muted-foreground
-                                 rounded
-                                 p-1
-                                 z-10
-
-                                 opacity-0
-                                 pointer-events-none
-                                 -translate-y-10
-                                 transition-[translate,opacity]
-
-                                 group-hover:opacity-100
-                                 group-hover:pointer-events-auto
-                                 group-hover:translate-y-0
-
-                                 group-focus-within:opacity-100
-                                 group-focus-within:pointer-events-auto
-                                 group-focus-within:translate-y-0
-                              "
-										onclick={() => manager.toggle_actions(video.id)}
-									>
-										<EllipsisIcon size={18} />
-									</button>
-									{#if actions_open}
-										<ol
-											class="absolute top-14 w-full bg-card text-card-foreground rounded shadow-md z-10 border"
-											transition:fly={{ y: 20, duration: 300, delay: 100 }}
-										>
-											<li>
-												<button
-													class="p-3 w-full text-start hover:bg-muted transition-colors"
-													onclick={() => {
-														manager.plugin?.actions?.setModalOpen(false)
-														manager.set_video(video)
-													}}
-												>
-													Select
-												</button>
-											</li>
-											<li>
-												<button
-													class="p-3 w-full text-start hover:bg-muted transition-colors"
-													onclick={() => manager.delete(video.id)}
-												>
-													Delete
-												</button>
-											</li>
-										</ol>
-									{/if}
-								{/if}
-								<div class="grid gap-1 rounded hover:bg-muted transition-colors p-3 w-full">
-									<button
+										class="grid w-full text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"
 										onclick={() => {
 											manager.set_video(video)
 											manager.plugin?.actions?.setModalOpen(false)
 										}}
 									>
-										{@render AssetPreview(video)}
+										{@render AssetPreview(video, true)}
+										<span class="grid gap-0.5 p-3">
+											<span class="truncate text-sm font-medium" title={title_of(video)}
+												>{title_of(video)}</span
+											>
+											{@render Meta(video)}
+										</span>
 									</button>
-									{@render AssetMeta(video)}
-								</div>
-							</li>
-						{/each}
-					</ol>
-				{/if}
-			{:catch}
-				An error occurred while loading videos.
-			{/await}
+									<div class="actions absolute right-1.5 bottom-2">
+										<button
+											class={cn(
+												'text-muted-foreground hover:bg-muted hover:text-foreground grid size-7 place-items-center rounded-md transition-opacity',
+												actions_open
+													? 'opacity-100'
+													: 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+											)}
+											aria-label="More actions"
+											aria-expanded={actions_open}
+											onclick={() => manager.toggle_actions(video.id)}
+										>
+											<EllipsisIcon class="size-4" />
+										</button>
+										{#if actions_open}
+											<ol
+												class="bg-popover text-popover-foreground absolute right-0 bottom-9 z-10 min-w-36 overflow-hidden rounded-md border p-1 shadow-md"
+												transition:fly={{ y: 6, duration: 150 }}
+											>
+												<li>
+													<button
+														class="hover:bg-muted w-full rounded px-3 py-2 text-start text-sm"
+														onclick={() => {
+															manager.set_video(video)
+															manager.plugin?.actions?.setModalOpen(false)
+														}}>Select</button
+													>
+												</li>
+												<li>
+													<button
+														class="text-destructive hover:bg-destructive/10 w-full rounded px-3 py-2 text-start text-sm"
+														onclick={() => {
+															manager.open_actions = null
+															manager.delete(video.id)
+														}}>Delete</button
+													>
+												</li>
+											</ol>
+										{/if}
+									</div>
+								</li>
+							{/each}
+						</ol>
+					{/if}
+				{:catch}
+					<p class="text-destructive rounded-md border p-4 text-sm">
+						Couldn’t load the videos. Check the field’s Mux settings, then reopen this.
+					</p>
+				{/await}
+			</section>
 		</div>
 	{:else if manager.content?.mux_video}
-		<div
-			class="p-4 grid grid-cols-[140px_1fr] w-full border rounded hover:border-primary transition-colors bg-card text-card-foreground items-center gap-x-5 group"
-		>
-			{@render AssetPreview(manager.content.mux_video)}
-			<div class="grid">{@render AssetMeta(manager.content.mux_video)}</div>
-			<ul class={actions_menu_classes}>
-				<li>
-					<button
-						onclick={() => manager.plugin?.actions?.setModalOpen(true)}
+		{@const video = manager.content.mux_video}
+		<div class="bg-card text-card-foreground grid w-full rounded-lg border">
+			<div class="grid grid-cols-[minmax(0,140px)_minmax(0,1fr)_auto] items-center gap-4 p-3">
+				{@render AssetPreview(video)}
+				<div class="grid min-w-0 gap-0.5">
+					<p class="truncate font-medium" title={manager.content.title || title_of(video)}>
+						{manager.content.title || title_of(video)}
+					</p>
+					<p class="text-muted-foreground truncate text-xs">
+						{#if video.status === 'ready'}
+							{video.duration ? manager.format_duration(video.duration) : ''}
+							{#if video.duration}·{/if}
+						{/if}
+						{#if video.status !== 'ready'}{@render Meta(video)}{:else}<time
+								datetime={video.created_at}>{manager.date(video.created_at)}</time
+							>{/if}
+					</p>
+				</div>
+				<div class="flex items-center gap-0.5">
+					<Button
+						variant="ghost"
+						size="icon"
 						title="Replace video"
 						aria-label="Replace video"
+						onclick={() => manager.plugin?.actions?.setModalOpen(true)}
 					>
-						<RefreshCwIcon size={18} />
-					</button>
-				</li>
-				<li>
-					<button
-						title="Settings"
-						aria-label="Settings"
+						<RefreshCwIcon class="size-4" />
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon"
+						title="Video settings"
+						aria-label="Video settings"
+						aria-pressed={manager.video_options_open}
+						class={manager.video_options_open ? 'bg-muted text-foreground' : ''}
 						onclick={() => (manager.video_options_open = !manager.video_options_open)}
 					>
-						<Settings2Icon size={18} />
-					</button>
-				</li>
-				<li>
-					<button
-						onclick={() => manager.set_video(null)}
+						<Settings2Icon class="size-4" />
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon"
 						title="Remove video"
 						aria-label="Remove video"
+						class="hover:text-destructive"
+						onclick={() => manager.set_video(null)}
 					>
-						<Trash2Icon size={18} />
-					</button>
-				</li>
-			</ul>
+						<Trash2Icon class="size-4" />
+					</Button>
+				</div>
+			</div>
+
 			{#if manager.video_options_open}
-				<div class="grid gap-5 mt-5 col-span-full" transition:slide={{ duration: 300 }}>
+				<div class="grid gap-6 border-t p-4" transition:slide={{ duration: 250 }}>
 					<div class="grid gap-2">
 						<Label for="title">Title</Label>
 						<Input
 							id="title"
-							placeholder="Video title…"
+							placeholder={title_of(video)}
 							value={manager.content.title}
 							oninput={(event) => {
 								if (!event.target || !(event.target instanceof HTMLInputElement)) return
@@ -397,43 +459,33 @@
 								manager.set_title(event.target.value, manager.content.mux_video.id)
 							}}
 						/>
+						<p class="text-muted-foreground text-xs">Also renames the video in Mux.</p>
 					</div>
-					<div class="flex items-center space-x-2">
-						<Switch
-							id="autoplay"
-							checked={manager.content.autoplay}
-							onCheckedChange={(autoplay: boolean) => manager.update({ autoplay })}
-						/>
-						<Label for="autoplay">Autoplay</Label>
-					</div>
-					<div class="flex items-center space-x-2">
-						<Switch
-							id="playsinline"
-							checked={manager.content.playsinline}
-							onCheckedChange={(playsinline: boolean) => manager.update({ playsinline })}
-						/>
-						<Label for="playsinline">Playsinline</Label>
-					</div>
-					<div class="flex items-center space-x-2">
-						<Switch
-							id="muted"
-							checked={manager.content.muted}
-							onCheckedChange={(muted: boolean) => manager.update({ muted })}
-						/>
-						<Label for="muted">Muted</Label>
-					</div>
-					<div class="flex items-center space-x-2">
-						<Switch
-							id="loop"
-							checked={manager.content.loop}
-							onCheckedChange={(loop: boolean) => manager.update({ loop })}
-						/>
-						<Label for="loop">Loop</Label>
-					</div>
+
+					<fieldset class="grid gap-4">
+						<legend class="mb-3 text-sm font-medium">Playback</legend>
+						<div class="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-4">
+							{@render Setting(
+								'autoplay',
+								'Autoplay',
+								'Starts when the page loads. Most browsers also need Muted.',
+								'autoplay'
+							)}
+							{@render Setting('muted', 'Muted', 'Starts with the sound off.', 'muted')}
+							{@render Setting('loop', 'Loop', 'Plays again from the start when it ends.', 'loop')}
+							{@render Setting(
+								'playsinline',
+								'Play inline',
+								'Plays within the page on iPhone instead of full screen.',
+								'playsinline'
+							)}
+						</div>
+					</fieldset>
+
 					<div class="grid gap-2">
 						<Label for="preload">Preload</Label>
 						<select
-							class="bg-background border rounded min-h-11.5 outline-none focus-visible:border-ring transition-colors w-full"
+							class="border-input bg-input-background focus-visible:border-ring min-h-11.5 w-full rounded-md border px-3 text-sm transition-colors outline-none"
 							bind:value={manager.content.preload}
 							onchange={(event) => {
 								if (!event.target || !(event.target instanceof HTMLSelectElement)) return
@@ -441,68 +493,61 @@
 							}}
 							id="preload"
 						>
-							<option disabled selected value={undefined}>Select preload…</option>
-							<option value="auto">Auto</option>
-							<option value="metadata">Metadata (default)</option>
-							<option value="none">None</option>
+							<option disabled selected value={undefined}>Default (metadata)</option>
+							<option value="auto">Auto: load the whole video</option>
+							<option value="metadata">Metadata: load just the length and first frame</option>
+							<option value="none">None: load nothing until played</option>
 						</select>
-						<p class="text-muted-foreground text-xs">
-							Note: The preload attribute is ignored if autoplay is present.
-						</p>
+						<p class="text-muted-foreground text-xs">Ignored when Autoplay is on.</p>
 					</div>
+
 					<div class="grid gap-2">
-						<Label for="poster">Poster</Label>
-						<figure class="relative rounded overflow-hidden border">
-							<ul class={actions_menu_classes}>
-								<li>
-									<button
-										onclick={() => manager.select_poster()}
-										title="Select poster"
-										aria-label="Select poster"
-									>
-										<RefreshCwIcon size={18} />
-									</button>
-								</li>
+						<div class="flex items-center justify-between gap-3">
+							<Label>Poster</Label>
+							<div class="flex gap-1">
+								<Button variant="secondary" size="sm" onclick={() => manager.select_poster()}>
+									{manager.is_mux_poster ? 'Choose image' : 'Replace image'}
+								</Button>
 								{#if !manager.is_mux_poster}
-									<li>
-										<button
-											onclick={() => manager.delete_poster()}
-											title="Delete poster"
-											aria-label="Delete poster"
-										>
-											<Trash2Icon size={18} />
-										</button>
-									</li>
+									<Button variant="ghost" size="sm" onclick={() => manager.delete_poster()}>
+										Use video frame
+									</Button>
 								{/if}
-							</ul>
+							</div>
+						</div>
+						<figure class="bg-muted relative overflow-hidden rounded-md border">
 							<img
-								class="shrink-0 aspect-video object-contain"
+								class="aspect-video w-full object-cover"
 								src={manager.poster}
 								width={558}
 								height={314}
-								alt={manager.content.mux_video.meta?.title}
+								alt=""
 							/>
-							{#if manager.is_mux_poster}
-								<figcaption
-									class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4 h-20 flex items-end text-muted-foreground text-xs"
-								>
-									Auto-generated poster from video source
-								</figcaption>
-							{/if}
 						</figure>
+						<p class="text-muted-foreground text-xs">
+							{manager.is_mux_poster
+								? 'Shown before the video plays. This one is a frame from the video.'
+								: 'Shown before the video plays.'}
+						</p>
 					</div>
 				</div>
 			{/if}
 		</div>
 	{:else}
 		<button
-			class="p-4 grid grid-cols-[140px_1fr] w-full border border-input rounded hover:border-primary transition-colors bg-input-background text-card-foreground items-center justify-items-start gap-5 font-medium"
+			class="border-input bg-input-background hover:border-primary hover:bg-muted/40 grid w-full grid-cols-[minmax(0,140px)_minmax(0,1fr)] items-center gap-4 rounded-lg border border-dashed p-3 text-start transition-colors"
 			onclick={() => manager.plugin?.actions?.setModalOpen(true)}
-			title="Add video"
-			aria-label="Add video"
 		>
-			{@render AssetPreview()}
-			+ Add Video
+			<span
+				class="bg-muted text-muted-foreground flex aspect-video items-center justify-center rounded-md"
+				><PlusIcon class="size-5" /></span
+			>
+			<span class="grid gap-0.5">
+				<span class="font-medium">Add a video</span>
+				<span class="text-muted-foreground text-xs"
+					>Upload one, import it from YouTube or choose from Mux</span
+				>
+			</span>
 		</button>
 	{/if}
 {/if}

@@ -148,10 +148,13 @@ export class MuxManager {
 
 	list = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
-		const [{ data: assets }] = await Promise.all([
-			this.mux.video.assets.list({ limit: 0 }),
-			this.#load_connection(),
-		])
+		// every page, not just Mux's first 100 videos
+		const list_all = async () => {
+			const assets = []
+			for await (const asset of this.mux.video.assets.list({ limit: 100 })) assets.push(asset)
+			return assets
+		}
+		const [assets] = await Promise.all([list_all(), this.#load_connection()])
 
 		// finish deferred deletes (see `delete`) now Mux allows them; failures just retry next list.
 		// Sign-in connections can never delete, so their flagged videos stay listed rather than vanish.
