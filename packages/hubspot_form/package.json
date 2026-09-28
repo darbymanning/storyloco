@@ -10,7 +10,7 @@
 		"ky": "1.10.0",
 		"oxfmt": "0.55.0",
 		"shared": "../shared",
-		"svelte": "5.38.10",
+		"svelte": "5.57.1",
 		"svelte-check": "4.3.1",
 		"typescript": "6.0.3",
 		"vite": "7.2.2",

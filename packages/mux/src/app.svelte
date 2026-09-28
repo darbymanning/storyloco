@@ -80,7 +80,7 @@
 	</ol>
 {/snippet}
 
-{#snippet AssetPreview(video: MuxAsset | undefined = undefined)}
+{#snippet AssetPreview(video?: MuxAsset)}
 	{@const playback_id = video?.playback_ids?.[0]?.id}
 	{@const is_selected = manager.content?.mux_video?.id === video?.id}
 
