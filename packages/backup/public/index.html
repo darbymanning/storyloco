@@ -25,6 +25,8 @@
 				--sb-on-tip: #fff;
 				--sb-shimmer: #eceef3;
 				--sb-segment: #fff;
+				/* The select arrow, in --sb-muted. */
+				--sb-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5' fill='none' stroke='%235f6781' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 				--sb-good: #1c7c47;
 				--sb-good-wash: #e5f4ea;
 				--sb-warn: #8a5a00;
@@ -49,6 +51,7 @@
 					--sb-tip: #45454d;
 					--sb-shimmer: #3d3d44;
 					--sb-segment: #4a4950;
+					--sb-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.5 8 10l3.5-3.5' fill='none' stroke='%238f93a2' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 					--sb-good: #5fd08f;
 					--sb-good-wash: rgb(95 208 143 / 0.14);
 					--sb-warn: #f0b650;
@@ -211,11 +214,22 @@
 					font-size: 13px;
 					padding: 5px 10px;
 				}
+				&.quiet {
+					background: transparent;
+					border-color: transparent;
+					box-shadow: none;
+					color: var(--sb-muted);
+					padding-inline: 7px;
+					&:hover {
+						background: var(--sb-raised);
+						color: var(--sb-ink);
+					}
+				}
 			}
 
 			input,
 			select {
-				background: var(--sb-surface);
+				background-color: var(--sb-surface);
 				border: 1px solid var(--sb-line);
 				border-radius: 8px;
 				color: var(--sb-ink);
@@ -236,6 +250,17 @@
 					box-shadow: 0 0 0 3px var(--sb-accent-wash);
 					outline: none;
 				}
+			}
+			/* Our own arrow: the native one sits differently in every browser. */
+			select {
+				appearance: none;
+				background-image: var(--sb-chevron);
+				background-position: right 10px center;
+				background-repeat: no-repeat;
+				background-size: 16px;
+				cursor: pointer;
+				min-inline-size: 7.5rem;
+				padding-inline-end: 34px;
 			}
 
 			.segments {
@@ -320,7 +345,7 @@
 			}
 
 			.problem {
-				align-items: center;
+				align-items: flex-start;
 				background: var(--sb-danger-wash);
 				border-radius: 6px;
 				color: var(--sb-danger);
@@ -329,6 +354,12 @@
 				gap: 12px;
 				justify-content: space-between;
 				padding: 10px 12px;
+				& > svg {
+					margin-block-start: 2px;
+				}
+				& > span {
+					flex: 1;
+				}
 			}
 
 			.schedule {
@@ -400,8 +431,15 @@
 					text-align: end;
 					white-space: nowrap;
 				}
+				& tbody tr:not(.running, .picker-row):hover td,
 				& tr.open td {
 					background: var(--sb-raised);
+				}
+				& .actions {
+					inline-size: 1%;
+					& .button + .button {
+						margin-inline-start: 4px;
+					}
 				}
 				@media (width < 640px) {
 					& .wide {
@@ -565,6 +603,10 @@
 					animation: none !important;
 					transition: none !important;
 				}
+				/* A still shimmer would stop half drawn. */
+				.skeleton > div {
+					background: var(--sb-raised);
+				}
 			}
 		</style>
 	</head>
@@ -604,7 +646,9 @@
 					stroke-linejoin="round"
 					aria-hidden="true"
 				>
-					<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
+					<path
+						d="M4.5 12.5H4a3 3 0 0 1-.4-6A4.5 4.5 0 0 1 12.3 5a3.25 3.25 0 0 1-.3 7.5h-.5M8 14V8m-2.25 2.25L8 8l2.25 2.25"
+					/>
 				</svg>
 				<span>Back up now</span>
 			</button>
@@ -664,7 +708,7 @@
 
 			<section class="card flush" aria-labelledby="list-title">
 				<div class="card-head">
-					<h2 id="list-title">Backups</h2>
+					<h2 id="list-title">History</h2>
 					<p class="muted" id="count"></p>
 				</div>
 				<table class="table" id="table">
@@ -710,7 +754,21 @@
 				<td class="number wide" data-stories></td>
 				<td class="number wide" data-size></td>
 				<td class="actions">
-					<button class="button small" data-download>Download</button>
+					<button class="button small quiet" data-download aria-label="Download" title="Download">
+						<svg
+							viewBox="0 0 16 16"
+							width="16"
+							height="16"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+						>
+							<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
+						</svg>
+					</button>
 					<button class="button small" data-restore aria-expanded="false">Restore…</button>
 				</td>
 			</tr>
@@ -741,6 +799,8 @@
 				svg.innerHTML = paths
 				return svg
 			}
+			const WARNING =
+				'<path d="M8 2.5 14 13H2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M8 6.5v3M8 11.25v.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />'
 			const TICK = '<path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="1.75" />'
 			const SPINNER =
 				'<path d="M8 2a6 6 0 1 0 6 6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />'
@@ -787,7 +847,24 @@
 			const pad = n => String(n).padStart(2, '0')
 			const hour_label = h => `${pad(h)}:00`
 			const ordinal = n => n + ({ 1: 'st', 2: 'nd', 3: 'rd', 21: 'st', 22: 'nd', 23: 'rd' }[n] ?? 'th')
-			const date = iso => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+			const time = d => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+			const same_day = (a, b) => a.toDateString() === b.toDateString()
+			// A past moment: Mon 28 Sept, 20:40, with the year only when it isn't this one.
+			function date(iso) {
+				const d = new Date(iso)
+				const year = d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
+				return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year })}, ${time(d)}`
+			}
+			// A coming one: today, tomorrow or a weekday while it's within the week.
+			function soon(iso) {
+				const d = new Date(iso)
+				const now = new Date()
+				const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+				if (same_day(d, now)) return `today at ${time(d)}`
+				if (same_day(d, tomorrow)) return `tomorrow at ${time(d)}`
+				if (d - now < 6 * 864e5) return `${d.toLocaleDateString('en-GB', { weekday: 'long' })} at ${time(d)}`
+				return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at ${time(d)}`
+			}
 			const count = n => n.toLocaleString('en-GB')
 			const size = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
 			const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
@@ -828,12 +905,18 @@
 				$('state').dataset.status = running ? 'running' : paused ? 'paused' : 'on'
 				$('state').textContent = running ? 'Backing up' : paused ? 'Paused' : 'On'
 				$('next').textContent = next_at
-					? `Next backup ${date(next_at)}`
+					? `Next backup ${soon(next_at)}`
 					: 'Nothing runs on a schedule. Back up now still works, and existing backups are kept.'
 
 				$('last-error').hidden = !last_error
 				if (last_error)
-					$('last-error').textContent = `The last backup failed ${ago(last_error.at)}: ${last_error.message}`
+					$('last-error').replaceChildren(
+						icon(WARNING),
+						make('span', {}, [
+							make('strong', { textContent: `The last backup failed ${ago(last_error.at)}.` }),
+							` Try Back up now; if it fails again, send UI Loco this: ${last_error.message}`
+						])
+					)
 
 				$('now').hidden = false
 				$('now').disabled = running
@@ -843,7 +926,7 @@
 				$('table').hidden = !backups.length && !running
 				$('empty').hidden = backups.length || running
 				$('empty-text').textContent = next_at
-					? `The first one runs ${date(next_at)}, or back up now.`
+					? `The first one runs ${soon(next_at)}, or back up now.`
 					: 'Scheduled backups are paused. Back up now to take one.'
 
 				// Re-rendering keeps an open story picker open.
