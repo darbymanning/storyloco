@@ -1,6 +1,6 @@
 /* Shared look for UI Loco's Storyblok space plugins (Shop, Mux Library), close to Storyblok's own
    editor UI. Wrap the plugin in `.plugin` and use its classes: card, button, segments, search,
-   status, table, empty, problem, skeleton. Import with `import 'storyloco/shared/plugin.css'`. */
+   status (with data-tone good, warn, danger or neutral), table, empty, problem, skeleton. Import with `import 'storyloco/shared/plugin.css'`. */
 .plugin {
 	--sb-ink: #1b243f;
 	--sb-muted: #5f6781;
@@ -310,7 +310,8 @@
 		padding: 0 8px;
 	}
 
-	/* A dot and the word, so state never rides on colour alone. */
+	/* A dot and the word, so state never rides on colour alone. Each plugin maps its own statuses
+	   to a tone: <span class="status" data-tone="good">Paid</span>. */
 	& .status {
 		align-items: center;
 		border-radius: 999px;
@@ -329,39 +330,24 @@
 			inline-size: 6px;
 		}
 
-		&[data-status='paid'] {
+		&[data-tone='good'] {
 			background: var(--sb-good-wash);
 			color: var(--sb-good);
 		}
 
-		&[data-status='pending'] {
+		&[data-tone='warn'] {
 			background: var(--sb-warn-wash);
 			color: var(--sb-warn);
 		}
 
-		&[data-status='failed'] {
+		&[data-tone='danger'] {
 			background: var(--sb-danger-wash);
 			color: var(--sb-danger);
 		}
 
-		&[data-status='refunded'] {
+		&[data-tone='neutral'] {
 			background: var(--sb-raised);
 			color: var(--sb-muted);
-		}
-
-		&[data-status='ready'] {
-			background: var(--sb-good-wash);
-			color: var(--sb-good);
-		}
-
-		&:is([data-status='preparing'], [data-status='unused']) {
-			background: var(--sb-warn-wash);
-			color: var(--sb-warn);
-		}
-
-		&[data-status='errored'] {
-			background: var(--sb-danger-wash);
-			color: var(--sb-danger);
 		}
 	}
 
