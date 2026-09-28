@@ -7,7 +7,8 @@ function thrown(fn: () => void) {
 	try {
 		fn()
 	} catch (err) {
-		if (isHttpError(err)) return { status: err.status, body: err.body }
+		// Widened: the tests check bodies richer than storyloco's own `App.Error`
+		if (isHttpError(err)) return { status: err.status, body: err.body as unknown }
 		throw err
 	}
 	throw new Error("did not throw")
@@ -55,6 +56,6 @@ describe("handle_error", () => {
 			status: 404,
 			body: { message: "Gone", code: 404 },
 		})
-		expect(client.error(404)).toEqual({ message: "Gone", code: 404 })
+		expect(client.error(404) as unknown).toEqual({ message: "Gone", code: 404 })
 	})
 })

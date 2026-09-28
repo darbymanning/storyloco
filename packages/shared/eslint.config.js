@@ -20,7 +20,11 @@ export default ts.config(
 		languageOptions: {
 			globals: { ...globals.browser, ...globals.node },
 		},
-		rules: { 'no-undef': 'off' },
+		rules: {
+			'no-undef': 'off',
+			// Field plugins run in Storyblok's iframe with no routes, so there's nothing to resolve() against
+			'svelte/no-navigation-without-resolve': 'off',
+		},
 	},
 	{
 		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],

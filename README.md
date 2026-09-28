@@ -84,8 +84,11 @@ import type { DateEntry, Dates } from 'storyloco/dates'
 
 const show = ({ timezone }: Dates, entry: DateEntry) =>
 	entry.utc_start
-		? new Intl.DateTimeFormat('en-GB', { timeZone: timezone, dateStyle: 'medium', timeStyle: 'short' })
-				.formatRange(new Date(entry.utc_start), new Date(entry.utc_end ?? entry.utc_start))
+		? new Intl.DateTimeFormat('en-GB', {
+				timeZone: timezone,
+				dateStyle: 'medium',
+				timeStyle: 'short'
+			}).formatRange(new Date(entry.utc_start), new Date(entry.utc_end ?? entry.utc_start))
 		: [entry.start_date, entry.end_date].filter(Boolean).join(' – ')
 ```
 
@@ -120,7 +123,7 @@ the body of every 404 and 500 storyloco raises — it's typed against your own `
 ```typescript
 export const client = new StoryblokClient({
 	token: PUBLIC_STORYBLOK_ACCESS_TOKEN,
-	error: (status) => ({
+	error: status => ({
 		message: status === 404 ? 'Story not found' : 'Storyblok request failed',
 		code: status === 404 ? 'NOT_FOUND' : 'STORYBLOK'
 	})

@@ -115,7 +115,6 @@
 		"@types/node": "26.1.1",
 		"@typescript-eslint/eslint-plugin": "8.65.0",
 		"@typescript-eslint/parser": "8.65.0",
-		"eslint": "10.7.0",
 		"kitto": "1.6.0",
 		"oxfmt": "0.59.0",
 		"typescript": "6.0.3",
@@ -131,7 +130,7 @@
 	"scripts": {
 		"add-plugin": "npx @storyblok/field-plugin-cli@latest add --dir \"./packages\" --structure monorepo",
 		"build": "cd packages/vite && npm run build && cd ../../packages/shared && npm run build",
-		"lint": "oxfmt --check && eslint --ext .js .",
+		"lint": "oxfmt --check && bun run --filter './packages/*' lint",
 		"format": "oxfmt"
 	},
 	"type": "module",
