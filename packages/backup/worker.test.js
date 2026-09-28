@@ -1,6 +1,7 @@
 // Backup, list and restore through the real handlers, against a stubbed Storyblok and an in-memory R2.
 import { expect, test } from 'bun:test'
 import worker from './worker.js'
+import { due, next_at } from './schedule.js'
 
 const secret = 'test-secret'
 const stories = {
@@ -51,7 +52,11 @@ const env = {
 	QUEUE: { send: async () => {} },
 	BACKUPS: {
 		put: async (key, body, opts) => r2.set(key, { body, ...opts }),
-		get: async key => r2.has(key) && { body: new Response(r2.get(key).body).body },
+		get: async key =>
+			r2.has(key) && {
+				body: new Response(r2.get(key).body).body,
+				json: () => new Response(r2.get(key).body).json()
+			},
 		list: async ({ prefix }) => ({
 			objects: [...r2]
 				.filter(([k]) => k.startsWith(prefix))
@@ -81,18 +86,20 @@ const call = async (path, token, method = 'GET') =>
 	worker.fetch(new Request(`https://x${path}`, { method, headers: { authorization: `Bearer ${token}` } }), env)
 
 test('backup, list, restore', async () => {
-	await worker.queue({ messages: [{ body: { space_id: 42 } }] }, env)
+	await worker.queue({ messages: [{ body: { space_id: 42, trigger: 'manual' } }] }, env)
 	const token = await jwt({ space_id: 42, user_id: 1, exp: Date.now() / 1000 + 60 })
 
 	expect((await call('/api/backups', 'nope')).status).toBe(401)
 	expect((await call('/api/backups', await jwt({ space_id: 42, exp: 1 }))).status).toBe(401)
 	// Another space's token can't see this space's backups.
 	expect(
-		await (await call('/api/backups', await jwt({ space_id: 43, exp: Date.now() / 1000 + 60 }))).json()
+		(await (await call('/api/backups', await jwt({ space_id: 43, exp: Date.now() / 1000 + 60 }))).json()).backups
 	).toEqual([])
 
-	const [backup] = await (await call('/api/backups', token)).json()
-	expect(backup.stories).toBe(3)
+	const listing = await (await call('/api/backups', token)).json()
+	const [backup] = listing.backups
+	expect(backup).toMatchObject({ stories: 3, trigger: 'manual' })
+	expect(listing).toMatchObject({ schedule: { frequency: 'daily', hour: 3 }, running: false, last_error: null })
 	expect((await call(`/api/backups/..%2F43%2Fx.json.gz/stories`, token)).status).toBe(400)
 	expect(await (await call(`/api/backups/${backup.name}/stories`, token)).json()).toEqual([
 		{ id: 1, name: 'Home', full_slug: 'home' },
@@ -125,4 +132,49 @@ test('backup, list, restore', async () => {
 		path: '/stories',
 		body: { story: { slug: 'post', parent_id: 0, content: { body: 'Hi' } } }
 	})
+})
+
+test('schedules', () => {
+	const london = { frequency: 'daily', hour: 3, weekday: 1, day: 1, timezone: 'Europe/London' }
+	// 03:00 in London is 02:00 UTC in summer.
+	expect(due(london, new Date('2026-09-28T02:00:00Z'))).toBe(true)
+	expect(due(london, new Date('2026-09-28T03:00:00Z'))).toBe(false)
+	expect(due({ ...london, frequency: 'weekly', weekday: 1 }, new Date('2026-09-28T02:00:00Z'))).toBe(true) // a Monday
+	expect(due({ ...london, frequency: 'weekly', weekday: 2 }, new Date('2026-09-28T02:00:00Z'))).toBe(false)
+	expect(due({ ...london, frequency: 'monthly', day: 28 }, new Date('2026-09-28T02:00:00Z'))).toBe(true)
+	expect(due({ ...london, frequency: 'off' }, new Date('2026-09-28T02:00:00Z'))).toBe(false)
+	expect(next_at(london, new Date('2026-09-28T21:14:00Z'))).toBe('2026-09-29T02:00:00.000Z')
+	// In winter London is on UTC.
+	expect(next_at({ ...london, frequency: 'monthly', day: 1 }, new Date('2026-12-15T12:00:00Z'))).toBe(
+		'2027-01-01T03:00:00.000Z'
+	)
+})
+
+test('schedule endpoint and failures', async () => {
+	const token = await jwt({ space_id: 42, user_id: 1, exp: Date.now() / 1000 + 60 })
+	const put = body =>
+		worker.fetch(
+			new Request('https://x/api/schedule', {
+				method: 'PUT',
+				headers: { authorization: `Bearer ${token}` },
+				body: JSON.stringify(body)
+			}),
+			env
+		)
+	expect((await put({ frequency: 'hourly' })).status).toBe(400)
+	expect((await put({ frequency: 'weekly', hour: 22, weekday: 5, day: 1, timezone: 'Not/AZone' })).status).toBe(
+		400
+	)
+	const saved = await (
+		await put({ frequency: 'weekly', hour: 22, weekday: 5, day: 1, timezone: 'Europe/London' })
+	).json()
+	expect(saved.schedule.frequency).toBe('weekly')
+	expect((await (await call('/api/backups', token)).json()).schedule.weekday).toBe(5)
+
+	// A failed backup is recorded for the plugin, and rethrown so the queue retries it.
+	const real = globalThis.fetch
+	globalThis.fetch = async () => new Response('down', { status: 500 })
+	await expect(worker.queue({ messages: [{ body: { space_id: 42 } }] }, env)).rejects.toThrow('Storyblok 500')
+	globalThis.fetch = real
+	expect((await (await call('/api/backups', token)).json()).last_error.message).toContain('Storyblok 500')
 })

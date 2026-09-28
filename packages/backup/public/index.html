@@ -5,7 +5,8 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Backups</title>
 		<style>
-			/* Tokens match the Trace Heating shop plugin, which follows Storyblok's own UI and the system colour scheme. */
+			/* Tokens and components follow the Trace Heating Shop plugin, which matches Storyblok's own UI and switches
+			   with the system colour scheme. */
 			:root {
 				--sb-ink: #1b243f;
 				--sb-muted: #5f6781;
@@ -14,9 +15,23 @@
 				--sb-surface: #fff;
 				--sb-raised: #f6f7f9;
 				--sb-line-strong: #c9ceda;
+				--sb-accent: #00b3b0;
+				--sb-accent-ink: #05807f;
+				--sb-accent-wash: #e5f7f6;
 				--sb-primary: #05807f;
 				--sb-primary-hover: #046867;
 				--sb-on-primary: #fff;
+				--sb-tip: #1b243f;
+				--sb-on-tip: #fff;
+				--sb-shimmer: #eceef3;
+				--sb-segment: #fff;
+				--sb-good: #1c7c47;
+				--sb-good-wash: #e5f4ea;
+				--sb-warn: #8a5a00;
+				--sb-warn-wash: #fdf1d8;
+				--sb-danger: #b42323;
+				--sb-danger-wash: #fce9e9;
+				--sb-shadow: 0 1px 2px rgb(27 36 63 / 0.04), 0 1px 3px rgb(27 36 63 / 0.06);
 				color-scheme: light;
 			}
 			@media (prefers-color-scheme: dark) {
@@ -28,132 +43,677 @@
 					--sb-bg: #242328;
 					--sb-surface: #242328;
 					--sb-raised: #333237;
-					--sb-primary: #05807f;
+					--sb-accent-ink: #3bc4b9;
+					--sb-accent-wash: rgb(59 196 185 / 0.14);
 					--sb-primary-hover: #06918f;
-					--sb-on-primary: #fff;
+					--sb-tip: #45454d;
+					--sb-shimmer: #3d3d44;
+					--sb-segment: #4a4950;
+					--sb-good: #5fd08f;
+					--sb-good-wash: rgb(95 208 143 / 0.14);
+					--sb-warn: #f0b650;
+					--sb-warn-wash: rgb(240 182 80 / 0.14);
+					--sb-danger: #ff6467;
+					--sb-danger-wash: rgb(255 100 103 / 0.14);
+					--sb-shadow: none;
 					color-scheme: dark;
 				}
 			}
+			* {
+				box-sizing: border-box;
+			}
 			body {
+				background: var(--sb-bg);
+				color: var(--sb-ink);
 				font:
 					14px/1.45 system-ui,
 					-apple-system,
 					'Segoe UI',
 					Roboto,
 					sans-serif;
+				-webkit-font-smoothing: antialiased;
 				margin: 0;
-				padding: 24px;
-				color: var(--sb-ink);
-				background: var(--sb-bg);
 				min-block-size: 100dvh;
-				box-sizing: border-box;
+				padding: 28px 32px 48px;
+				@media (width < 640px) {
+					padding: 20px 16px 40px;
+				}
 			}
-			header {
-				display: flex;
-				align-items: center;
-				justify-content: space-between;
-				gap: 1rem;
-				margin-bottom: 1rem;
-			}
-			h1 {
-				font-size: 1.25rem;
+			:is(p, h1, h2) {
 				margin: 0;
+			}
+			[hidden] {
+				display: none !important;
+			}
+			svg {
+				flex: none;
 			}
 			button {
-				font: inherit;
+				background: none;
+				border: 0;
 				color: inherit;
-				border: 1px solid var(--sb-line-strong);
-				background: var(--sb-surface);
-				border-radius: 6px;
-				padding: 0.35rem 0.75rem;
-				cursor: pointer;
-			}
-			button:hover:not(:disabled) {
-				background: var(--sb-raised);
-			}
-			button.primary {
-				background: var(--sb-primary);
-				border-color: var(--sb-primary);
-				color: var(--sb-on-primary);
-			}
-			button.primary:hover:not(:disabled) {
-				background: var(--sb-primary-hover);
-			}
-			button:disabled {
-				opacity: 0.5;
-				cursor: default;
-			}
-			input {
 				font: inherit;
-				color: inherit;
-				background: var(--sb-raised);
-				border: 1px solid var(--sb-line-strong);
-				border-radius: 6px;
-				padding: 0.35rem 0.6rem;
-				width: 100%;
-				box-sizing: border-box;
-			}
-			ul {
-				list-style: none;
-				margin: 0;
 				padding: 0;
-			}
-			li.backup {
-				background: var(--sb-surface);
-				border: 1px solid var(--sb-line);
-				border-radius: 8px;
-				padding: 0.75rem 1rem;
-				margin-bottom: 0.5rem;
-			}
-			.row {
-				display: flex;
-				align-items: center;
-				justify-content: space-between;
-				gap: 0.5rem;
-				flex-wrap: wrap;
 			}
 			.muted {
 				color: var(--sb-muted);
 			}
-			.stories {
-				margin-top: 0.75rem;
+			.stack {
+				display: grid;
+				gap: 16px;
 			}
-			.stories ul {
-				max-height: 50vh;
-				overflow: auto;
-				margin-top: 0.5rem;
+
+			.top {
+				align-items: center;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 12px;
+				justify-content: space-between;
+				margin-block-end: 20px;
+				& h1 {
+					font-size: 22px;
+					font-weight: 600;
+					letter-spacing: -0.01em;
+				}
 			}
-			.stories li {
-				padding: 0.35rem 0;
-				border-top: 1px solid var(--sb-line);
+			.title {
+				align-items: center;
+				display: flex;
+				gap: 14px;
 			}
-			#status:empty {
-				display: none;
+			.mark {
+				background: linear-gradient(135deg, var(--sb-accent), var(--sb-primary));
+				block-size: 44px;
+				border-radius: 12px;
+				box-shadow:
+					0 1px 2px rgb(0 0 0 / 0.1),
+					inset 0 1px 0 rgb(255 255 255 / 0.2);
+				color: #fff;
+				display: grid;
+				flex: none;
+				inline-size: 44px;
+				place-items: center;
 			}
-			#status {
-				padding: 0.5rem 0.75rem;
-				border: 1px solid var(--sb-line);
-				border-radius: 6px;
+
+			.card {
 				background: var(--sb-surface);
-				margin-bottom: 1rem;
+				border: 1px solid var(--sb-line);
+				border-radius: 10px;
+				box-shadow: var(--sb-shadow);
+				padding: 20px;
+				&.flush {
+					overflow: hidden;
+					padding: 0;
+				}
+			}
+			.card-head {
+				align-items: center;
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px 12px;
+				justify-content: space-between;
+				& h2 {
+					font-size: 15px;
+					font-weight: 600;
+				}
+				.flush > & {
+					border-block-end: 1px solid var(--sb-line);
+					padding: 16px 20px;
+				}
+			}
+
+			.button {
+				align-items: center;
+				background: var(--sb-surface);
+				border: 1px solid var(--sb-line);
+				border-radius: 8px;
+				box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+				color: var(--sb-ink);
+				cursor: pointer;
+				display: inline-flex;
+				font-size: 14px;
+				font-weight: 500;
+				gap: 6px;
+				padding: 8px 14px;
+				transition:
+					background 0.15s,
+					border-color 0.15s;
+				white-space: nowrap;
+				&:hover {
+					background: var(--sb-raised);
+					border-color: var(--sb-line-strong);
+				}
+				&:active {
+					transform: translateY(1px);
+				}
+				&:focus-visible {
+					outline: 2px solid var(--sb-accent);
+					outline-offset: 2px;
+				}
+				&:disabled {
+					cursor: wait;
+					opacity: 0.6;
+				}
+				&.primary {
+					background: var(--sb-primary);
+					border-color: var(--sb-primary);
+					color: var(--sb-on-primary);
+					&:hover {
+						background: var(--sb-primary-hover);
+					}
+				}
+				&.danger {
+					background: var(--sb-danger);
+					border-color: var(--sb-danger);
+					color: var(--sb-surface);
+				}
+				&.small {
+					font-size: 13px;
+					padding: 5px 10px;
+				}
+			}
+
+			input,
+			select {
+				background: var(--sb-surface);
+				border: 1px solid var(--sb-line);
+				border-radius: 8px;
+				color: var(--sb-ink);
+				font: inherit;
+				padding: 8px 12px;
+				transition:
+					border-color 0.15s,
+					box-shadow 0.15s;
+				&::placeholder {
+					color: var(--sb-muted);
+					opacity: 0.8;
+				}
+				&:hover {
+					border-color: var(--sb-line-strong);
+				}
+				&:focus {
+					border-color: var(--sb-accent);
+					box-shadow: 0 0 0 3px var(--sb-accent-wash);
+					outline: none;
+				}
+			}
+
+			.segments {
+				background: var(--sb-raised);
+				border: 1px solid var(--sb-line);
+				border-radius: 8px;
+				display: inline-flex;
+				gap: 2px;
+				justify-self: start;
+				padding: 3px;
+				& button {
+					border-radius: 5px;
+					color: var(--sb-muted);
+					cursor: pointer;
+					font-size: 13px;
+					font-weight: 500;
+					padding: 5px 12px;
+					transition:
+						background 0.15s,
+						color 0.15s;
+					&:hover {
+						color: var(--sb-ink);
+					}
+					&[aria-checked='true'] {
+						background: var(--sb-segment);
+						box-shadow:
+							0 1px 2px rgb(0 0 0 / 0.08),
+							0 0 0 1px var(--sb-line);
+						color: var(--sb-ink);
+					}
+					&:focus-visible {
+						outline: 2px solid var(--sb-accent);
+						outline-offset: 1px;
+					}
+				}
+			}
+
+			/* A dot and the word, so state never rides on colour alone. */
+			.status {
+				align-items: center;
+				border-radius: 999px;
+				display: inline-flex;
+				font-size: 12px;
+				font-weight: 500;
+				gap: 6px;
+				padding: 2px 9px 2px 7px;
+				&::before {
+					background: currentColor;
+					block-size: 6px;
+					border-radius: 50%;
+					content: '';
+					inline-size: 6px;
+				}
+				&[data-status='on'] {
+					background: var(--sb-good-wash);
+					color: var(--sb-good);
+				}
+				&[data-status='paused'] {
+					background: var(--sb-warn-wash);
+					color: var(--sb-warn);
+				}
+				&[data-status='running'] {
+					background: var(--sb-accent-wash);
+					color: var(--sb-accent-ink);
+					&::before {
+						animation: pulse 1.2s ease-in-out infinite;
+					}
+				}
+			}
+			.pill {
+				background: var(--sb-raised);
+				border-radius: 999px;
+				color: var(--sb-muted);
+				display: inline-block;
+				font-size: 12px;
+				font-weight: 500;
+				padding: 1px 9px;
+				&[data-trigger='manual'] {
+					background: var(--sb-accent-wash);
+					color: var(--sb-accent-ink);
+				}
+			}
+
+			.problem {
+				align-items: center;
+				background: var(--sb-danger-wash);
+				border-radius: 6px;
+				color: var(--sb-danger);
+				display: flex;
+				flex-wrap: wrap;
+				gap: 12px;
+				justify-content: space-between;
+				padding: 10px 12px;
+			}
+
+			.schedule {
+				display: grid;
+				gap: 16px;
+				& .summary {
+					align-items: center;
+					display: flex;
+					flex-wrap: wrap;
+					font-size: 15px;
+					font-weight: 600;
+					gap: 8px;
+				}
+			}
+			.form {
+				border-block-start: 1px solid var(--sb-line);
+				display: grid;
+				gap: 16px;
+				padding-block-start: 16px;
+				& .fields {
+					display: flex;
+					flex-wrap: wrap;
+					gap: 12px;
+				}
+				& label {
+					display: grid;
+					font-size: 13px;
+					font-weight: 500;
+					gap: 6px;
+				}
+				& .actions {
+					display: flex;
+					gap: 8px;
+					justify-content: flex-end;
+				}
+			}
+
+			.table {
+				border-collapse: collapse;
+				inline-size: 100%;
+				& th,
+				& td {
+					border-block-end: 1px solid var(--sb-line);
+					padding: 12px;
+					text-align: start;
+					vertical-align: middle;
+				}
+				& :is(th, td):first-child {
+					padding-inline-start: 20px;
+				}
+				& :is(th, td):last-child {
+					padding-inline-end: 16px;
+				}
+				& th {
+					color: var(--sb-muted);
+					font-size: 12px;
+					font-weight: 500;
+					white-space: nowrap;
+				}
+				& tbody tr:last-child td {
+					border-block-end: 0;
+				}
+				& .number {
+					font-variant-numeric: tabular-nums;
+					text-align: end;
+					white-space: nowrap;
+				}
+				& .actions {
+					text-align: end;
+					white-space: nowrap;
+				}
+				& tr.open td {
+					background: var(--sb-raised);
+				}
+				@media (width < 640px) {
+					& .wide {
+						display: none;
+					}
+				}
+			}
+			.when small {
+				color: var(--sb-muted);
+				display: block;
+				font-size: 12px;
+			}
+			.running td {
+				color: var(--sb-muted);
+				& svg {
+					color: var(--sb-accent);
+					margin-inline-end: 6px;
+					vertical-align: -2px;
+				}
+			}
+
+			.picker {
+				display: grid;
+				gap: 10px;
+				padding-block: 4px 8px;
+				& ul {
+					background: var(--sb-surface);
+					border: 1px solid var(--sb-line);
+					border-radius: 8px;
+					list-style: none;
+					margin: 0;
+					max-block-size: 50vh;
+					overflow: auto;
+					padding: 0;
+				}
+				& li {
+					align-items: center;
+					border-block-end: 1px solid var(--sb-line);
+					display: flex;
+					flex-wrap: wrap;
+					gap: 8px 12px;
+					justify-content: space-between;
+					padding: 8px 12px;
+					&:last-child {
+						border-block-end: 0;
+					}
+				}
+				& .slug {
+					color: var(--sb-muted);
+					font-size: 12px;
+					word-break: break-all;
+				}
+				& .confirm {
+					align-items: center;
+					display: flex;
+					flex-wrap: wrap;
+					font-size: 13px;
+					gap: 8px;
+				}
+			}
+			.search {
+				align-items: center;
+				display: flex;
+				position: relative;
+				& svg {
+					color: var(--sb-muted);
+					inset-inline-start: 11px;
+					pointer-events: none;
+					position: absolute;
+				}
+				& input {
+					flex: 1;
+					min-inline-size: 0;
+					padding-inline-start: 34px;
+				}
+			}
+
+			.empty {
+				padding: 48px 16px;
+				text-align: center;
+				& > svg {
+					background: var(--sb-raised);
+					block-size: 56px;
+					border-radius: 50%;
+					color: var(--sb-muted);
+					inline-size: 56px;
+					margin-block-end: 12px;
+					padding: 14px;
+				}
+				& p + p {
+					margin-block-start: 4px;
+				}
+			}
+
+			.skeleton {
+				display: grid;
+				gap: 16px;
+				& > div {
+					animation: shimmer 1.4s ease-in-out infinite;
+					background: linear-gradient(
+							90deg,
+							var(--sb-raised) 25%,
+							var(--sb-shimmer) 50%,
+							var(--sb-raised) 75%
+						)
+						0 0 / 200% 100%;
+					block-size: 96px;
+					border-radius: 10px;
+					&:last-child {
+						block-size: 240px;
+					}
+				}
+			}
+
+			.toast {
+				align-items: center;
+				animation: rise 0.2s ease-out;
+				background: var(--sb-tip);
+				border-radius: 8px;
+				bottom: 24px;
+				box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+				color: var(--sb-on-tip);
+				display: flex;
+				gap: 8px;
+				inset-inline: 24px;
+				margin-inline: auto;
+				max-inline-size: 32rem;
+				padding: 12px 16px;
+				position: fixed;
+				& svg {
+					color: var(--sb-accent);
+				}
+			}
+
+			.spin {
+				animation: spin 0.8s linear infinite;
+			}
+			@keyframes spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+			@keyframes pulse {
+				50% {
+					opacity: 0.35;
+				}
+			}
+			@keyframes shimmer {
+				to {
+					background-position: -200% 0;
+				}
+			}
+			@keyframes rise {
+				from {
+					opacity: 0;
+					transform: translateY(8px);
+				}
+			}
+			@media (prefers-reduced-motion: reduce) {
+				* {
+					animation: none !important;
+					transition: none !important;
+				}
 			}
 		</style>
 	</head>
 	<body>
-		<header>
-			<h1>Backups</h1>
-			<button class="primary" id="now" disabled>Back up now</button>
-		</header>
-		<p id="status">Connecting to Storyblok…</p>
-		<ul id="list"></ul>
-
-		<template id="backup">
-			<li class="backup">
-				<div class="row">
-					<div><strong data-date></strong> <span class="muted" data-meta></span></div>
-					<div><button data-download>Download</button> <button data-restore>Restore a story…</button></div>
+		<header class="top">
+			<div class="title">
+				<span class="mark" aria-hidden="true">
+					<svg
+						viewBox="0 0 24 24"
+						width="22"
+						height="22"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.75"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+						<path d="M3 3v5h5" />
+						<path d="M12 7v5l4 2" />
+					</svg>
+				</span>
+				<div>
+					<h1>Backups</h1>
+					<p class="muted">Copies of this space, kept by UI Loco and ready to restore</p>
 				</div>
-			</li>
+			</div>
+			<button class="button primary" id="now" hidden>
+				<svg
+					viewBox="0 0 16 16"
+					width="16"
+					height="16"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.75"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
+				</svg>
+				<span>Back up now</span>
+			</button>
+		</header>
+
+		<div id="outside" class="card empty" hidden>
+			<p><strong>Open this from Storyblok</strong></p>
+			<p class="muted">Backups runs inside a space, under Apps in the sidebar.</p>
+		</div>
+		<div id="failed" class="card problem" role="alert" hidden>
+			<p id="failed-text"></p>
+			<button class="button" id="retry">Try again</button>
+		</div>
+		<div id="loading" class="skeleton" aria-busy="true" aria-label="Loading backups">
+			<div></div>
+			<div></div>
+		</div>
+
+		<main id="main" class="stack" hidden>
+			<section class="card schedule" aria-labelledby="summary">
+				<div class="card-head">
+					<div>
+						<h2 class="summary"><span id="summary"></span><span id="state" class="status"></span></h2>
+						<p class="muted" id="next"></p>
+					</div>
+					<button class="button" id="edit" aria-expanded="false" aria-controls="form">Change schedule</button>
+				</div>
+				<div id="last-error" class="problem" role="alert" hidden></div>
+				<form id="form" class="form" hidden>
+					<div class="segments" role="radiogroup" aria-label="How often">
+						<button type="button" role="radio" data-frequency="daily">Daily</button>
+						<button type="button" role="radio" data-frequency="weekly">Weekly</button>
+						<button type="button" role="radio" data-frequency="monthly">Monthly</button>
+						<button type="button" role="radio" data-frequency="off">Paused</button>
+					</div>
+					<div class="fields">
+						<label id="weekday-field"
+							>On
+							<select id="weekday"></select
+						></label>
+						<label id="day-field"
+							>On the
+							<select id="day"></select
+						></label>
+						<label id="hour-field"
+							>At
+							<select id="hour"></select
+						></label>
+					</div>
+					<p class="muted" id="form-note"></p>
+					<div class="actions">
+						<button type="button" class="button" id="cancel">Cancel</button>
+						<button class="button primary" id="save">Save schedule</button>
+					</div>
+				</form>
+			</section>
+
+			<section class="card flush" aria-labelledby="list-title">
+				<div class="card-head">
+					<h2 id="list-title">Backups</h2>
+					<p class="muted" id="count"></p>
+				</div>
+				<table class="table" id="table">
+					<thead>
+						<tr>
+							<th>Taken</th>
+							<th class="wide">Type</th>
+							<th class="number wide">Stories</th>
+							<th class="number wide">Size</th>
+							<th><span hidden>Actions</span></th>
+						</tr>
+					</thead>
+					<tbody id="rows"></tbody>
+				</table>
+				<div id="empty" class="empty" hidden>
+					<svg
+						viewBox="0 0 24 24"
+						width="28"
+						height="28"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.75"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+						<path d="M3 3v5h5" />
+						<path d="M12 7v5l4 2" />
+					</svg>
+					<p><strong>No backups yet</strong></p>
+					<p class="muted" id="empty-text"></p>
+				</div>
+			</section>
+		</main>
+
+		<div id="toast" class="toast" role="status" hidden></div>
+
+		<template id="row">
+			<tr>
+				<td class="when"><span data-date></span><small data-ago></small></td>
+				<td class="wide"><span class="pill" data-trigger></span></td>
+				<td class="number wide" data-stories></td>
+				<td class="number wide" data-size></td>
+				<td class="actions">
+					<button class="button small" data-download>Download</button>
+					<button class="button small" data-restore aria-expanded="false">Restore…</button>
+				</td>
+			</tr>
 		</template>
 
 		<script>
@@ -163,16 +723,41 @@
 					? `${params.get('protocol')}//${params.get('host')}`
 					: 'https://app.storyblok.com'
 			const $ = id => document.getElementById(id)
-			const status = text => ($('status').textContent = text)
+			const make = (tag, props = {}, children = []) => {
+				const node = Object.assign(document.createElement(tag), props)
+				node.append(...children)
+				return node
+			}
+			function icon(paths, size = 16, className = '') {
+				const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+				for (const [k, v] of Object.entries({
+					viewBox: '0 0 16 16',
+					width: size,
+					height: size,
+					'aria-hidden': 'true',
+					class: className
+				}))
+					svg.setAttribute(k, v)
+				svg.innerHTML = paths
+				return svg
+			}
+			const TICK = '<path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="1.75" />'
+			const SPINNER =
+				'<path d="M8 2a6 6 0 1 0 6 6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />'
+			const SEARCH =
+				'<circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />'
+			const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+			const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-			// App Bridge: Storyblok hands us a signed token for this user and space. When it expires we ask again.
+			// App Bridge: Storyblok hands us a signed token for this user and space. The server checks it on every
+			// request; when it expires we ask for a fresh one and retry once.
 			let token = null
 			function request_token() {
 				return new Promise((resolve, reject) => {
-					const timeout = setTimeout(
-						() => (removeEventListener('message', listen), reject(new Error('Storyblok did not answer'))),
-						10_000
-					)
+					const timeout = setTimeout(() => {
+						removeEventListener('message', listen)
+						reject(new Error('Storyblok did not answer'))
+					}, 10_000)
 					function listen(e) {
 						if (e.origin !== parent_origin || e.data?.action !== 'validated') return
 						clearTimeout(timeout)
@@ -186,9 +771,9 @@
 
 			async function api(path, init = {}, retry = true) {
 				token ??= request_token()
-				const res = await fetch(`/api/backups${path}`, {
+				const res = await fetch(`/api${path}`, {
 					...init,
-					headers: { authorization: `Bearer ${await token}` }
+					headers: { ...init.headers, authorization: `Bearer ${await token}` }
 				})
 				if (res.status === 401 && retry) {
 					token = null
@@ -199,124 +784,337 @@
 				return res
 			}
 
-			const when = iso => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-			const size = n => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.ceil(n / 1e3)} KB`)
-
-			async function load() {
-				const backups = await (await api('')).json()
-				$('list').replaceChildren(...backups.map(render))
-				return backups
+			const pad = n => String(n).padStart(2, '0')
+			const hour_label = h => `${pad(h)}:00`
+			const ordinal = n => n + ({ 1: 'st', 2: 'nd', 3: 'rd', 21: 'st', 22: 'nd', 23: 'rd' }[n] ?? 'th')
+			const date = iso => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+			const count = n => n.toLocaleString('en-GB')
+			const size = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
+			const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+			function ago(iso) {
+				const s = (Date.parse(iso) - Date.now()) / 1000
+				for (const [unit, n] of [
+					['day', 86400],
+					['hour', 3600],
+					['minute', 60]
+				])
+					if (Math.abs(s) >= n) return rtf.format(Math.round(s / n), unit)
+				return 'just now'
 			}
 
-			function render(b) {
-				const li = $('backup').content.firstElementChild.cloneNode(true)
-				li.querySelector('[data-date]').textContent = when(b.uploaded)
-				li.querySelector('[data-meta]').textContent = `${b.stories} stories · ${size(b.size)}`
-				li.querySelector('[data-download]').onclick = async e => {
-					e.target.disabled = true
-					try {
-						const a = Object.assign(document.createElement('a'), {
-							href: URL.createObjectURL(await (await api(`/${b.name}/download`)).blob()),
-							download: `storyblok-${params.get('space_id') ?? 'space'}-${b.name}`
-						})
-						a.click()
-						URL.revokeObjectURL(a.href)
-					} catch (err) {
-						status(err.message)
-					}
-					e.target.disabled = false
+			function describe(s) {
+				const at = hour_label(s.hour)
+				if (s.frequency === 'weekly') return `Every ${WEEKDAYS[s.weekday]} at ${at}`
+				if (s.frequency === 'monthly') return `On the ${ordinal(s.day)} of every month at ${at}`
+				if (s.frequency === 'off') return 'Scheduled backups are paused'
+				return `Every night at ${at}`
+			}
+			// A schedule's hours are in the zone it was saved in, which only needs saying when it isn't the viewer's.
+			const in_zone = tz => (tz === zone ? '' : ` ${tz.replace(/_/g, ' ')} time`)
+
+			let data = null
+			let toast_timer
+			function say(text) {
+				$('toast').replaceChildren(icon(TICK), text)
+				$('toast').hidden = false
+				clearTimeout(toast_timer)
+				toast_timer = setTimeout(() => ($('toast').hidden = true), 5000)
+			}
+
+			function render() {
+				const { schedule, next_at, running, last_error, backups } = data
+				const paused = schedule.frequency === 'off'
+				$('summary').textContent = describe(schedule) + (paused ? '' : in_zone(schedule.timezone))
+				$('state').dataset.status = running ? 'running' : paused ? 'paused' : 'on'
+				$('state').textContent = running ? 'Backing up' : paused ? 'Paused' : 'On'
+				$('next').textContent = next_at
+					? `Next backup ${date(next_at)}`
+					: 'Nothing runs on a schedule. Back up now still works, and existing backups are kept.'
+
+				$('last-error').hidden = !last_error
+				if (last_error)
+					$('last-error').textContent = `The last backup failed ${ago(last_error.at)}: ${last_error.message}`
+
+				$('now').hidden = false
+				$('now').disabled = running
+				$('now').querySelector('span').textContent = running ? 'Backing up…' : 'Back up now'
+
+				$('count').textContent = backups.length ? `${count(backups.length)} kept` : ''
+				$('table').hidden = !backups.length && !running
+				$('empty').hidden = backups.length || running
+				$('empty-text').textContent = next_at
+					? `The first one runs ${date(next_at)}, or back up now.`
+					: 'Scheduled backups are paused. Back up now to take one.'
+
+				// Re-rendering keeps an open story picker open.
+				const open = document.querySelector('tr.open:not(.picker-row)')?.dataset.name
+				$('rows').replaceChildren(
+					...(running
+						? [
+								make('tr', { className: 'running' }, [
+									make('td', { colSpan: 5 }, [
+										icon(SPINNER, 14, 'spin'),
+										'Backing up this space. It shows here when it’s done, usually within a minute.'
+									])
+								])
+							]
+						: []),
+					...backups.map(row)
+				)
+				if (open) document.querySelector(`tr[data-name="${CSS.escape(open)}"] [data-restore]`)?.click()
+			}
+
+			function row(b) {
+				const tr = $('row').content.firstElementChild.cloneNode(true)
+				tr.dataset.name = b.name
+				tr.querySelector('[data-date]').textContent = date(b.uploaded)
+				tr.querySelector('[data-ago]').textContent = ago(b.uploaded)
+				const trigger = tr.querySelector('[data-trigger]')
+				trigger.dataset.trigger = b.trigger
+				trigger.textContent = b.trigger === 'manual' ? 'Manual' : 'Scheduled'
+				tr.querySelector('[data-stories]').textContent = count(b.stories)
+				tr.querySelector('[data-size]').textContent = size(b.size)
+				tr.querySelector('[data-download]').onclick = e => download(b, e.currentTarget)
+				tr.querySelector('[data-restore]').onclick = e => picker(tr, b, e.currentTarget)
+				return tr
+			}
+
+			async function download(b, button) {
+				button.disabled = true
+				try {
+					const a = make('a', {
+						href: URL.createObjectURL(await (await api(`/backups/${b.name}/download`)).blob()),
+						download: `storyblok-${params.get('space_id') ?? 'space'}-${b.name}`
+					})
+					a.click()
+					setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+				} catch (err) {
+					say(`Couldn’t download: ${err.message}`)
 				}
-				li.querySelector('[data-restore]').onclick = e => stories(li, b, e.target)
+				button.disabled = false
+			}
+
+			async function picker(tr, b, button) {
+				const was_open = tr.classList.contains('open')
+				document.querySelectorAll('.picker-row').forEach(r => r.remove())
+				document.querySelectorAll('tr.open').forEach(r => r.classList.remove('open'))
+				document.querySelectorAll('[data-restore]').forEach(r => r.setAttribute('aria-expanded', 'false'))
+				if (was_open) return
+				button.disabled = true
+				try {
+					const stories = await (await api(`/backups/${b.name}/stories`)).json()
+					const input = make('input', {
+						type: 'search',
+						placeholder: `Find one of ${count(stories.length)} stories by name or slug`,
+						ariaLabel: 'Find a story'
+					})
+					const list = make('ul')
+					const note = make('p', { className: 'muted' })
+					const show = () => {
+						const q = input.value.trim().toLowerCase()
+						const found = stories.filter(
+							s => !q || s.name.toLowerCase().includes(q) || s.full_slug.includes(q)
+						)
+						list.replaceChildren(...found.slice(0, 100).map(s => story(b, s)))
+						list.hidden = !found.length
+						note.textContent = !found.length
+							? 'No stories match.'
+							: found.length > 100
+								? `Showing 100 of ${count(found.length)}. Search to narrow it down.`
+								: 'Restoring writes the backed-up content to the story’s draft, for you to review and publish as usual.'
+					}
+					input.oninput = show
+					show()
+					const search = make('div', { className: 'search' }, [icon(SEARCH), input])
+					const cell = make('td', { colSpan: 5 }, [
+						make('div', { className: 'picker' }, [search, list, note])
+					])
+					tr.after(make('tr', { className: 'picker-row open' }, [cell]))
+					tr.classList.add('open')
+					button.setAttribute('aria-expanded', 'true')
+					input.focus()
+				} catch (err) {
+					say(`Couldn’t open that backup: ${err.message}`)
+				}
+				button.disabled = false
+			}
+
+			function story(b, s) {
+				const start = make('button', { className: 'button small', textContent: 'Restore' })
+				const li = make('li', {}, [
+					make('div', {}, [
+						make('div', { textContent: s.name }),
+						make('div', { className: 'slug', textContent: `/${s.full_slug}` })
+					]),
+					start
+				])
+				start.onclick = () => {
+					const cancel = make('button', { className: 'button small', textContent: 'Cancel' })
+					const go = make('button', { className: 'button small danger', textContent: 'Restore draft' })
+					const confirm = make('div', { className: 'confirm' }, [
+						make('span', {
+							className: 'muted',
+							textContent: `Overwrite the draft with the copy from ${date(b.uploaded)}?`
+						}),
+						cancel,
+						go
+					])
+					start.replaceWith(confirm)
+					go.focus()
+					cancel.onclick = () => {
+						confirm.replaceWith(start)
+						start.focus()
+					}
+					go.onclick = async () => {
+						go.disabled = cancel.disabled = true
+						go.textContent = 'Restoring…'
+						try {
+							const result = await (
+								await api(`/backups/${b.name}/stories/${s.id}`, { method: 'POST' })
+							).json()
+							say(
+								result.recreated
+									? `“${s.name}” had been deleted, so it’s back as a new story. Review and publish it.`
+									: `Restored the draft of “${s.name}”. Review and publish it.`
+							)
+							confirm.replaceWith(start)
+						} catch (err) {
+							go.disabled = cancel.disabled = false
+							go.textContent = 'Restore draft'
+							say(`Couldn’t restore “${s.name}”: ${err.message}`)
+						}
+					}
+				}
 				return li
 			}
 
-			async function stories(li, b, button) {
-				if (li.querySelector('.stories')) return li.querySelector('.stories').remove()
-				button.disabled = true
-				try {
-					const list = await (await api(`/${b.name}/stories`)).json()
-					const box = Object.assign(document.createElement('div'), { className: 'stories' })
-					const filter = Object.assign(document.createElement('input'), {
-						type: 'search',
-						placeholder: `Filter ${list.length} stories by name or slug`
-					})
-					const ul = document.createElement('ul')
-					const show = () => {
-						const q = filter.value.toLowerCase()
-						ul.replaceChildren(
-							...list
-								.filter(s => !q || s.name.toLowerCase().includes(q) || s.full_slug.includes(q))
-								.slice(0, 200)
-								.map(s => {
-									const row = Object.assign(document.createElement('li'), { className: 'row' })
-									row.innerHTML =
-										'<span><span></span> <span class="muted"></span></span><button>Restore</button>'
-									row.querySelector('span > span').textContent = s.name
-									row.querySelector('.muted').textContent = `/${s.full_slug}`
-									row.querySelector('button').onclick = e => restore(b, s, e.target)
-									return row
-								})
-						)
-					}
-					filter.oninput = show
-					show()
-					box.append(filter, ul)
-					li.append(box)
-					filter.focus()
-				} catch (err) {
-					status(err.message)
+			// The schedule form. Hours are picked in the viewer's own zone, which is saved with them.
+			let draft = null
+			for (let h = 0; h < 24; h++) $('hour').append(new Option(hour_label(h), h))
+			WEEKDAYS.forEach((d, i) => $('weekday').append(new Option(d, i)))
+			for (let d = 1; d <= 28; d++) $('day').append(new Option(ordinal(d), d))
+			const frequencies = [...document.querySelectorAll('[data-frequency]')]
+
+			function show_form() {
+				const f = draft.frequency
+				for (const b of frequencies) {
+					b.setAttribute('aria-checked', String(b.dataset.frequency === f))
+					b.tabIndex = b.dataset.frequency === f ? 0 : -1
 				}
-				button.disabled = false
+				$('weekday-field').hidden = f !== 'weekly'
+				$('day-field').hidden = f !== 'monthly'
+				$('hour-field').hidden = f === 'off'
+				$('weekday').value = draft.weekday
+				$('day').value = draft.day
+				$('hour').value = draft.hour
+				$('form-note').textContent =
+					f === 'off'
+						? 'Nothing will run on a schedule. Back up now still works, and existing backups are kept.'
+						: `${describe(draft)}, ${zone.replace(/_/g, ' ')} time.${f === 'monthly' ? ' Days go up to the 28th so every month gets one.' : ''}`
 			}
 
-			async function restore(b, s, button) {
-				if (
-					!confirm(
-						`Overwrite the draft of “${s.name}” with its content from ${when(b.uploaded)}?\n\nThe current version stays in the story's history.`
-					)
-				)
-					return
-				button.disabled = true
+			for (const b of frequencies)
+				b.onclick = () => {
+					draft.frequency = b.dataset.frequency
+					show_form()
+				}
+			$('form')
+				.querySelector('.segments')
+				.addEventListener('keydown', e => {
+					const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+					if (!step) return
+					e.preventDefault()
+					const i = frequencies.findIndex(b => b.dataset.frequency === draft.frequency)
+					const next = frequencies[(i + step + frequencies.length) % frequencies.length]
+					next.click()
+					next.focus()
+				})
+			for (const id of ['hour', 'weekday', 'day'])
+				$(id).onchange = () => {
+					draft[id] = Number($(id).value)
+					show_form()
+				}
+
+			function toggle_form(open) {
+				$('form').hidden = !open
+				$('edit').hidden = open
+				$('edit').setAttribute('aria-expanded', String(open))
+				if (open) {
+					draft = { ...data.schedule, timezone: zone }
+					show_form()
+					frequencies.find(b => b.tabIndex === 0).focus()
+				} else $('edit').focus()
+			}
+			$('edit').onclick = () => toggle_form(true)
+			$('cancel').onclick = () => toggle_form(false)
+			$('form').onsubmit = async e => {
+				e.preventDefault()
+				$('save').disabled = true
 				try {
-					const result = await (await api(`/${b.name}/stories/${s.id}`, { method: 'POST' })).json()
-					status(
-						result.recreated
-							? `“${s.name}” was deleted, so it was recreated as a new story (id ${result.id}). Review and publish it.`
-							: `Restored the draft of “${s.name}”. Review and publish it.`
+					const saved = await (
+						await api('/schedule', {
+							method: 'PUT',
+							headers: { 'content-type': 'application/json' },
+							body: JSON.stringify(draft)
+						})
+					).json()
+					Object.assign(data, saved)
+					toggle_form(false)
+					render()
+					say(
+						saved.schedule.frequency === 'off'
+							? 'Scheduled backups are paused.'
+							: `Saved. ${describe(saved.schedule)}.`
 					)
 				} catch (err) {
-					status(`Restore failed: ${err.message}`)
+					say(`Couldn’t save the schedule: ${err.message}`)
 				}
-				button.disabled = false
+				$('save').disabled = false
+			}
+
+			// While a backup runs, check back every few seconds until it lands.
+			let polling = null
+			async function load() {
+				const before = data?.backups[0]?.name
+				data = await (await api('/backups')).json()
+				render()
+				if (data.running && !polling) polling = setInterval(() => load().catch(() => {}), 4000)
+				if (!data.running && polling) {
+					clearInterval(polling)
+					polling = null
+					if (data.backups[0]?.name !== before) say('Backup complete.')
+				}
+			}
+
+			async function start() {
+				$('failed').hidden = true
+				$('loading').hidden = false
+				try {
+					await load()
+					$('main').hidden = false
+				} catch (err) {
+					$('failed-text').textContent = `Couldn’t load backups: ${err.message}`
+					$('failed').hidden = false
+				}
+				$('loading').hidden = true
 			}
 
 			$('now').onclick = async () => {
 				$('now').disabled = true
 				try {
-					const before = (await load())[0]?.name
-					await api('', { method: 'POST' })
-					status('Backing up… this can take a few minutes on a big space.')
-					// ponytail: polls for 20 minutes. A failed backup only shows in the Worker's logs.
-					for (let i = 0; i < 240; i++) {
-						await new Promise(r => setTimeout(r, 5000))
-						if ((await load())[0]?.name !== before) return status('Backup complete.')
-					}
-					status('Still running. Check back later.')
+					await api('/backups', { method: 'POST' })
+					await load()
 				} catch (err) {
-					status(err.message)
-				} finally {
+					say(`Couldn’t start a backup: ${err.message}`)
 					$('now').disabled = false
 				}
 			}
+			$('retry').onclick = start
 
-			if (window.top === window.self) status('Open this from the Storyblok sidebar.')
-			else
-				load()
-					.then(backups => {
-						status(backups.length ? '' : 'No backups yet. They run nightly, or use Back up now.')
-						$('now').disabled = false
-					})
-					.catch(err => status(err.message))
+			if (window.top === window.self) {
+				$('loading').hidden = true
+				$('outside').hidden = false
+			} else start()
 		</script>
 	</body>
 </html>
