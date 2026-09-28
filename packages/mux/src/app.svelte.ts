@@ -3,6 +3,7 @@ import Mux from '@mux/mux-node'
 import type { MuxAsset, Video, VimeoVideo } from '../types.js'
 import { format_date, format_elapse } from 'kitto'
 import ky, { HTTPError } from 'ky'
+import * as UpChunk from '@mux/upchunk'
 
 export type { MuxAsset }
 
@@ -11,6 +12,10 @@ type Plugin = FieldPluginResponse<Video | null>
 // passthrough marker for assets deleted while still preparing
 const PENDING_DELETE = 'delete-when-ready'
 
+export type Job = { key: number; name: string; label: string; percent?: number; error?: string }
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
 export class MuxManager {
 	plugin = $state<Plugin | null>(null)
 	content = $state<Video | null>(null)
@@ -18,13 +23,8 @@ export class MuxManager {
 	open_actions = $state<string | null>(null)
 	timeout = $state<NodeJS.Timeout | null>(null)
 	video_options_open = $state(false)
-	vimeo_upload_state: null | 'loading' = $state(null)
-	youtube_upload_state: null | 'loading' = $state(null)
-	youtube_progress = $state<{
-		stage: 'downloading' | 'merging' | 'uploading' | 'finishing'
-		part?: number
-		percent?: number
-	} | null>(null)
+	// uploads and imports in flight; percent is undefined while there's no measurable progress
+	jobs = $state<Array<Job>>([])
 
 	// sign-in (OAuth) connections from the Mux Library space plugin can't delete: Mux answers
 	// DELETE with 404 for them. null until moxy has said which kind this field's secret is.
@@ -210,7 +210,7 @@ export class MuxManager {
 		await this.list()
 	}
 
-	get_upload_endpoint = async () => {
+	get_upload_endpoint = async (title?: string) => {
 		if (!this.mux) throw new Error('Mux not initialised')
 
 		return (
@@ -219,9 +219,48 @@ export class MuxManager {
 				new_asset_settings: {
 					playback_policy: ['public'],
 					encoding_tier: 'baseline',
+					...(title && { meta: { title } }),
 				},
 			})
 		).url
+	}
+
+	#start_job(name: string, label: string) {
+		this.jobs.push({ key: Math.random(), name, label })
+		return this.jobs[this.jobs.length - 1]
+	}
+
+	dismiss_job = (job: Job) => (this.jobs = this.jobs.filter((j) => j.key !== job.key))
+
+	// runs an upload or import as a job; failures stay on the job until dismissed
+	async #run_job(name: string, label: string, work: (job: Job) => Promise<void>) {
+		const job = this.#start_job(name, label)
+		try {
+			await work(job)
+			this.dismiss_job(job)
+			await this.list()
+		} catch (error) {
+			job.error =
+				error instanceof HTTPError
+					? ((await error.response.json().catch(() => null))?.message ?? error.message)
+					: message(error)
+		}
+	}
+
+	// chunked, resumable uploads straight to Mux (UpChunk is what mux-uploader uses underneath)
+	upload_files = (files: FileList | Array<File> | null | undefined) => {
+		for (const file of files ?? []) {
+			if (!file.type.startsWith('video/') && !file.type.startsWith('audio/')) continue
+			this.#run_job(file.name, 'Uploading…', async (job) => {
+				const endpoint = await this.get_upload_endpoint(file.name.replace(/\.[^.]+$/, ''))
+				await new Promise<void>((resolve, reject) => {
+					const upload = UpChunk.createUpload({ endpoint, file })
+					upload.on('progress', (e) => (job.percent = Math.round(e.detail)))
+					upload.on('success', () => resolve())
+					upload.on('error', (e) => reject(new Error(e.detail.message)))
+				})
+			})
+		}
 	}
 
 	toggle_actions(id: string) {
@@ -280,8 +319,7 @@ export class MuxManager {
 		return this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen
 	}
 
-	get youtube_progress_label() {
-		const progress = this.youtube_progress
+	#youtube_label(progress?: { stage?: string; part?: number }) {
 		switch (progress?.stage) {
 			case 'downloading':
 				return `Downloading ${progress.part === 2 ? 'audio' : 'video'} from YouTube…`
@@ -300,68 +338,51 @@ export class MuxManager {
 		return !!this.#secrets?.vimeo_secret
 	}
 
-	add_vimeo_url = async (e: Event) => {
+	// true once the link is accepted; the import itself runs as a job
+	add_vimeo_url = (e: Event) => {
 		e.preventDefault()
 		const form = e.target
-		if (!(form instanceof HTMLFormElement)) return
+		if (!(form instanceof HTMLFormElement)) return false
 
-		const url = form.vimeo_url.value
-		if (!url) throw new Error('No URL found')
-
-		// extract video id from vimeo url using regex - handles all formats:
-		// https://vimeo.com/867092030
-		// https://vimeo.com/867092030/02e4819d25
-		// https://vimeo.com/channels/staffpicks/867092030
+		// handles vimeo.com/867092030, /867092030/02e4819d25, /channels/staffpicks/867092030 and similar
 		const vimeo_regex =
 			/vimeo\.com\/(?:channels\/\w+\/|groups\/\w+\/|album\d+\/|video\/)?(\d+)(?:\/[\w-]+)?/
-		const match = url.match(vimeo_regex)
-		const video_id = match?.[1]
-		if (!video_id) throw new Error('No video ID found')
+		const video_id = form.vimeo_url.value.match(vimeo_regex)?.[1]
+		if (!video_id) return false
+		form.reset()
 
-		this.vimeo_upload_state = 'loading'
-		const video = await this.vimeo.get<VimeoVideo>(`videos/${video_id}`).json()
+		void this.#run_job(`Vimeo video ${video_id}`, 'Importing from Vimeo…', async (job) => {
+			const video = await this.vimeo.get<VimeoVideo>(`videos/${video_id}`).json()
+			job.name = video.name
+			const largest_file = video.files.find(
+				(file) => file.size === Math.max(...video.files.map((file) => file.size))
+			)
+			if (!largest_file) throw new Error('Vimeo has no downloadable file for this video')
 
-		const largest_file = video.files.find(
-			(file) => file.size === Math.max(...video.files.map((file) => file.size))
-		)
-
-		if (!largest_file) {
-			this.vimeo_upload_state = null
-			throw new Error('No largest file found')
-		}
-
-		await this.mux.video.assets.create({
-			inputs: [
-				{
-					url: largest_file.link,
-				},
-			],
-			playback_policy: ['public'],
-			encoding_tier: 'baseline',
-			meta: {
-				title: video.name,
-				external_id: video_id,
-			},
+			await this.mux.video.assets.create({
+				inputs: [{ url: largest_file.link }],
+				playback_policy: ['public'],
+				encoding_tier: 'baseline',
+				meta: { title: video.name, external_id: video_id },
+			})
 		})
-
-		await this.list()
-		this.vimeo_upload_state = null
+		return true
 	}
 
-	add_youtube_url = async (e: Event) => {
+	add_youtube_url = (e: Event) => {
 		e.preventDefault()
 		const form = e.target
-		if (!(form instanceof HTMLFormElement)) return
+		if (!(form instanceof HTMLFormElement)) return false
 
 		// handles watch?v=, youtu.be/, shorts/, embed/, live/ and m./music. subdomains
 		const match = form.youtube_url.value.match(
 			/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/|v\/))([\w-]{11})/
 		)
 		const video_id = match?.[1]
-		if (!video_id) return window.alert('That doesn’t look like a YouTube URL')
+		if (!video_id) return false
+		form.reset()
 
-		this.youtube_upload_state = 'loading'
-		try {
+		void this.#run_job(`YouTube video ${video_id}`, this.#youtube_label(), async (job) => {
 			// moxy downloads the video and pushes it into a Mux direct upload, streaming NDJSON progress
 			const res = await ky.post('https://moxy.uilo.co/api/youtube', {
 				json: { video_id },
@@ -380,26 +401,21 @@ export class MuxManager {
 					if (event.error) throw new Error(`YouTube import failed: ${event.error}`)
 					if (event.upload_id) upload_id = event.upload_id
 					else if (event.done) done = true
-					else this.youtube_progress = event
+					else {
+						job.label = this.#youtube_label(event)
+						job.percent = event.percent == null ? undefined : Math.round(event.percent)
+					}
 				}
 			}
 			if (!upload_id || !done) throw new Error('YouTube import stopped unexpectedly')
 
 			// the asset appears once Mux has picked up the finished upload
-			this.youtube_progress = { stage: 'finishing' }
+			job.label = this.#youtube_label({ stage: 'finishing' })
+			job.percent = undefined
 			while ((await this.mux.video.uploads.retrieve(upload_id)).status === 'waiting') {
 				await new Promise((resolve) => setTimeout(resolve, 1000))
 			}
-			await this.list()
-		} catch (error) {
-			const message =
-				error instanceof HTTPError
-					? ((await error.response.json().catch(() => null))?.message ?? error.message)
-					: String(error)
-			window.alert(message)
-		} finally {
-			this.youtube_upload_state = null
-			this.youtube_progress = null
-		}
+		})
+		return true
 	}
 }

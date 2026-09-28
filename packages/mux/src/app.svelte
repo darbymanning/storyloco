@@ -15,8 +15,10 @@
 		PlusIcon,
 		ExternalLinkIcon,
 		XIcon,
+		YoutubeIcon,
+		LoaderCircleIcon,
+		CircleAlertIcon,
 	} from '@lucide/svelte'
-	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
 	import {
 		Button,
@@ -32,6 +34,17 @@
 
 	const loaded = $derived(manager.plugin?.type === 'loaded' && manager.mux)
 	let search = $state('')
+	let importing = $state<'youtube' | 'vimeo' | null>(null)
+	let import_problem = $state<string | null>(null)
+	let dragging = $state(false)
+	let file_input = $state<HTMLInputElement>()
+
+	const submit_import = (e: Event) => {
+		const ok = importing === 'vimeo' ? manager.add_vimeo_url(e) : manager.add_youtube_url(e)
+		if (ok) importing = import_problem = null
+		else
+			import_problem = `That doesn’t look like a ${importing === 'vimeo' ? 'Vimeo' : 'YouTube'} link`
+	}
 	const shown = $derived(
 		(manager.assets ?? []).filter((video) =>
 			(video.meta?.title ?? '').toLowerCase().includes(search.trim().toLowerCase())
@@ -122,37 +135,54 @@
 	</figure>
 {/snippet}
 
-{#snippet ImportForm(id: string, label: string, placeholder: string, onsubmit: (e: Event) => void)}
-	<form class="grid content-start gap-2" {onsubmit}>
-		<Label for={id}>{label}</Label>
-		<div class="flex gap-2">
-			<Input {id} {placeholder} type="url" required class="flex-1" />
-			<Button type="submit" variant="secondary" class="h-11.5">Import</Button>
-		</div>
-		<p class="text-muted-foreground text-xs">Public videos only. They're copied into Mux.</p>
-	</form>
-{/snippet}
-
-{#snippet ImportProgress(label: string, percent?: number)}
-	<div class="bg-card grid content-start gap-3 rounded-md border p-4" role="status">
-		<div class="flex items-baseline justify-between gap-4 text-sm">
-			<span class="font-medium">{label}</span>
-			{#if percent !== undefined}
-				<span class="text-muted-foreground tabular-nums">{percent}%</span>
-			{/if}
-		</div>
-		<div class="bg-muted h-1.5 overflow-hidden rounded-full">
-			{#if percent !== undefined}
-				<div
-					class="bg-primary h-full rounded-full transition-[width] duration-500"
-					style:width="{percent}%"
-				></div>
+{#snippet JobRow(job: import('./app.svelte.js').Job)}
+	<li
+		class={cn(
+			'bg-card flex items-center gap-3 rounded-lg border p-3',
+			job.error && 'border-destructive/40'
+		)}
+		transition:slide={{ duration: 200 }}
+	>
+		<span
+			class={cn(
+				'grid size-9 shrink-0 place-items-center rounded-full',
+				job.error ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
+			)}
+		>
+			{#if job.error}<CircleAlertIcon class="size-4" />{:else}<LoaderCircleIcon
+					class="size-4 animate-spin"
+				/>{/if}
+		</span>
+		<div class="grid min-w-0 flex-1 gap-1.5">
+			<div class="flex items-baseline justify-between gap-3">
+				<p class="truncate text-sm font-medium" title={job.name}>{job.name}</p>
+				{#if !job.error && job.percent !== undefined}
+					<span class="text-muted-foreground shrink-0 text-xs tabular-nums">{job.percent}%</span>
+				{/if}
+			</div>
+			{#if job.error}
+				<p class="text-destructive text-xs">{job.error}</p>
 			{:else}
-				<div class="bg-primary/60 h-full animate-pulse rounded-full"></div>
+				<div class="bg-muted h-1 overflow-hidden rounded-full">
+					<div
+						class={cn(
+							'bg-primary h-full rounded-full transition-[width] duration-500',
+							job.percent === undefined && 'w-1/3 animate-pulse'
+						)}
+						style:width={job.percent === undefined ? undefined : `${job.percent}%`}
+					></div>
+				</div>
+				<p class="text-muted-foreground text-xs">{job.label}</p>
 			{/if}
 		</div>
-		<p class="text-muted-foreground text-xs">Keep this open until the import finishes.</p>
-	</div>
+		{#if job.error}
+			<button
+				class="text-muted-foreground hover:text-foreground shrink-0"
+				aria-label="Dismiss"
+				onclick={() => manager.dismiss_job(job)}><XIcon class="size-4" /></button
+			>
+		{/if}
+	</li>
 {/snippet}
 
 {#snippet Meta(video: MuxAsset)}
@@ -189,70 +219,115 @@
 
 {#if loaded}
 	{#if manager.is_modal_open}
-		<div class="grid gap-6 p-8">
-			<header class="grid gap-1 pr-8">
-				<h1 class="text-lg font-semibold">Choose a video</h1>
-				<p class="text-muted-foreground text-sm">
-					Pick one from this space's Mux library, upload a new one or import it from YouTube.
-				</p>
+		<div
+			class="grid gap-6 p-8"
+			role="presentation"
+			ondragover={(e) => {
+				if (!e.dataTransfer?.types.includes('Files')) return
+				e.preventDefault()
+				dragging = true
+			}}
+			ondragleave={(e) => {
+				if (!e.relatedTarget) dragging = false
+			}}
+			ondrop={(e) => {
+				if (!dragging) return
+				e.preventDefault()
+				dragging = false
+				manager.upload_files(e.dataTransfer?.files)
+			}}
+		>
+			{#if dragging}
+				<div
+					class="border-primary bg-background/90 pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-xl border-2 border-dashed backdrop-blur-sm"
+					transition:fade={{ duration: 120 }}
+				>
+					<div class="grid justify-items-center gap-3 text-center">
+						<span class="bg-primary/10 text-primary grid size-14 place-items-center rounded-full"
+							><UploadIcon class="size-6" /></span
+						>
+						<p class="text-lg font-semibold">Drop to upload to Mux</p>
+						<p class="text-muted-foreground text-sm">Video and audio files</p>
+					</div>
+				</div>
+			{/if}
+
+			<header class="flex flex-wrap items-end justify-between gap-4 pr-8">
+				<div class="grid gap-1">
+					<h1 class="text-lg font-semibold">Mux videos</h1>
+					<p class="text-muted-foreground text-sm">
+						Choose a video for this field, or drop files anywhere here to upload them.
+					</p>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					<Button
+						variant="secondary"
+						aria-expanded={importing === 'youtube'}
+						onclick={() => {
+							importing = importing === 'youtube' ? null : 'youtube'
+							import_problem = null
+						}}><YoutubeIcon class="size-4" /> From YouTube</Button
+					>
+					{#if manager.has_vimeo}
+						<Button
+							variant="secondary"
+							aria-expanded={importing === 'vimeo'}
+							onclick={() => {
+								importing = importing === 'vimeo' ? null : 'vimeo'
+								import_problem = null
+							}}>From Vimeo</Button
+						>
+					{/if}
+					<Button onclick={() => file_input?.click()}><UploadIcon class="size-4" /> Upload</Button>
+					<input
+						bind:this={file_input}
+						type="file"
+						accept="video/*,audio/*"
+						multiple
+						hidden
+						onchange={(e) => {
+							manager.upload_files(e.currentTarget.files)
+							e.currentTarget.value = ''
+						}}
+					/>
+				</div>
 			</header>
 
-			<!-- headless uploader; the visible parts are composed from its sub-elements so they take our
-			styles (mux-uploader only forwards the file-select slot, and its heading size is hardcoded) -->
-			<mux-uploader
-				id="mux-uploader"
-				class="hidden"
-				onsuccess={manager.list}
-				endpoint={manager.get_upload_endpoint}
-			></mux-uploader>
-			<div class="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-5">
-				<mux-uploader-drop
-					mux-uploader="mux-uploader"
-					overlay
-					overlay-text="Drop to upload"
-					class="border-input bg-input-background hover:border-primary flex flex-col items-center justify-center gap-2 rounded-md border border-dashed px-6 py-5 transition-colors"
+			{#if importing}
+				{@const service = importing === 'vimeo' ? 'Vimeo' : 'YouTube'}
+				<form
+					class="bg-muted/40 grid gap-2 rounded-lg border p-4"
+					onsubmit={submit_import}
+					transition:slide={{ duration: 200 }}
 				>
-					<span slot="heading" class="flex items-center gap-2 text-sm font-medium">
-						<UploadIcon class="text-muted-foreground size-4" />
-						Drop a video file here
-					</span>
-					<span slot="separator" class="text-muted-foreground text-xs">or</span>
-					<mux-uploader-file-select mux-uploader="mux-uploader">
-						<button type="button" class={button_variants({ variant: 'secondary', size: 'sm' })}>
-							Choose file
-						</button>
-					</mux-uploader-file-select>
-					<mux-uploader-status mux-uploader="mux-uploader" class="text-sm"></mux-uploader-status>
-					<mux-uploader-retry mux-uploader="mux-uploader"></mux-uploader-retry>
-					<mux-uploader-progress mux-uploader="mux-uploader" type="bar" class="w-full"
-					></mux-uploader-progress>
-				</mux-uploader-drop>
-				{#if manager.youtube_upload_state === 'loading'}
-					{@render ImportProgress(
-						manager.youtube_progress_label,
-						manager.youtube_progress?.percent
-					)}
-				{:else}
-					{@render ImportForm(
-						'youtube_url',
-						'Import from YouTube',
-						'https://www.youtube.com/watch?v=…',
-						manager.add_youtube_url
-					)}
-				{/if}
-				{#if manager.has_vimeo}
-					{#if manager.vimeo_upload_state === 'loading'}
-						{@render ImportProgress('Importing from Vimeo…')}
-					{:else}
-						{@render ImportForm(
-							'vimeo_url',
-							'Import from Vimeo',
-							'https://vimeo.com/123456789',
-							manager.add_vimeo_url
-						)}
-					{/if}
-				{/if}
-			</div>
+					<Label for="{importing}_url">Import from {service}</Label>
+					<div class="flex gap-2">
+						<!-- svelte-ignore a11y_autofocus -->
+						<Input
+							id="{importing}_url"
+							type="url"
+							required
+							autofocus
+							placeholder={importing === 'vimeo'
+								? 'https://vimeo.com/123456789'
+								: 'https://www.youtube.com/watch?v=…'}
+							class="flex-1"
+						/>
+						<Button type="submit">Import</Button>
+						<Button type="button" variant="ghost" onclick={() => (importing = null)}>Cancel</Button>
+					</div>
+					<p class={cn('text-xs', import_problem ? 'text-destructive' : 'text-muted-foreground')}>
+						{import_problem ??
+							`Paste a link to a public ${service} video. It’s copied into Mux in the background.`}
+					</p>
+				</form>
+			{/if}
+
+			{#if manager.jobs.length}
+				<ul class="grid gap-2" aria-live="polite">
+					{#each manager.jobs as job (job.key)}{@render JobRow(job)}{/each}
+				</ul>
+			{/if}
 
 			{#if manager.undeletable}
 				<div
@@ -303,7 +378,7 @@
 						<p
 							class="text-muted-foreground rounded-md border border-dashed p-8 text-center text-sm"
 						>
-							No videos yet. Upload one above to get started.
+							No videos yet. Upload one, or drop a file here.
 						</p>
 					{:else if !shown.length}
 						<p
@@ -551,14 +626,3 @@
 		</button>
 	{/if}
 {/if}
-
-<style>
-	@reference './app.css';
-
-	mux-uploader-drop {
-		--progress-bar-fill-color: var(--primary);
-		--progress-bar-background-color: var(--muted);
-		--progress-bar-border-radius: 9999px;
-		--overlay-background-color: color-mix(in oklab, var(--primary) 12%, transparent);
-	}
-</style>

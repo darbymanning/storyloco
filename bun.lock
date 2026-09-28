@@ -125,7 +125,7 @@
     },
     "packages/hubspot_form": {
       "name": "uiloco-hubspot-form",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "devDependencies": {
         "@lucide/svelte": "^0.554.0",
         "@storyblok/field-plugin": "1.7.0",
@@ -190,7 +190,7 @@
         "@lucide/svelte": "0.554.0",
         "@mux/mux-node": "12.8.0",
         "@mux/mux-player": "3.8.0",
-        "@mux/mux-uploader": "1.3.0",
+        "@mux/upchunk": "3.5.0",
         "@storyblok/field-plugin": "1.7.0",
         "@sveltejs/vite-plugin-svelte": "6.2.1",
         "@tailwindcss/vite": "4.1.17",
@@ -464,8 +464,6 @@
     "@mux/mux-node": ["@mux/mux-node@12.8.0", "", { "dependencies": { "@types/node": "^18.11.18", "@types/node-fetch": "^2.6.4", "abort-controller": "^3.0.0", "agentkeepalive": "^4.2.1", "form-data-encoder": "1.7.2", "formdata-node": "^4.3.2", "jose": "^4.14.4", "node-fetch": "^2.6.7" } }, "sha512-J7Qe1JGlOWle+5huN27hBcAKujx0xgC8d3qQ1s9emyEETR+ubxlRf/9UOlN+GoPtoMPIDa5fWDRf2LDWzsiBOA=="],
 
     "@mux/mux-player": ["@mux/mux-player@3.8.0", "", { "dependencies": { "@mux/mux-video": "0.27.2", "@mux/playback-core": "0.31.2", "media-chrome": "~4.15.1", "player.style": "^0.3.0" } }, "sha512-2KcJdW4BBX8JDcXpclFKaNBsqpebtaEfTzwm5lPP1Lf6y5OMILvf2tqVCOczurREVFyaEoVD71vL0I5Vvqb1dA=="],
-
-    "@mux/mux-uploader": ["@mux/mux-uploader@1.3.0", "", { "dependencies": { "@mux/upchunk": "^3.5.0" } }, "sha512-EnM3CtRJARJNaDsZtnHXlM3k81Zjp1EivbAtJG/QHVBF8EWU9dSPzIbd4cZGplqWiKsuUzIpGbiFvxHWNfrJGQ=="],
 
     "@mux/mux-video": ["@mux/mux-video@0.27.2", "", { "dependencies": { "@mux/mux-data-google-ima": "0.2.8", "@mux/playback-core": "0.31.2", "castable-video": "~1.1.11", "custom-media-element": "~1.4.5", "media-tracks": "~0.3.3" } }, "sha512-VAqSw/3kS/qBzjyFSX3wClIX5Kdk6eXXlhxIJRWlClYvUKGm9ruhd7HzkwZVOJguvUh5QbGoiGWBEW2xkNIXzw=="],
 
@@ -871,7 +869,7 @@
 
     "esutils": ["esutils@2.0.3", "", {}, "sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g=="],
 
-    "event-target-shim": ["event-target-shim@5.0.1", "", {}, "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ=="],
+    "event-target-shim": ["event-target-shim@6.0.2", "", {}, "sha512-8q3LsZjRezbFZ2PN+uP+Q7pnHUMmAOziU2vA2OwoFaKIXxlxl38IylhSSgUorWu/rf4er67w0ikBqjBFk/pomA=="],
 
     "fast-deep-equal": ["fast-deep-equal@3.1.3", "", {}, "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q=="],
 
@@ -1367,8 +1365,6 @@
 
     "@mux/mux-node/@types/node": ["@types/node@18.19.130", "", { "dependencies": { "undici-types": "~5.26.4" } }, "sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg=="],
 
-    "@mux/upchunk/event-target-shim": ["event-target-shim@6.0.2", "", {}, "sha512-8q3LsZjRezbFZ2PN+uP+Q7pnHUMmAOziU2vA2OwoFaKIXxlxl38IylhSSgUorWu/rf4er67w0ikBqjBFk/pomA=="],
-
     "@storyblok/js/@storyblok/richtext": ["@storyblok/richtext@3.8.2", "", { "dependencies": { "markdown-it": "^14.1.0", "markdown-it-github": "^0.5.0", "node-html-parser": "^7.0.1" } }, "sha512-zI86BOE5hE8eqIwnOBi20Hl3/C9CpMha88Ni9gs2qf3ECTqYP40p0ZQ2oeYQOCsVCoxEOZcTDaeKg5+LSF6gxA=="],
 
     "@storyblok/js/storyblok-js-client": ["storyblok-js-client@7.1.6", "", {}, "sha512-LWXL4rUT8vM9it6Kodjh1pMicLokgLXAGswpdYi5lEgMsgn+yGjt8Hs1Yg5z3gOtW0m0O6aQ3dTZuc7r+Q+/8w=="],
@@ -1392,6 +1388,8 @@
     "@typescript-eslint/typescript-estree/minimatch": ["minimatch@10.2.5", "", { "dependencies": { "brace-expansion": "^5.0.5" } }, "sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg=="],
 
     "@typescript-eslint/visitor-keys/eslint-visitor-keys": ["eslint-visitor-keys@5.0.1", "", {}, "sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA=="],
+
+    "abort-controller/event-target-shim": ["event-target-shim@5.0.1", "", {}, "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ=="],
 
     "dom-serializer/entities": ["entities@4.5.0", "", {}, "sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw=="],
 
