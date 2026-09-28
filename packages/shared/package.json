@@ -32,7 +32,8 @@
 			"types": "./dist/utils.d.ts",
 			"svelte": "./dist/utils.js"
 		},
-		"./global.css": "./dist/global.css"
+		"./global.css": "./dist/global.css",
+		"./plugin.css": "./dist/plugin.css"
 	},
 	"peerDependencies": {
 		"svelte": "^5.0.0"

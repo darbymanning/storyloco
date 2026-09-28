@@ -66,6 +66,7 @@
 		"./asset": {
 			"types": "./packages/asset/types.ts"
 		},
+		"./shared/plugin.css": "./packages/shared/dist/plugin.css",
 		"./shared/utils": {
 			"types": "./packages/shared/dist/utils.d.ts",
 			"svelte": "./packages/shared/dist/utils.js"

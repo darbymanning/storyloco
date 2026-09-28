@@ -1,0 +1,474 @@
+/* Shared look for UI Loco's Storyblok space plugins (Shop, Mux Library), close to Storyblok's own
+   editor UI. Wrap the plugin in `.plugin` and use its classes: card, button, segments, search,
+   status, table, empty, problem, skeleton. Import with `import 'storyloco/shared/plugin.css'`. */
+.plugin {
+	--sb-ink: #1b243f;
+	--sb-muted: #5f6781;
+	--sb-line: #e2e5ec;
+	--sb-bg: #f6f7f9;
+	--sb-surface: #fff;
+	/* Hovered rows, open orders and inset controls inside a card. */
+	--sb-raised: #f6f7f9;
+	--sb-line-strong: #c9ceda;
+	--sb-accent: #00b3b0;
+	/* Teal text and links; the primary button matches storyloco's field plugins. */
+	--sb-accent-ink: #05807f;
+	--sb-accent-wash: #e5f7f6;
+	--sb-primary: #05807f;
+	--sb-primary-hover: #046867;
+	--sb-on-primary: #fff;
+	/* Tooltips and toasts. */
+	--sb-tip: #1b243f;
+	--sb-on-tip: #fff;
+	--sb-shimmer: #eceef3;
+	/* Chart bars: validated for contrast and chroma against the white card. */
+	--sb-bar: #00938f;
+	--sb-good: #1c7c47;
+	--sb-good-wash: #e5f4ea;
+	--sb-warn: #8a5a00;
+	--sb-warn-wash: #fdf1d8;
+	--sb-danger: #b42323;
+	--sb-danger-wash: #fce9e9;
+	--sb-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+	--sb-shadow: 0 1px 2px rgb(27 36 63 / 0.04), 0 1px 3px rgb(27 36 63 / 0.06);
+	--sb-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+	/* Dark tokens follow storyloco's field plugins (packages/shared global.css), which
+	   also switch on the system colour scheme. */
+	@media (prefers-color-scheme: dark) {
+		--sb-ink: #f8fafc;
+		--sb-muted: #8f93a2;
+		--sb-line: rgb(255 255 255 / 0.1);
+		--sb-line-strong: rgb(255 255 255 / 0.22);
+		/* Storyblok's own dark sidebar and dashboard: cards share the page colour,
+		   with raised panels a step lighter. */
+		--sb-bg: #242328;
+		--sb-surface: #242328;
+		--sb-raised: #333237;
+		--sb-accent-ink: #3bc4b9;
+		--sb-accent-wash: rgb(59 196 185 / 0.14);
+		--sb-primary: #05807f;
+		--sb-primary-hover: #06918f;
+		--sb-on-primary: #fff;
+		--sb-tip: #45454d;
+		--sb-shimmer: #3d3d44;
+		/* Validated against the dark card. */
+		--sb-bar: #2aa9a3;
+		--sb-good: #5fd08f;
+		--sb-good-wash: rgb(95 208 143 / 0.14);
+		--sb-warn: #f0b650;
+		--sb-warn-wash: rgb(240 182 80 / 0.14);
+		--sb-danger: #ff6467;
+		--sb-danger-wash: rgb(255 100 103 / 0.14);
+		--sb-shadow: none;
+
+		color-scheme: dark;
+	}
+
+	background: var(--sb-bg);
+	color: var(--sb-ink);
+	font:
+		14px/1.45 system-ui,
+		-apple-system,
+		'Segoe UI',
+		Roboto,
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+	min-block-size: 100dvh;
+	padding: 28px 32px 48px;
+
+	@media (width < 640px) {
+		padding: 20px 16px 40px;
+	}
+
+	& ::selection {
+		background: var(--sb-accent-wash);
+	}
+
+	/* The site's global styles would otherwise leak in. */
+	& :is(p, h1, h2, h3, dl, ul) {
+		margin: 0;
+	}
+
+	& svg {
+		display: inline-block;
+		flex: none;
+		max-inline-size: none;
+	}
+
+	& .card {
+		background: var(--sb-surface);
+		border: 1px solid var(--sb-line);
+		border-radius: 10px;
+		box-shadow: var(--sb-shadow);
+		padding: 20px;
+
+		/* Tables and toolbars run edge to edge; they pad themselves. */
+		&.flush {
+			overflow: hidden;
+			padding: 0;
+		}
+	}
+
+	/* In an edge-to-edge card the table lines up with the toolbar above it. */
+	& .flush > .table :is(th, td):first-child {
+		padding-inline-start: 20px;
+	}
+
+	& .flush > .table :is(th, td):last-child {
+		padding-inline-end: 16px;
+	}
+
+	/* A search field with its magnifier inside. */
+	& .search {
+		align-items: center;
+		display: flex;
+		position: relative;
+
+		& svg {
+			color: var(--sb-muted);
+			inset-inline-start: 11px;
+			pointer-events: none;
+			position: absolute;
+			z-index: 1;
+		}
+
+		& input {
+			flex: 1;
+			min-inline-size: 0;
+			padding-inline-start: 34px;
+		}
+	}
+
+	/* Segmented control, e.g. the order status filter. */
+	& .segments {
+		background: var(--sb-raised);
+		border: 1px solid var(--sb-line);
+		border-radius: 8px;
+		display: flex;
+		gap: 2px;
+		padding: 3px;
+
+		& button {
+			border-radius: 5px;
+			color: var(--sb-muted);
+			cursor: pointer;
+			font-size: 13px;
+			font-weight: 500;
+			padding: 5px 11px;
+			text-transform: capitalize;
+			transition:
+				background 0.15s,
+				color 0.15s;
+
+			&:hover {
+				color: var(--sb-ink);
+			}
+
+			&[aria-checked='true'] {
+				background: var(--sb-surface);
+				box-shadow:
+					0 1px 2px rgb(0 0 0 / 0.08),
+					0 0 0 1px var(--sb-line);
+				color: var(--sb-ink);
+			}
+
+			&:focus-visible {
+				outline: 2px solid var(--sb-accent);
+				outline-offset: 1px;
+			}
+		}
+	}
+
+	& .card-head {
+		align-items: baseline;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 12px;
+		justify-content: space-between;
+
+		& h2 {
+			font-size: 15px;
+			font-weight: 600;
+		}
+	}
+
+	& .muted {
+		color: var(--sb-muted);
+	}
+
+	& input,
+	& textarea {
+		background: var(--sb-surface);
+		border: 1px solid var(--sb-line);
+		border-radius: 8px;
+		color: var(--sb-ink);
+		font: inherit;
+		padding: 8px 12px;
+		transition:
+			border-color 0.15s,
+			box-shadow 0.15s;
+
+		&::placeholder {
+			color: var(--sb-muted);
+			opacity: 0.8;
+		}
+
+		&:hover {
+			border-color: var(--sb-line-strong);
+		}
+
+		&:focus {
+			border-color: var(--sb-accent);
+			box-shadow: 0 0 0 3px var(--sb-accent-wash);
+			outline: none;
+		}
+	}
+
+	& .button {
+		align-items: center;
+		background: var(--sb-surface);
+		border: 1px solid var(--sb-line);
+		border-radius: 8px;
+		box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+		color: var(--sb-ink);
+		cursor: pointer;
+		display: inline-flex;
+		font-size: 14px;
+		font-weight: 500;
+		gap: 6px;
+		padding: 8px 14px;
+		text-decoration: none;
+		transition:
+			background 0.15s,
+			border-color 0.15s;
+		white-space: nowrap;
+
+		&:hover {
+			background: var(--sb-raised);
+			border-color: var(--sb-line-strong);
+		}
+
+		&:active {
+			transform: translateY(1px);
+		}
+
+		&:focus-visible {
+			outline: 2px solid var(--sb-accent);
+			outline-offset: 2px;
+		}
+
+		&:disabled {
+			cursor: wait;
+			opacity: 0.6;
+		}
+
+		&.primary {
+			background: var(--sb-primary);
+			border-color: var(--sb-primary);
+			color: var(--sb-on-primary);
+
+			&:hover {
+				background: var(--sb-primary-hover);
+			}
+		}
+
+		&.danger {
+			background: var(--sb-danger);
+			border-color: var(--sb-danger);
+			color: var(--sb-surface);
+
+			&:hover {
+				background: var(--sb-danger);
+				filter: brightness(1.08);
+			}
+		}
+	}
+
+	& .link {
+		color: var(--sb-accent-ink);
+		cursor: pointer;
+		font-weight: 500;
+		text-align: start;
+
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+
+	& .pill {
+		background: var(--sb-accent-wash);
+		border-radius: 999px;
+		color: var(--sb-accent-ink);
+		display: inline-block;
+		flex: none;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		line-height: 18px;
+		margin-inline: 4px;
+		padding: 0 8px;
+	}
+
+	/* A dot and the word, so state never rides on colour alone. */
+	& .status {
+		align-items: center;
+		border-radius: 999px;
+		display: inline-flex;
+		font-size: 12px;
+		font-weight: 500;
+		gap: 6px;
+		padding: 2px 9px 2px 7px;
+		text-transform: capitalize;
+
+		&::before {
+			background: currentColor;
+			block-size: 6px;
+			border-radius: 50%;
+			content: '';
+			inline-size: 6px;
+		}
+
+		&[data-status='paid'] {
+			background: var(--sb-good-wash);
+			color: var(--sb-good);
+		}
+
+		&[data-status='pending'] {
+			background: var(--sb-warn-wash);
+			color: var(--sb-warn);
+		}
+
+		&[data-status='failed'] {
+			background: var(--sb-danger-wash);
+			color: var(--sb-danger);
+		}
+
+		&[data-status='refunded'] {
+			background: var(--sb-raised);
+			color: var(--sb-muted);
+		}
+
+		&[data-status='ready'] {
+			background: var(--sb-good-wash);
+			color: var(--sb-good);
+		}
+
+		&:is([data-status='preparing'], [data-status='unused']) {
+			background: var(--sb-warn-wash);
+			color: var(--sb-warn);
+		}
+
+		&[data-status='errored'] {
+			background: var(--sb-danger-wash);
+			color: var(--sb-danger);
+		}
+	}
+
+	& .table {
+		border-collapse: collapse;
+		inline-size: 100%;
+
+		& th,
+		& td {
+			border-block-end: 1px solid var(--sb-line);
+			padding: 10px 12px;
+			text-align: start;
+			vertical-align: middle;
+		}
+
+		& th:first-child,
+		& td:first-child {
+			padding-inline-start: 4px;
+		}
+
+		& th {
+			color: var(--sb-muted);
+			font-size: 12px;
+			font-weight: 500;
+			white-space: nowrap;
+		}
+
+		& tbody tr:last-child td {
+			border-block-end: 0;
+		}
+
+		& .number {
+			font-variant-numeric: tabular-nums;
+			text-align: end;
+			white-space: nowrap;
+		}
+	}
+
+	& .empty {
+		padding: 48px 16px;
+		text-align: center;
+
+		& > svg {
+			background: var(--sb-raised);
+			block-size: 56px;
+			border-radius: 50%;
+			box-sizing: border-box;
+			color: var(--sb-muted);
+			inline-size: 56px;
+			margin-block-end: 12px;
+			padding: 14px;
+		}
+
+		& p + p {
+			margin-block-start: 4px;
+		}
+	}
+
+	& .problem {
+		align-items: center;
+		background: var(--sb-danger-wash);
+		border-radius: 6px;
+		color: var(--sb-danger);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
+		justify-content: space-between;
+		padding: 10px 12px;
+	}
+
+	& .skeleton {
+		display: grid;
+		gap: 10px;
+
+		& > div {
+			animation: shimmer 1.4s ease-in-out infinite;
+			background: linear-gradient(
+					90deg,
+					var(--sb-raised) 25%,
+					var(--sb-shimmer) 50%,
+					var(--sb-raised) 75%
+				)
+				0 0 / 200% 100%;
+			block-size: 36px;
+			border-radius: 6px;
+		}
+	}
+
+	& .u-hidden {
+		clip-path: inset(50%);
+		position: absolute;
+		white-space: nowrap;
+		inline-size: 1px;
+		block-size: 1px;
+		overflow: hidden;
+	}
+}
+
+@keyframes shimmer {
+	to {
+		background-position: -200% 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.plugin * {
+		animation: none !important;
+		transition: none !important;
+	}
+}
