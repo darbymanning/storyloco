@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Backups</title>
+		<style>
+			body {
+				font:
+					14px/1.5 system-ui,
+					sans-serif;
+				margin: 0;
+				padding: 1.5rem;
+				color: #1b243f;
+				background: #fff;
+			}
+			header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 1rem;
+				margin-bottom: 1rem;
+			}
+			h1 {
+				font-size: 1.25rem;
+				margin: 0;
+			}
+			button {
+				font: inherit;
+				border: 1px solid #d9dde6;
+				background: #fff;
+				border-radius: 6px;
+				padding: 0.35rem 0.75rem;
+				cursor: pointer;
+			}
+			button.primary {
+				background: #00b3b0;
+				border-color: #00b3b0;
+				color: #fff;
+			}
+			button:disabled {
+				opacity: 0.5;
+				cursor: default;
+			}
+			input {
+				font: inherit;
+				border: 1px solid #d9dde6;
+				border-radius: 6px;
+				padding: 0.35rem 0.6rem;
+				width: 100%;
+				box-sizing: border-box;
+			}
+			ul {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+			li.backup {
+				border: 1px solid #e6e9f0;
+				border-radius: 8px;
+				padding: 0.75rem 1rem;
+				margin-bottom: 0.5rem;
+			}
+			.row {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 0.5rem;
+				flex-wrap: wrap;
+			}
+			.muted {
+				color: #6b7589;
+			}
+			.stories {
+				margin-top: 0.75rem;
+			}
+			.stories ul {
+				max-height: 50vh;
+				overflow: auto;
+				margin-top: 0.5rem;
+			}
+			.stories li {
+				padding: 0.35rem 0;
+				border-top: 1px solid #f0f2f6;
+			}
+			#status:empty {
+				display: none;
+			}
+			#status {
+				padding: 0.5rem 0.75rem;
+				border-radius: 6px;
+				background: #f2f4f8;
+				margin-bottom: 1rem;
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<h1>Backups</h1>
+			<button class="primary" id="now" disabled>Back up now</button>
+		</header>
+		<p id="status">Connecting to Storyblok…</p>
+		<ul id="list"></ul>
+
+		<template id="backup">
+			<li class="backup">
+				<div class="row">
+					<div><strong data-date></strong> <span class="muted" data-meta></span></div>
+					<div><button data-download>Download</button> <button data-restore>Restore a story…</button></div>
+				</div>
+			</li>
+		</template>
+
+		<script>
+			const params = new URLSearchParams(location.search)
+			const parent_origin =
+				params.get('protocol') && params.get('host')
+					? `${params.get('protocol')}//${params.get('host')}`
+					: 'https://app.storyblok.com'
+			const $ = id => document.getElementById(id)
+			const status = text => ($('status').textContent = text)
+
+			// App Bridge: Storyblok hands us a signed token for this user and space. When it expires we ask again.
+			let token = null
+			function request_token() {
+				return new Promise((resolve, reject) => {
+					const timeout = setTimeout(
+						() => (removeEventListener('message', listen), reject(new Error('Storyblok did not answer'))),
+						10_000
+					)
+					function listen(e) {
+						if (e.origin !== parent_origin || e.data?.action !== 'validated') return
+						clearTimeout(timeout)
+						removeEventListener('message', listen)
+						resolve(e.data.token)
+					}
+					addEventListener('message', listen)
+					parent.postMessage({ action: 'app-changed', event: 'validate' }, parent_origin)
+				})
+			}
+
+			async function api(path, init = {}, retry = true) {
+				token ??= request_token()
+				const res = await fetch(`/api/backups${path}`, {
+					...init,
+					headers: { authorization: `Bearer ${await token}` }
+				})
+				if (res.status === 401 && retry) {
+					token = null
+					return api(path, init, false)
+				}
+				if (!res.ok)
+					throw new Error((await res.json().catch(() => null))?.message ?? `Request failed (${res.status})`)
+				return res
+			}
+
+			const when = iso => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+			const size = n => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.ceil(n / 1e3)} KB`)
+
+			async function load() {
+				const backups = await (await api('')).json()
+				$('list').replaceChildren(...backups.map(render))
+				return backups
+			}
+
+			function render(b) {
+				const li = $('backup').content.firstElementChild.cloneNode(true)
+				li.querySelector('[data-date]').textContent = when(b.uploaded)
+				li.querySelector('[data-meta]').textContent = `${b.stories} stories · ${size(b.size)}`
+				li.querySelector('[data-download]').onclick = async e => {
+					e.target.disabled = true
+					try {
+						const a = Object.assign(document.createElement('a'), {
+							href: URL.createObjectURL(await (await api(`/${b.name}/download`)).blob()),
+							download: `storyblok-${params.get('space_id') ?? 'space'}-${b.name}`
+						})
+						a.click()
+						URL.revokeObjectURL(a.href)
+					} catch (err) {
+						status(err.message)
+					}
+					e.target.disabled = false
+				}
+				li.querySelector('[data-restore]').onclick = e => stories(li, b, e.target)
+				return li
+			}
+
+			async function stories(li, b, button) {
+				if (li.querySelector('.stories')) return li.querySelector('.stories').remove()
+				button.disabled = true
+				try {
+					const list = await (await api(`/${b.name}/stories`)).json()
+					const box = Object.assign(document.createElement('div'), { className: 'stories' })
+					const filter = Object.assign(document.createElement('input'), {
+						type: 'search',
+						placeholder: `Filter ${list.length} stories by name or slug`
+					})
+					const ul = document.createElement('ul')
+					const show = () => {
+						const q = filter.value.toLowerCase()
+						ul.replaceChildren(
+							...list
+								.filter(s => !q || s.name.toLowerCase().includes(q) || s.full_slug.includes(q))
+								.slice(0, 200)
+								.map(s => {
+									const row = Object.assign(document.createElement('li'), { className: 'row' })
+									row.innerHTML =
+										'<span><span></span> <span class="muted"></span></span><button>Restore</button>'
+									row.querySelector('span > span').textContent = s.name
+									row.querySelector('.muted').textContent = `/${s.full_slug}`
+									row.querySelector('button').onclick = e => restore(b, s, e.target)
+									return row
+								})
+						)
+					}
+					filter.oninput = show
+					show()
+					box.append(filter, ul)
+					li.append(box)
+					filter.focus()
+				} catch (err) {
+					status(err.message)
+				}
+				button.disabled = false
+			}
+
+			async function restore(b, s, button) {
+				if (
+					!confirm(
+						`Overwrite the draft of “${s.name}” with its content from ${when(b.uploaded)}?\n\nThe current version stays in the story's history.`
+					)
+				)
+					return
+				button.disabled = true
+				try {
+					const result = await (await api(`/${b.name}/stories/${s.id}`, { method: 'POST' })).json()
+					status(
+						result.recreated
+							? `“${s.name}” was deleted, so it was recreated as a new story (id ${result.id}). Review and publish it.`
+							: `Restored the draft of “${s.name}”. Review and publish it.`
+					)
+				} catch (err) {
+					status(`Restore failed: ${err.message}`)
+				}
+				button.disabled = false
+			}
+
+			$('now').onclick = async () => {
+				$('now').disabled = true
+				try {
+					const before = (await load())[0]?.name
+					await api('', { method: 'POST' })
+					status('Backing up… this can take a few minutes on a big space.')
+					// ponytail: polls for 20 minutes. A failed backup only shows in the Worker's logs.
+					for (let i = 0; i < 240; i++) {
+						await new Promise(r => setTimeout(r, 5000))
+						if ((await load())[0]?.name !== before) return status('Backup complete.')
+					}
+					status('Still running. Check back later.')
+				} catch (err) {
+					status(err.message)
+				} finally {
+					$('now').disabled = false
+				}
+			}
+
+			if (window.top === window.self) status('Open this from the Storyblok sidebar.')
+			else
+				load()
+					.then(backups => {
+						status(backups.length ? '' : 'No backups yet. They run nightly, or use Back up now.')
+						$('now').disabled = false
+					})
+					.catch(err => status(err.message))
+		</script>
+	</body>
+</html>

@@ -1,0 +1,10 @@
+{
+	"name": "backup",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bunx wrangler@4.142.0 dev",
+		"deploy": "bunx wrangler@4.142.0 deploy",
+		"test": "bun test"
+	}
+}

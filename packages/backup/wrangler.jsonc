@@ -1,0 +1,18 @@
+// Secrets (set once, nobody else enters credentials):
+//   STORYBLOK_TOKEN          personal access token of an account that's in every space we back up
+//   STORYBLOK_CLIENT_SECRET  the space plugin's client secret, which signs App Bridge tokens
+{
+	"name": "storyloco-backup",
+	"account_id": "1c48305ea711d2a0bb743bc8562e10ef",
+	"main": "worker.js",
+	"compatibility_date": "2026-09-01",
+	"assets": { "directory": "public", "binding": "ASSETS" },
+	"triggers": { "crons": ["0 3 * * *"] },
+	"r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "storyblok-backups" }],
+	"queues": {
+		"producers": [{ "binding": "QUEUE", "queue": "storyblok-backups" }],
+		"consumers": [{ "queue": "storyblok-backups", "max_batch_size": 1, "max_retries": 2 }]
+	},
+	"limits": { "cpu_ms": 300000 },
+	"observability": { "enabled": true }
+}
