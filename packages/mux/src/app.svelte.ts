@@ -207,6 +207,22 @@ export class MuxManager {
 		return this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen
 	}
 
+	get youtube_progress_label() {
+		const progress = this.youtube_progress
+		switch (progress?.stage) {
+			case 'downloading':
+				return `Downloading ${progress.part === 2 ? 'audio' : 'video'} from YouTube…`
+			case 'merging':
+				return 'Merging video and audio…'
+			case 'uploading':
+				return 'Uploading to Mux…'
+			case 'finishing':
+				return 'Handing over to Mux…'
+			default:
+				return 'Starting YouTube import…'
+		}
+	}
+
 	get has_vimeo() {
 		return !!this.#secrets?.vimeo_secret
 	}

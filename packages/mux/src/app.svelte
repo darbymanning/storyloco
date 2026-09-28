@@ -10,10 +10,18 @@
 		CheckIcon,
 		EllipsisIcon,
 		Settings2Icon,
+		UploadIcon,
 	} from '@lucide/svelte'
 	import '@mux/mux-uploader'
 	import { cn } from 'shared/utils'
-	import { Input, Label, Skeleton as SkeletonComponent, Switch } from 'shared'
+	import {
+		Button,
+		button_variants,
+		Input,
+		Label,
+		Skeleton as SkeletonComponent,
+		Switch,
+	} from 'shared'
 	import { MuxManager } from './app.svelte.js'
 	import type { MuxAsset } from './app.svelte.js'
 	const manager = new MuxManager()
@@ -114,6 +122,38 @@
 	</figure>
 {/snippet}
 
+{#snippet ImportForm(id: string, label: string, placeholder: string, onsubmit: (e: Event) => void)}
+	<form class="grid gap-2" {onsubmit}>
+		<Label for={id}>{label}</Label>
+		<div class="flex gap-2">
+			<Input {id} {placeholder} class="flex-1" />
+			<Button type="submit" variant="secondary" class="h-11.5">Import</Button>
+		</div>
+	</form>
+{/snippet}
+
+{#snippet ImportProgress(label: string, percent?: number)}
+	<div class="bg-card grid gap-3 rounded-md border p-4" role="status">
+		<div class="flex items-baseline justify-between gap-4 text-sm">
+			<span class="font-medium">{label}</span>
+			{#if percent !== undefined}
+				<span class="text-muted-foreground tabular-nums">{percent}%</span>
+			{/if}
+		</div>
+		<div class="bg-muted h-1.5 overflow-hidden rounded-full">
+			{#if percent !== undefined}
+				<div
+					class="bg-primary h-full rounded-full transition-[width] duration-500"
+					style:width="{percent}%"
+				></div>
+			{:else}
+				<div class="bg-primary/60 h-full animate-pulse rounded-full"></div>
+			{/if}
+		</div>
+		<p class="text-muted-foreground text-xs">Keep this open until the import finishes.</p>
+	</div>
+{/snippet}
+
 {#snippet AssetMeta(video: MuxAsset)}
 	<p class="font-medium truncate">
 		{video.meta?.title}
@@ -137,49 +177,63 @@
 {#if loaded}
 	{#if manager.is_modal_open}
 		<div class="p-8 grid gap-8">
-			<div class="grid gap-6">
-				<mux-uploader class="bg-r" onsuccess={manager.list} endpoint={manager.get_upload_endpoint}>
-				</mux-uploader>
-				{#if manager.has_vimeo}
-					{#if manager.vimeo_upload_state === 'loading'}
-						<p>Uploading from Vimeo...</p>
+			<div class="grid gap-5">
+				<!-- headless uploader; the visible parts are composed from its sub-elements so they take our
+				styles (mux-uploader only forwards the file-select slot, and its heading size is hardcoded) -->
+				<mux-uploader
+					id="mux-uploader"
+					class="hidden"
+					onsuccess={manager.list}
+					endpoint={manager.get_upload_endpoint}
+				></mux-uploader>
+				<mux-uploader-drop
+					mux-uploader="mux-uploader"
+					overlay
+					overlay-text="Drop to upload"
+					class="border-input bg-input-background hover:border-primary flex flex-col items-center gap-3 rounded-md border border-dashed px-6 py-8 transition-colors"
+				>
+					<span slot="heading" class="grid justify-items-center gap-2 text-sm font-medium">
+						<UploadIcon class="text-muted-foreground size-5" />
+						Drop a video file here
+					</span>
+					<span slot="separator" class="text-muted-foreground text-xs">or</span>
+					<mux-uploader-file-select mux-uploader="mux-uploader">
+						<button type="button" class={button_variants({ variant: 'secondary', size: 'sm' })}>
+							Choose file
+						</button>
+					</mux-uploader-file-select>
+					<mux-uploader-status mux-uploader="mux-uploader" class="text-sm"></mux-uploader-status>
+					<mux-uploader-retry mux-uploader="mux-uploader"></mux-uploader-retry>
+					<mux-uploader-progress mux-uploader="mux-uploader" type="bar" class="w-full"
+					></mux-uploader-progress>
+				</mux-uploader-drop>
+				<div class="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-5">
+					{#if manager.youtube_upload_state === 'loading'}
+						{@render ImportProgress(
+							manager.youtube_progress_label,
+							manager.youtube_progress?.percent
+						)}
 					{:else}
-						<form class="grid gap-2" onsubmit={manager.add_vimeo_url}>
-							<Label for="vimeo_url">Or upload from Vimeo</Label>
-							<Input id="vimeo_url" placeholder="https://vimeo.com/123456789" />
-						</form>
+						{@render ImportForm(
+							'youtube_url',
+							'Import from YouTube',
+							'https://www.youtube.com/watch?v=…',
+							manager.add_youtube_url
+						)}
 					{/if}
-				{/if}
-				{#if manager.youtube_upload_state === 'loading'}
-					{@const progress = manager.youtube_progress}
-					<div class="grid gap-2">
-						<p>
-							{#if progress?.stage === 'downloading'}
-								Downloading {progress.part === 2 ? 'audio' : 'video'} from YouTube… {progress.percent}%
-							{:else if progress?.stage === 'merging'}
-								Merging video and audio…
-							{:else if progress?.stage === 'uploading'}
-								Uploading to Mux… {progress.percent}%
-							{:else if progress?.stage === 'finishing'}
-								Handing over to Mux…
-							{:else}
-								Starting YouTube import…
-							{/if}
-						</p>
-						{#if progress?.percent !== undefined}
-							<progress class="w-full accent-primary" max="100" value={progress.percent}></progress>
+					{#if manager.has_vimeo}
+						{#if manager.vimeo_upload_state === 'loading'}
+							{@render ImportProgress('Importing from Vimeo…')}
 						{:else}
-							<!-- no value = indeterminate bar for the stages without a percentage -->
-							<progress class="w-full accent-primary"></progress>
+							{@render ImportForm(
+								'vimeo_url',
+								'Import from Vimeo',
+								'https://vimeo.com/123456789',
+								manager.add_vimeo_url
+							)}
 						{/if}
-						<p class="text-muted-foreground text-xs">Keep this open until the import finishes.</p>
-					</div>
-				{:else}
-					<form class="grid gap-2" onsubmit={manager.add_youtube_url}>
-						<Label for="youtube_url">Or import from YouTube</Label>
-						<Input id="youtube_url" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ" />
-					</form>
-				{/if}
+					{/if}
+				</div>
 			</div>
 			{#await manager.list()}
 				{@render Skeleton()}
@@ -435,9 +489,10 @@
 <style>
 	@reference './app.css';
 
-	mux-uploader {
-		&::part(drop) {
-			@apply border-input rounded-md border-1;
-		}
+	mux-uploader-drop {
+		--progress-bar-fill-color: var(--primary);
+		--progress-bar-background-color: var(--muted);
+		--progress-bar-border-radius: 9999px;
+		--overlay-background-color: color-mix(in oklab, var(--primary) 12%, transparent);
 	}
 </style>
