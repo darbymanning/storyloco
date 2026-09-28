@@ -17,6 +17,11 @@ export class MuxManager {
 	video_options_open = $state(false)
 	vimeo_upload_state: null | 'loading' = $state(null)
 	youtube_upload_state: null | 'loading' = $state(null)
+	youtube_progress = $state<{
+		stage: 'downloading' | 'merging' | 'uploading' | 'finishing'
+		part?: number
+		percent?: number
+	} | null>(null)
 
 	#poll: NodeJS.Timeout | null = $state(null)
 	#initial = $state(true)
@@ -268,16 +273,31 @@ export class MuxManager {
 
 		this.youtube_upload_state = 'loading'
 		try {
-			// moxy downloads the video and pushes it into a Mux direct upload, so this can take a while
-			const { upload_id } = await ky
-				.post('https://moxy.uilo.co/api/youtube', {
-					json: { video_id },
-					headers: { authorization: `Bearer ${this.#secrets?.mux_secret}` },
-					timeout: false,
-				})
-				.json<{ upload_id: string }>()
+			// moxy downloads the video and pushes it into a Mux direct upload, streaming NDJSON progress
+			const res = await ky.post('https://moxy.uilo.co/api/youtube', {
+				json: { video_id },
+				headers: { authorization: `Bearer ${this.#secrets?.mux_secret}` },
+				timeout: false,
+			})
+			const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
+			let buffer = ''
+			let upload_id: string | undefined
+			let done = false
+			for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+				const lines = (buffer + chunk.value).split('\n')
+				buffer = lines.pop()!
+				for (const line of lines.filter(Boolean)) {
+					const event = JSON.parse(line)
+					if (event.error) throw new Error(`YouTube import failed: ${event.error}`)
+					if (event.upload_id) upload_id = event.upload_id
+					else if (event.done) done = true
+					else this.youtube_progress = event
+				}
+			}
+			if (!upload_id || !done) throw new Error('YouTube import stopped unexpectedly')
 
 			// the asset appears once Mux has picked up the finished upload
+			this.youtube_progress = { stage: 'finishing' }
 			while ((await this.mux.video.uploads.retrieve(upload_id)).status === 'waiting') {
 				await new Promise((resolve) => setTimeout(resolve, 1000))
 			}
@@ -290,6 +310,7 @@ export class MuxManager {
 			window.alert(message)
 		} finally {
 			this.youtube_upload_state = null
+			this.youtube_progress = null
 		}
 	}
 }

@@ -151,7 +151,29 @@
 					{/if}
 				{/if}
 				{#if manager.youtube_upload_state === 'loading'}
-					<p>Importing from YouTube… this can take a few minutes, keep this open.</p>
+					{@const progress = manager.youtube_progress}
+					<div class="grid gap-2">
+						<p>
+							{#if progress?.stage === 'downloading'}
+								Downloading {progress.part === 2 ? 'audio' : 'video'} from YouTube… {progress.percent}%
+							{:else if progress?.stage === 'merging'}
+								Merging video and audio…
+							{:else if progress?.stage === 'uploading'}
+								Uploading to Mux… {progress.percent}%
+							{:else if progress?.stage === 'finishing'}
+								Handing over to Mux…
+							{:else}
+								Starting YouTube import…
+							{/if}
+						</p>
+						{#if progress?.percent !== undefined}
+							<progress class="w-full accent-primary" max="100" value={progress.percent}></progress>
+						{:else}
+							<!-- no value = indeterminate bar for the stages without a percentage -->
+							<progress class="w-full accent-primary"></progress>
+						{/if}
+						<p class="text-muted-foreground text-xs">Keep this open until the import finishes.</p>
+					</div>
 				{:else}
 					<form class="grid gap-2" onsubmit={manager.add_youtube_url}>
 						<Label for="youtube_url">Or import from YouTube</Label>
