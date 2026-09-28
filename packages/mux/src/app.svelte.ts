@@ -60,8 +60,9 @@ export class MuxManager {
 	get mux() {
 		return new Mux({
 			baseURL: 'https://moxy.uilo.co/api/mux/',
-			tokenId: '',
-			tokenSecret: '',
+			// moxy swaps in the real credentials; the SDK just refuses to run with empty ones
+			tokenId: 'moxy',
+			tokenSecret: 'moxy',
 			defaultHeaders: {
 				authorization: `Bearer ${this.#secrets?.mux_secret}`,
 			},
