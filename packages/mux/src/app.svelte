@@ -470,9 +470,12 @@
 		</div>
 	{:else if manager.content?.mux_video}
 		{@const video = manager.content.mux_video}
-		<div class="bg-card text-card-foreground grid w-full rounded-lg border">
-			<div class="grid grid-cols-[minmax(0,140px)_minmax(0,1fr)_auto] items-center gap-4 p-3">
-				{@render AssetPreview(video)}
+		<div class="bg-card text-card-foreground @container grid w-full rounded-lg border">
+			<!-- Storyblok's field column is narrow: thumbnail on top there, beside the title when there's room -->
+			<div
+				class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 p-3 @md:grid-cols-[140px_minmax(0,1fr)_auto]"
+			>
+				<div class="col-span-full @md:col-span-1">{@render AssetPreview(video)}</div>
 				<div class="grid min-w-0 gap-0.5">
 					<p class="truncate font-medium" title={manager.content.title || title_of(video)}>
 						{manager.content.title || title_of(video)}
@@ -615,18 +618,22 @@
 		</div>
 	{:else}
 		<button
-			class="border-input bg-input-background hover:border-primary hover:bg-muted/40 grid w-full grid-cols-[minmax(0,140px)_minmax(0,1fr)] items-center gap-4 rounded-lg border border-dashed p-3 text-start transition-colors"
+			class="border-input bg-input-background hover:border-primary hover:bg-muted/40 @container grid w-full items-center rounded-lg border border-dashed p-3 text-start transition-colors"
 			onclick={() => manager.plugin?.actions?.setModalOpen(true)}
 		>
 			<span
-				class="bg-muted text-muted-foreground flex aspect-video items-center justify-center rounded-md"
-				><PlusIcon class="size-5" /></span
+				class="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-4 @md:grid-cols-[140px_minmax(0,1fr)]"
 			>
-			<span class="grid gap-0.5">
-				<span class="font-medium">Add a video</span>
-				<span class="text-muted-foreground text-xs"
-					>Upload one, import it from YouTube or choose from Mux</span
+				<span
+					class="bg-muted text-muted-foreground flex aspect-square items-center justify-center rounded-md @md:aspect-video"
+					><PlusIcon class="size-5" /></span
 				>
+				<span class="grid gap-0.5">
+					<span class="font-medium">Add a video</span>
+					<span class="text-muted-foreground text-xs"
+						>Upload one, import it from YouTube or choose from Mux</span
+					>
+				</span>
 			</span>
 		</button>
 	{/if}
