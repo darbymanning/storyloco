@@ -158,7 +158,7 @@ async function api(request, env, url) {
 
 	if (!name) {
 		if (request.method === 'POST') {
-			await env.QUEUE.send(id)
+			await env.QUEUE.send({ space_id: id })
 			return json({ queued: true }, 202)
 		}
 		const { objects } = await env.BACKUPS.list({ prefix: `${id}/`, include: ['customMetadata'] })
@@ -208,11 +208,11 @@ export default {
 	async scheduled(_, env) {
 		const { spaces } = await mapi(env, '/spaces')
 		for (let i = 0; i < spaces.length; i += 100)
-			await env.QUEUE.sendBatch(spaces.slice(i, i + 100).map(s => ({ body: s.id })))
+			await env.QUEUE.sendBatch(spaces.slice(i, i + 100).map(s => ({ body: { space_id: s.id } })))
 		console.log(`Queued ${spaces.length} space backups`)
 	},
 
 	async queue(batch, env) {
-		for (const message of batch.messages) await backup(env, message.body)
+		for (const message of batch.messages) await backup(env, message.body.space_id)
 	}
 }

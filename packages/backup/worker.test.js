@@ -81,7 +81,7 @@ const call = async (path, token, method = 'GET') =>
 	worker.fetch(new Request(`https://x${path}`, { method, headers: { authorization: `Bearer ${token}` } }), env)
 
 test('backup, list, restore', async () => {
-	await worker.queue({ messages: [{ body: 42 }] }, env)
+	await worker.queue({ messages: [{ body: { space_id: 42 } }] }, env)
 	const token = await jwt({ space_id: 42, user_id: 1, exp: Date.now() / 1000 + 60 })
 
 	expect((await call('/api/backups', 'nope')).status).toBe(401)
