@@ -89,7 +89,9 @@
 			selectable ? 'rounded-none' : 'rounded-md border'
 		)}
 	>
-		{#if playback_id && video?.status === 'ready'}
+		<!-- the field's saved copy of the asset can be stale or partial, so outside the picker any
+		playback id gets a thumbnail; the picker's list is always current -->
+		{#if playback_id && (selectable ? video?.status === 'ready' : video?.status !== 'errored')}
 			<img
 				class="absolute inset-0 size-full object-cover"
 				src="https://image.mux.com/{playback_id}/thumbnail.webp?width=480&height=270&fit_mode=smartcrop"
@@ -116,7 +118,7 @@
 		{:else}
 			<HourglassIcon class="size-5 animate-pulse" />
 		{/if}
-		{#if video && video.status !== 'ready'}
+		{#if video && selectable && video.status !== 'ready'}
 			<span
 				class={cn(
 					'absolute top-1.5 left-1.5 rounded-full px-2 text-[11px] font-medium',
@@ -476,13 +478,16 @@
 						{manager.content.title || title_of(video)}
 					</p>
 					<p class="text-muted-foreground truncate text-xs">
-						{#if video.status === 'ready'}
-							{video.duration ? manager.format_duration(video.duration) : ''}
-							{#if video.duration}·{/if}
+						{#if video.status === 'errored'}
+							{@render Meta(video)}
+						{:else}
+							{[
+								video.duration ? manager.format_duration(video.duration) : '',
+								manager.date(video.created_at),
+							]
+								.filter(Boolean)
+								.join(' · ')}
 						{/if}
-						{#if video.status !== 'ready'}{@render Meta(video)}{:else}<time
-								datetime={video.created_at}>{manager.date(video.created_at)}</time
-							>{/if}
 					</p>
 				</div>
 				<div class="flex items-center gap-0.5">

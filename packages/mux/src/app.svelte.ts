@@ -300,7 +300,9 @@ export class MuxManager {
 		return `${minutes}:${remaining_seconds.toString().padStart(2, '0')}`
 	}
 
-	date(date: string): string {
+	// '' for content saved without a date (e.g. written by hand or by an older version)
+	date(date?: string): string {
+		if (!date) return ''
 		const d = new Date(Number(date) * 1000)
 		return format_elapse(d) || format_date('{MMM} {D}, {YYYY}', d)
 	}
