@@ -8,6 +8,9 @@ export type { MuxAsset }
 
 type Plugin = FieldPluginResponse<Video | null>
 
+// passthrough marker for assets deleted while still preparing
+const PENDING_DELETE = 'delete-when-ready'
+
 export class MuxManager {
 	plugin = $state<Plugin | null>(null)
 	content = $state<Video | null>(null)
@@ -117,9 +120,18 @@ export class MuxManager {
 
 	list = async () => {
 		if (!this.mux) throw new Error('Mux not initialised')
-		this.assets = (await this.mux.video.assets.list({ limit: 0 })).data
+		const assets = (await this.mux.video.assets.list({ limit: 0 })).data
 
-		const has_preparing = this.assets?.find(({ status }) => status === 'preparing')
+		// finish deferred deletes (see `delete`) now Mux allows them; failures just retry next list
+		await Promise.allSettled(
+			assets
+				.filter((asset) => asset.passthrough === PENDING_DELETE && asset.status !== 'preparing')
+				.map((asset) => this.mux.video.assets.delete(asset.id))
+		)
+		this.assets = assets.filter((asset) => asset.passthrough !== PENDING_DELETE)
+
+		// keeps polling for pending deletes too, so they go as soon as they're ready
+		const has_preparing = assets.some(({ status }) => status === 'preparing')
 
 		if (has_preparing)
 			this.#poll = setTimeout(this.list, 3000) // 3 seconds
@@ -131,8 +143,12 @@ export class MuxManager {
 			throw new Error('Mux not initialised')
 		const confirm = window.confirm('Are you sure you want to delete this video?')
 		if (!confirm) return
+		const asset = this.assets?.find((asset) => asset.id === id)
 		if (this.assets?.length) this.assets = this.assets.filter((asset) => asset.id !== id)
-		await this.mux.video.assets.delete(id)
+		// Mux refuses to delete (or abort) a preparing asset, so flag it and let `list` delete it once ready
+		if (asset?.status === 'preparing')
+			await this.mux.video.assets.update(id, { passthrough: PENDING_DELETE })
+		else await this.mux.video.assets.delete(id)
 		if (this.content?.mux_video?.id === id) this.set_video(null)
 		await this.list()
 	}
