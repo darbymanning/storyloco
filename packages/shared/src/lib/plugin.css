@@ -197,7 +197,7 @@
 		color: var(--sb-muted);
 	}
 
-	& input,
+	& input:not([type='checkbox'], [type='radio']),
 	& textarea {
 		background: var(--sb-surface);
 		border: 1px solid var(--sb-line);
@@ -223,6 +223,17 @@
 			box-shadow: 0 0 0 3px var(--sb-accent-wash);
 			outline: none;
 		}
+	}
+
+	& input:is([type='checkbox'], [type='radio']) {
+		accent-color: var(--sb-primary);
+		appearance: auto;
+		block-size: 16px;
+		cursor: pointer;
+		flex: none;
+		inline-size: 16px;
+		margin: 0;
+		padding: 0;
 	}
 
 	& .button {
