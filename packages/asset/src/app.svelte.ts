@@ -15,7 +15,11 @@ export interface Props {
 	oncancel?: () => void
 }
 
-export type View = { kind: 'all' } | { kind: 'unused' } | { kind: 'trash' } | { kind: 'folder'; id: string }
+export type View =
+	| { kind: 'all' }
+	| { kind: 'unused' }
+	| { kind: 'trash' }
+	| { kind: 'folder'; id: string }
 export type Kind = '' | 'image' | 'video' | 'audio' | 'document'
 export type Story = { id: number; name: string; slug: string }
 type Upload = {
@@ -80,7 +84,7 @@ export class AssetManager {
 	readonly flat = $derived.by(() => {
 		const out: Array<{ folder: R2FolderTree; depth: number; path: string }> = []
 		const walk = (list: Array<R2FolderTree>, depth: number, path: string) =>
-			list.forEach(folder => {
+			list.forEach((folder) => {
 				const here = path ? `${path} / ${folder.name}` : folder.name
 				out.push({ folder, depth, path: here })
 				walk(folder.children ?? [], depth + 1, here)
@@ -90,7 +94,7 @@ export class AssetManager {
 	})
 	readonly folder = $derived(
 		this.view.kind === 'folder'
-			? this.flat.find(f => f.folder.id === (this.view as { id: string }).id)?.folder
+			? this.flat.find((f) => f.folder.id === (this.view as { id: string }).id)?.folder
 			: undefined
 	)
 	busy = $state(false)
@@ -107,7 +111,9 @@ export class AssetManager {
 
 	readonly in_field = $derived(
 		new Set(
-			(Array.isArray(this.content) ? this.content : this.content ? [this.content] : []).map(a => a._data.id)
+			(Array.isArray(this.content) ? this.content : this.content ? [this.content] : []).map(
+				(a) => a._data.id
+			)
 		)
 	)
 
@@ -125,16 +131,19 @@ export class AssetManager {
 		} else this.#connect()
 
 		$effect(() => {
-			document.documentElement.setAttribute('data-modal-open', this.is_modal_open ? 'true' : 'false')
+			document.documentElement.setAttribute(
+				'data-modal-open',
+				this.is_modal_open ? 'true' : 'false'
+			)
 		})
 	}
 
 	#connect() {
 		createFieldPlugin<Content>({
 			enablePortalModal: true,
-			validateContent: content =>
+			validateContent: (content) =>
 				typeof content === 'object' ? { content: content as Content } : { content: null },
-			onUpdateState: state => {
+			onUpdateState: (state) => {
 				const was_open = this.is_modal_open
 				this.plugin = state as Plugin
 				this.content = (state.data?.content as Content) ?? null
@@ -144,7 +153,7 @@ export class AssetManager {
 					this.#initial = false
 					this.#start()
 				}
-			}
+			},
 		})
 	}
 
@@ -169,7 +178,11 @@ export class AssetManager {
 		}
 	}
 
-	#set_modal(state: { details?: R2Asset | null; from_picker?: boolean; replace_index?: number | null }) {
+	#set_modal(state: {
+		details?: R2Asset | null
+		from_picker?: boolean
+		replace_index?: number | null
+	}) {
 		this.details = state.details ?? null
 		this.details_from_picker = !!state.from_picker
 		this.replace_index = state.replace_index ?? null
@@ -189,7 +202,7 @@ export class AssetManager {
 		this.#set_modal({
 			details: asset,
 			from_picker,
-			replace_index: this.replace_index
+			replace_index: this.replace_index,
 		})
 		if (!this.is_modal_open) this.plugin?.actions?.setModalOpen(true)
 		if (!(asset.id in this.usage)) this.find_usage([asset])
@@ -200,24 +213,24 @@ export class AssetManager {
 		else this.close_modal()
 	}
 
-	// the link and SEO fields get control back on cancel; their own modal stays as it is
+	// the link and SEO fields also get told, so they stop waiting for a file
 	close_modal = () => {
 		this.#set_modal({})
 		this.selected.clear()
-		if (this.oncancel) this.oncancel()
-		else this.plugin?.actions?.setModalOpen(false)
+		this.oncancel?.()
+		this.plugin?.actions?.setModalOpen(false)
 	}
 
 	// ---- requests
 
 	async #request<T>(path: string, init: RequestInit = {}): Promise<T> {
 		const headers: Record<string, string> = {
-			authorization: `Bearer ${this.#secret}`
+			authorization: `Bearer ${this.#secret}`,
 		}
 		if (init.body && !(init.body instanceof FormData)) headers['content-type'] = 'application/json'
 		const res = await fetch(`${API}/${this.bucket}/${path}`, {
 			...init,
-			headers
+			headers,
 		})
 		if (!res.ok) {
 			const body = (await res.json().catch(() => null)) as {
@@ -229,7 +242,7 @@ export class AssetManager {
 	}
 	#json = (method: string, body: unknown): RequestInit => ({
 		method,
-		body: JSON.stringify(body)
+		body: JSON.stringify(body),
 	})
 
 	// runs an action, showing any failure as a toast
@@ -250,7 +263,7 @@ export class AssetManager {
 
 	load = () =>
 		this.run(() => Promise.all([this.list(), this.list_folders(), this.count_unused()]), {
-			quiet: true
+			quiet: true,
 		})
 
 	async list() {
@@ -268,8 +281,8 @@ export class AssetManager {
 		try {
 			const res = await this.#fetch_page(this.#page + 1)
 			this.#page++
-			const seen = new Set(this.assets?.map(a => a.id))
-			const fresh = (res.data ?? []).filter(a => !seen.has(a.id))
+			const seen = new Set(this.assets?.map((a) => a.id))
+			const fresh = (res.data ?? []).filter((a) => !seen.has(a.id))
 			this.assets = [...(this.assets ?? []), ...fresh]
 			this.find_usage(fresh)
 		} finally {
@@ -281,7 +294,7 @@ export class AssetManager {
 		const params = new URLSearchParams({
 			limit: String(PAGE_SIZE),
 			page: String(page),
-			sort: this.sort
+			sort: this.sort,
 		})
 		if (this.view.kind === 'folder') params.set('folder_id', this.view.id)
 		if (this.view.kind === 'trash') params.set('deleted', 'true')
@@ -308,12 +321,12 @@ export class AssetManager {
 
 	refresh = () =>
 		this.run(() => Promise.all([this.list(), this.list_folders(), this.count_unused()]), {
-			quiet: true
+			quiet: true,
 		})
 
 	async find_usage(list: Array<R2Asset>) {
 		if (this.view.kind === 'trash' || this.indexed === false) return
-		const ids = list.map(a => a.id).filter(id => !(id in this.usage))
+		const ids = list.map((a) => a.id).filter((id) => !(id in this.usage))
 		for (let i = 0; i < ids.length; i += 200) {
 			const res = await this.#request<{
 				indexed: boolean
@@ -347,16 +360,16 @@ export class AssetManager {
 
 	toggle = (asset: R2Asset, range = false) => {
 		const list = this.assets ?? []
-		const at = list.findIndex(a => a.id === this.#anchor)
+		const at = list.findIndex((a) => a.id === this.#anchor)
 		if (range && at !== -1) {
-			const to = list.findIndex(a => a.id === asset.id)
+			const to = list.findIndex((a) => a.id === asset.id)
 			const [from, until] = [at, to].sort((a, b) => a - b)
 			for (const each of list.slice(from, until + 1)) this.selected.set(each.id, each)
 		} else if (this.selected.has(asset.id)) this.selected.delete(asset.id)
 		else this.selected.set(asset.id, asset)
 		this.#anchor = asset.id
 	}
-	select_all = () => this.assets?.forEach(a => this.selected.set(a.id, a))
+	select_all = () => this.assets?.forEach((a) => this.selected.set(a.id, a))
 
 	// ---- the field's value
 
@@ -381,22 +394,25 @@ export class AssetManager {
 			format: asset.attributes.format,
 			content_type: asset.attributes.content_type,
 			size_bytes: asset.attributes.size_bytes,
-			_data: asset
+			_data: asset,
 		}
 	}
 
 	// picking in the browser: replaces the file being replaced, adds to a list, or sets the one file
 	pick = (asset: R2Asset) => {
 		const chosen = this.to_asset(asset)
+		// the link and SEO fields take the file themselves; like the old picker, this closes their modal
 		if (this.onselect) {
 			this.onselect(chosen)
+			this.plugin?.actions?.setModalOpen(false)
 			return
 		}
 		if (Array.isArray(this.content) && this.replace_index !== null) {
-			if (!this.content.some(a => a._data.id === asset.id)) this.content[this.replace_index] = chosen
+			if (!this.content.some((a) => a._data.id === asset.id))
+				this.content[this.replace_index] = chosen
 		} else if (this.multiple) {
 			const list = Array.isArray(this.content) ? this.content : []
-			if (!list.some(a => a._data.id === asset.id)) this.content = [...list, chosen]
+			if (!list.some((a) => a._data.id === asset.id)) this.content = [...list, chosen]
 		} else this.content = chosen
 		this.update()
 		this.close_modal()
@@ -404,14 +420,16 @@ export class AssetManager {
 
 	insert_selected = () => {
 		const list = Array.isArray(this.content) ? this.content : []
-		const fresh = [...this.selected.values()].filter(a => !list.some(item => item._data.id === a.id))
+		const fresh = [...this.selected.values()].filter(
+			(a) => !list.some((item) => item._data.id === a.id)
+		)
 		this.content = [...list, ...fresh.map(this.to_asset)]
 		this.update()
 		this.close_modal()
 	}
 
 	remove = (id: string) => {
-		if (Array.isArray(this.content)) this.content = this.content.filter(a => a._data.id !== id)
+		if (Array.isArray(this.content)) this.content = this.content.filter((a) => a._data.id !== id)
 		else if (this.content?._data.id === id) this.content = null
 		this.update()
 	}
@@ -420,8 +438,8 @@ export class AssetManager {
 	#sync_content = (asset: R2Asset) => {
 		const fresh = this.to_asset(asset)
 		if (Array.isArray(this.content)) {
-			if (!this.content.some(a => a._data.id === asset.id)) return
-			this.content = this.content.map(a => (a._data.id === asset.id ? fresh : a))
+			if (!this.content.some((a) => a._data.id === asset.id)) return
+			this.content = this.content.map((a) => (a._data.id === asset.id ? fresh : a))
 		} else if (this.content?._data.id === asset.id) this.content = fresh
 		else return
 		this.update()
@@ -440,9 +458,9 @@ export class AssetManager {
 			const { folder_id: _, ...fields } = changes
 			const saved = {
 				...asset,
-				attributes: { ...asset.attributes, ...fields }
+				attributes: { ...asset.attributes, ...fields },
 			}
-			this.assets = this.assets?.map(a => (a.id === asset.id ? saved : a)) ?? null
+			this.assets = this.assets?.map((a) => (a.id === asset.id ? saved : a)) ?? null
 			this.#sync_content(saved)
 			if ('folder_id' in changes) await this.refresh()
 			if (!quiet) toast.success('Saved')
@@ -454,10 +472,10 @@ export class AssetManager {
 				'assets',
 				this.#json('PATCH', {
 					assets: ids,
-					metadata: { folder_id: folder_id ?? '' }
+					metadata: { folder_id: folder_id ?? '' },
 				})
 			)
-			const into = folder_id ? this.flat.find(f => f.folder.id === folder_id)?.folder.name : null
+			const into = folder_id ? this.flat.find((f) => f.folder.id === folder_id)?.folder.name : null
 			toast.success(`Moved ${count(ids)} ${into ? `to ${into}` : 'out of folders'}`)
 			this.selected.clear()
 			await this.refresh()
@@ -467,14 +485,14 @@ export class AssetManager {
 	trash = (ids: Array<string>) =>
 		this.run(async () => {
 			await this.#request('assets', this.#json('DELETE', ids))
-			this.assets = this.assets?.filter(a => !ids.includes(a.id)) ?? null
+			this.assets = this.assets?.filter((a) => !ids.includes(a.id)) ?? null
 			this.total -= ids.length
 			if (this.all_total !== null) this.all_total -= ids.length
-			ids.forEach(id => this.selected.delete(id))
-			const in_field = ids.filter(id => this.in_field.has(id))
+			ids.forEach((id) => this.selected.delete(id))
+			const in_field = ids.filter((id) => this.in_field.has(id))
 			in_field.forEach(this.remove)
 			toast(`Moved ${count(ids)} to the trash${in_field.length ? ' and out of this field' : ''}`, {
-				action: { label: 'Undo', onClick: () => this.restore(ids, true) }
+				action: { label: 'Undo', onClick: () => this.restore(ids, true) },
 			})
 			await Promise.all([this.list_folders(), this.count_unused()])
 		})
@@ -509,11 +527,11 @@ export class AssetManager {
 		for (const file of [...files]) {
 			this.uploads.push({ name: file.name, progress: 0, status: 'uploading' })
 			const entry = this.uploads[this.uploads.length - 1]
-			await new Promise<void>(done => {
+			await new Promise<void>((done) => {
 				const xhr = new XMLHttpRequest()
 				xhr.open('POST', `${API}/${this.bucket}/assets`)
 				xhr.setRequestHeader('authorization', `Bearer ${this.#secret}`)
-				xhr.upload.onprogress = e => e.lengthComputable && (entry.progress = e.loaded / e.total)
+				xhr.upload.onprogress = (e) => e.lengthComputable && (entry.progress = e.loaded / e.total)
 				xhr.onload = () => {
 					entry.progress = 1
 					try {
@@ -545,7 +563,7 @@ export class AssetManager {
 		if (this.all_total !== null) this.all_total += added.length
 		await this.refresh()
 		// finished uploads leave the tray; failures stay until dismissed
-		setTimeout(() => (this.uploads = this.uploads.filter(u => u.status === 'failed')), 2500)
+		setTimeout(() => (this.uploads = this.uploads.filter((u) => u.status === 'failed')), 2500)
 		return added
 	}
 
@@ -579,8 +597,11 @@ export class AssetManager {
 
 	move_folder = (folder: R2FolderTree, parent_id: string | null) =>
 		this.run(async () => {
-			await this.#request(`folders/${folder.id}`, this.#json('PATCH', { name: folder.name, parent_id }))
-			const into = parent_id ? this.flat.find(f => f.folder.id === parent_id)?.folder.name : null
+			await this.#request(
+				`folders/${folder.id}`,
+				this.#json('PATCH', { name: folder.name, parent_id })
+			)
+			const into = parent_id ? this.flat.find((f) => f.folder.id === parent_id)?.folder.name : null
 			toast.success(`Moved “${folder.name}” ${into ? `into ${into}` : 'to the top level'}`)
 			await this.list_folders()
 		})
@@ -598,43 +619,48 @@ export class AssetManager {
 	// other fields pass their own plugin (with their own content type), so it's taken loosely
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	static select_asset(plugin: FieldPluginResponse<any> | null) {
-		return new Promise<Asset | null>(resolve => {
+		return new Promise<Asset | null>((resolve) => {
 			const app = document.body.querySelector('#app') as HTMLElement
 			if (document.getElementById('asset_picker_mount') || !app) return
 			const target = document.createElement('div')
 			target.id = 'asset_picker_mount'
 			document.body.appendChild(target)
 			app.style.display = 'none'
+			// the field only hears back once the browser is gone and its own UI is showing again; handing the file
+			// over mid-teardown left the link field showing its old state until something re-rendered it
 			const finish = async (asset: Asset | null) => {
-				resolve(asset)
 				await unmount(picker)
 				target.remove()
 				app.style.display = 'block'
+				resolve(asset)
 			}
 			const picker = mount(AssetPicker, {
 				target,
 				props: {
 					plugin: plugin as Plugin,
-					onselect: asset => finish(asset),
-					oncancel: () => finish(null)
-				}
+					onselect: (asset) => finish(asset),
+					oncancel: () => finish(null),
+				},
 			})
 		})
 	}
 }
 
-const count = (ids: Array<string>) => (ids.length === 1 ? '1 file' : `${ids.length.toLocaleString()} files`)
+const count = (ids: Array<string>) =>
+	ids.length === 1 ? '1 file' : `${ids.length.toLocaleString()} files`
 
 // ---- display helpers
 
-export const is_image = (a: R2Asset) => !!a.attributes.content_type?.startsWith('image/') && !!a.links?.self
+export const is_image = (a: R2Asset) =>
+	!!a.attributes.content_type?.startsWith('image/') && !!a.links?.self
 export const is_svg = (a: R2Asset) => a.attributes.content_type === 'image/svg+xml'
 // formats that can be see-through get a checkerboard behind them
 export const may_be_clear = (a: R2Asset) =>
 	/^image\/(png|svg\+xml|webp|gif|avif)$/.test(a.attributes.content_type ?? '')
 export const thumb = (a: R2Asset, width: number) =>
 	is_svg(a) ? a.links!.self! : `${a.links!.self}/m/${width}x0/filters:quality(75)`
-export const label = (a: R2Asset) => a.attributes.name || a.attributes.filename.replace(/\.[^.]+$/, '')
+export const label = (a: R2Asset) =>
+	a.attributes.name || a.attributes.filename.replace(/\.[^.]+$/, '')
 export const extension = (a: R2Asset) =>
 	(a.attributes.filename.includes('.')
 		? a.attributes.filename.split('.').pop()
@@ -647,7 +673,7 @@ export const describe = (a: R2Asset) =>
 	[
 		`.${extension(a)}`,
 		a.attributes.width && `${a.attributes.width}×${a.attributes.height}`,
-		size(a.attributes.size_bytes)
+		size(a.attributes.size_bytes),
 	]
 		.filter(Boolean)
 		.join(' · ')
