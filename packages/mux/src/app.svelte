@@ -34,6 +34,11 @@
 
 	const loaded = $derived(manager.plugin?.type === 'loaded' && manager.mux)
 	let search = $state('')
+	let renaming = $state<string | null>(null)
+	const select = (video: MuxAsset) => {
+		manager.set_video(video)
+		manager.plugin?.actions?.setModalOpen(false)
+	}
 	let importing = $state<'youtube' | 'vimeo' | null>(null)
 	// the form stays mounted while it animates closed, so it keeps the last service's labels
 	let service = $state<'youtube' | 'vimeo'>('youtube')
@@ -423,20 +428,50 @@
 									out:fade={{ duration: 200 }}
 								>
 									<button
-										class="grid w-full text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"
-										onclick={() => {
-											manager.set_video(video)
-											manager.plugin?.actions?.setModalOpen(false)
-										}}
+										class="focus-visible:ring-ring grid w-full outline-none focus-visible:ring-2"
+										aria-label="Select {title_of(video)}"
+										onclick={() => select(video)}
 									>
 										{@render AssetPreview(video, true)}
-										<span class="grid gap-0.5 p-3">
-											<span class="truncate text-sm font-medium" title={title_of(video)}
-												>{title_of(video)}</span
-											>
-											{@render Meta(video)}
-										</span>
 									</button>
+									<!-- the title swaps for a text box while renaming, so it can't live inside the select button -->
+									<div class="grid gap-0.5 p-3 pr-10">
+										{#if renaming === video.id}
+											<input
+												class="border-input bg-input-background focus-visible:border-ring -mx-1.5 h-5 rounded border px-1.5 text-sm font-medium outline-none"
+												aria-label="Video title"
+												value={video.meta?.title ?? ''}
+												placeholder="Untitled video"
+												maxlength="512"
+												{@attach (el) => {
+													// focus and select once it appears (autofocus only works on page load)
+													el.focus()
+													el.select()
+												}}
+												onkeydown={(e) => {
+													if (e.key === 'Enter') e.currentTarget.blur()
+													if (e.key === 'Escape') {
+														// only cancel the rename, not close the surrounding modal
+														e.preventDefault()
+														e.stopPropagation()
+														renaming = null
+													}
+												}}
+												onblur={(e) => {
+													if (renaming !== video.id) return
+													renaming = null
+													manager.rename(video.id, e.currentTarget.value)
+												}}
+											/>
+										{:else}
+											<button
+												class="truncate text-start text-sm font-medium"
+												title={title_of(video)}
+												onclick={() => select(video)}>{title_of(video)}</button
+											>
+										{/if}
+										{@render Meta(video)}
+									</div>
 									<div class="actions absolute right-1.5 bottom-2">
 										<button
 											class={cn(
@@ -463,6 +498,15 @@
 															manager.set_video(video)
 															manager.plugin?.actions?.setModalOpen(false)
 														}}>Select</button
+													>
+												</li>
+												<li>
+													<button
+														class="hover:bg-muted w-full rounded px-3 py-2 text-start text-sm"
+														onclick={() => {
+															manager.open_actions = null
+															renaming = video.id
+														}}>Rename</button
 													>
 												</li>
 												<li>

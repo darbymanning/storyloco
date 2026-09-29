@@ -278,6 +278,26 @@ export class MuxManager {
 		}, 1000)
 	}
 
+	// renames a video in Mux from the picker, keeping the list and a selected copy of it in step
+	rename = async (id: string, value: string) => {
+		const asset = this.assets?.find((a) => a.id === id)
+		const title = value.trim()
+		if (!asset || title === (asset.meta?.title ?? '')) return
+		const before = asset.meta?.title
+		asset.meta = { ...asset.meta, title }
+		try {
+			await this.mux.video.assets.update(id, { meta: { title } })
+			if (this.content?.mux_video?.id === id)
+				this.update({
+					title,
+					mux_video: { ...this.content.mux_video, meta: { ...this.content.mux_video.meta, title } },
+				})
+		} catch (error) {
+			asset.meta = { ...asset.meta, title: before }
+			window.alert(`Couldn’t rename the video: ${message(error)}`)
+		}
+	}
+
 	async select_poster() {
 		if (!this.content?.mux_video || !this.plugin?.actions) return
 		const asset = await this.plugin.actions.selectAsset()
