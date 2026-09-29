@@ -36,6 +36,9 @@ export class MuxManager {
 	// a video Mux wouldn't let us delete, so the field can point to the Mux dashboard instead
 	undeletable = $state<{ title: string; url: string } | null>(null)
 
+	// a field added after the space connected to Mux has no secret yet: it asks moxy to fill it in
+	setup = $state<'working' | 'done' | 'not-connected' | 'failed' | null>(null)
+
 	#poll: NodeJS.Timeout | null = $state(null)
 	#initial = $state(true)
 	#secrets: { mux_secret: string; vimeo_secret?: string } | null = $derived.by(() => {
@@ -67,12 +70,38 @@ export class MuxManager {
 			},
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
+				if (this.plugin.type === 'loaded' && !this.#secrets?.mux_secret && !this.setup)
+					this.#request_setup()
 				if (this.plugin.data?.content) {
 					this.content = this.plugin.data.content
 					if (this.#initial) this.#initial = false
 				}
 			},
 		})
+	}
+
+	// moxy writes the space's secret into this block (and any others missing it); Storyblok only hands a
+	// field its options when the story loads, so the editor needs a reload to pick it up
+	#request_setup = async () => {
+		if (this.plugin?.type !== 'loaded') return
+		// Storyblok always passes the space; only the plugin sandbox leaves it out
+		if (!this.plugin.data.spaceId) return (this.setup = 'failed')
+		this.setup = 'working'
+		try {
+			const result = await ky
+				.post('https://moxy.uilo.co/api/mux-setup', {
+					json: { space_id: this.plugin.data.spaceId },
+					timeout: 60_000,
+				})
+				.json<{ connected: boolean; set_up?: Array<string>; throttled?: boolean; error?: string }>()
+			this.setup = !result.connected
+				? 'not-connected'
+				: result.error || !(result.set_up?.length || result.throttled)
+					? 'failed'
+					: 'done'
+		} catch {
+			this.setup = 'failed'
+		}
 	}
 
 	get mux() {

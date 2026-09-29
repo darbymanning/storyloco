@@ -233,7 +233,38 @@
 {/snippet}
 
 {#if loaded}
-	{#if manager.is_modal_open}
+	{#if manager.setup}
+		<!-- this block's Mux field has no secret yet (it was added after the space connected to Mux) -->
+		<div
+			class="bg-card text-card-foreground flex items-start gap-3 rounded-lg border p-4 text-sm"
+			role="status"
+		>
+			{#if manager.setup === 'working'}
+				<LoaderCircleIcon class="text-primary mt-0.5 size-4 shrink-0 animate-spin" />
+				<p>Setting up Mux for this block…</p>
+			{:else if manager.setup === 'done'}
+				<CheckIcon class="text-primary mt-0.5 size-4 shrink-0" />
+				<p>
+					<strong>Mux is set up for this block.</strong>
+					<span class="text-muted-foreground">Reload the page to start using it.</span>
+				</p>
+			{:else}
+				<CircleAlertIcon class="text-muted-foreground mt-0.5 size-4 shrink-0" />
+				<p>
+					<strong>
+						{manager.setup === 'not-connected'
+							? 'This space isn’t connected to Mux yet.'
+							: 'Mux couldn’t be set up for this block automatically.'}
+					</strong>
+					<span class="text-muted-foreground">
+						{manager.setup === 'not-connected'
+							? 'Open Mux in the Storyblok sidebar to connect it.'
+							: 'Open Mux in the Storyblok sidebar and choose Set up field.'}
+					</span>
+				</p>
+			{/if}
+		</div>
+	{:else if manager.is_modal_open}
 		<!-- a column with margins, not a grid gap: the collapsible rows below animate their margin away,
 		which a grid gap wouldn't allow -->
 		<div
