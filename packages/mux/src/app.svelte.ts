@@ -307,14 +307,20 @@ export class MuxManager {
 		return format_elapse(d) || format_date('{MMM} {D}, {YYYY}', d)
 	}
 
+	// no poster saved means the video's own frame, same as a Mux thumbnail poster
 	get is_mux_poster() {
-		return this.content?.poster?.startsWith('https://image.mux.com/')
+		return !this.content?.poster || this.content.poster.startsWith('https://image.mux.com/')
 	}
 
 	get poster() {
-		if (this.is_mux_poster) return `${this.content?.poster}?width=558&height=314&fit_mode=smartcrop`
-		if (this.content?.poster?.endsWith('.svg')) return this.content.poster
-		return `${this.content?.poster}/m/558x314/smart`
+		const poster =
+			this.content?.poster ||
+			(this.content?.mux_video ? this.get_poster(this.content.mux_video) : undefined)
+		if (!poster) return undefined
+		if (poster.startsWith('https://image.mux.com/'))
+			return `${poster}?width=558&height=314&fit_mode=smartcrop`
+		if (poster.endsWith('.svg')) return poster
+		return `${poster}/m/558x314/smart`
 	}
 
 	get is_modal_open() {

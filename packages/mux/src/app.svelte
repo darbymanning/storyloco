@@ -35,15 +35,23 @@
 	const loaded = $derived(manager.plugin?.type === 'loaded' && manager.mux)
 	let search = $state('')
 	let importing = $state<'youtube' | 'vimeo' | null>(null)
+	// the form stays mounted while it animates closed, so it keeps the last service's labels
+	let service = $state<'youtube' | 'vimeo'>('youtube')
+	const service_name = $derived(service === 'vimeo' ? 'Vimeo' : 'YouTube')
+	$effect(() => {
+		if (!importing) return
+		service = importing
+		// focus once the row has started opening
+		requestAnimationFrame(() => document.getElementById(`${importing}_url`)?.focus())
+	})
 	let import_problem = $state<string | null>(null)
 	let dragging = $state(false)
 	let file_input = $state<HTMLInputElement>()
 
 	const submit_import = (e: Event) => {
-		const ok = importing === 'vimeo' ? manager.add_vimeo_url(e) : manager.add_youtube_url(e)
+		const ok = service === 'vimeo' ? manager.add_vimeo_url(e) : manager.add_youtube_url(e)
 		if (ok) importing = import_problem = null
-		else
-			import_problem = `That doesn’t look like a ${importing === 'vimeo' ? 'Vimeo' : 'YouTube'} link`
+		else import_problem = `That doesn’t look like a ${service_name} link`
 	}
 	const shown = $derived(
 		(manager.assets ?? []).filter((video) =>
@@ -221,8 +229,10 @@
 
 {#if loaded}
 	{#if manager.is_modal_open}
+		<!-- a column with margins, not a grid gap: the collapsible rows below animate their margin away,
+		which a grid gap wouldn't allow -->
 		<div
-			class="grid gap-6 p-8"
+			class="flex flex-col p-8"
 			role="presentation"
 			ondragover={(e) => {
 				if (!e.dataTransfer?.types.includes('Files')) return
@@ -295,45 +305,55 @@
 				</div>
 			</header>
 
-			{#if importing}
-				{@const service = importing === 'vimeo' ? 'Vimeo' : 'YouTube'}
-				<form
-					class="bg-muted/40 grid gap-2 rounded-lg border p-4"
-					onsubmit={submit_import}
-					transition:slide={{ duration: 200 }}
-				>
-					<Label for="{importing}_url">Import from {service}</Label>
-					<div class="flex gap-2">
-						<!-- svelte-ignore a11y_autofocus -->
-						<Input
-							id="{importing}_url"
-							type="url"
-							required
-							autofocus
-							placeholder={importing === 'vimeo'
-								? 'https://vimeo.com/123456789'
-								: 'https://www.youtube.com/watch?v=…'}
-							class="flex-1"
-						/>
-						<Button type="submit">Import</Button>
-						<Button type="button" variant="ghost" onclick={() => (importing = null)}>Cancel</Button>
-					</div>
-					<p class={cn('text-xs', import_problem ? 'text-destructive' : 'text-muted-foreground')}>
-						{import_problem ??
-							`Paste a link to a public ${service} video. It’s copied into Mux in the background.`}
-					</p>
-				</form>
-			{/if}
+			<!-- always mounted: the row animates between 1fr and 0fr together with its margin, so closing
+			never snaps at the end -->
+			<div
+				class={cn(
+					'grid transition-[grid-template-rows,margin-top] duration-200 ease-out',
+					importing ? 'mt-6 grid-rows-[1fr]' : 'mt-0 grid-rows-[0fr]'
+				)}
+				inert={!importing}
+			>
+				<div class="min-h-0 overflow-hidden">
+					<form class="bg-muted/40 grid gap-2 rounded-lg border p-4" onsubmit={submit_import}>
+						<Label for="{service}_url">Import from {service_name}</Label>
+						<div class="flex gap-2">
+							<Input
+								id="{service}_url"
+								type="url"
+								required
+								placeholder={service === 'vimeo'
+									? 'https://vimeo.com/123456789'
+									: 'https://www.youtube.com/watch?v=…'}
+								class="flex-1"
+							/>
+							<Button type="submit">Import</Button>
+							<Button type="button" variant="ghost" onclick={() => (importing = null)}
+								>Cancel</Button
+							>
+						</div>
+						<p class={cn('text-xs', import_problem ? 'text-destructive' : 'text-muted-foreground')}>
+							{import_problem ??
+								`Paste a link to a public ${service_name} video. It’s copied into Mux in the background.`}
+						</p>
+					</form>
+				</div>
+			</div>
 
-			{#if manager.jobs.length}
-				<ul class="grid gap-2" aria-live="polite">
+			<div
+				class={cn(
+					'grid transition-[grid-template-rows,margin-top] duration-200 ease-out',
+					manager.jobs.length ? 'mt-6 grid-rows-[1fr]' : 'mt-0 grid-rows-[0fr]'
+				)}
+			>
+				<ul class="grid min-h-0 gap-2 overflow-hidden" aria-live="polite">
 					{#each manager.jobs as job (job.key)}{@render JobRow(job)}{/each}
 				</ul>
-			{/if}
+			</div>
 
 			{#if manager.undeletable}
 				<div
-					class="bg-card text-card-foreground flex items-start justify-between gap-3 rounded-md border p-3 text-sm"
+					class="bg-card text-card-foreground mt-6 flex items-start justify-between gap-3 rounded-md border p-3 text-sm"
 					role="alert"
 				>
 					<p>
@@ -354,7 +374,7 @@
 				</div>
 			{/if}
 
-			<section class="grid gap-4">
+			<section class="mt-6 grid gap-4">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<h2 class="text-sm font-semibold">
 						Library
@@ -599,13 +619,17 @@
 							</div>
 						</div>
 						<figure class="bg-muted relative overflow-hidden rounded-md border">
-							<img
-								class="aspect-video w-full object-cover"
-								src={manager.poster}
-								width={558}
-								height={314}
-								alt=""
-							/>
+							{#if manager.poster}
+								<img
+									class="aspect-video w-full object-cover"
+									src={manager.poster}
+									width={558}
+									height={314}
+									alt=""
+								/>
+							{:else}
+								<div class="aspect-video w-full"></div>
+							{/if}
 						</figure>
 						<p class="text-muted-foreground text-xs">
 							{manager.is_mux_poster
