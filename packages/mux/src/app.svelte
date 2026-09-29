@@ -264,7 +264,7 @@
 				</div>
 			{/if}
 
-			<header class="flex flex-wrap items-end justify-between gap-4 pr-8">
+			<header class="flex flex-wrap items-center justify-between gap-4">
 				<div class="grid gap-1">
 					<h1 class="text-lg font-semibold">Mux videos</h1>
 					<p class="text-muted-foreground text-sm">
