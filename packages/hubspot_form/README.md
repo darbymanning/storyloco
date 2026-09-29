@@ -5,7 +5,7 @@ store `{ id, name, portal }` as the field value.
 
 Forms are listed by moxy (`https://moxy.uilo.co/api/hubspot/forms`), which
 holds the space's HubSpot connection, so no HubSpot token reaches the browser
-or Storyblok. The **HubSpot Forms** space plugin (moxy `/apps/hubspot`)
+or Storyblok. The **HubSpot** space plugin (moxy `/apps/hubspot`)
 connects the space to HubSpot, by signing in or with a private app token, and
 fills in this field's option for you.
 
@@ -13,7 +13,7 @@ fills in this field's option for you.
 
 | Option                   | Value                                              |
 | ------------------------ | -------------------------------------------------- |
-| `MOXY_HUBSPOT_SECRET_ID` | Set by the HubSpot Forms space plugin; don't edit. |
+| `MOXY_HUBSPOT_SECRET_ID` | Set by the HubSpot space plugin; don't edit. |
 
 ## Value
 

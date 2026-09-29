@@ -41,7 +41,7 @@
 	<div class="rounded border border-input bg-card p-4 text-sm">
 		<p class="font-medium">This field isn’t connected to HubSpot yet</p>
 		<p class="text-muted-foreground mt-1">
-			Open <strong>HubSpot Forms</strong> from the Apps menu in the Storyblok sidebar to set it up.
+			Open <strong>HubSpot</strong> from the Apps menu in the Storyblok sidebar to set it up.
 		</p>
 	</div>
 {:else}

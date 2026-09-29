@@ -13,7 +13,7 @@ export class HubspotFormManager {
 	// deriveds must stay pure (assigning state inside one throws), so missing
 	// options are their own derived and fold into `error` below
 	#portal: string | null = null
-	// the HubSpot Forms space plugin fills this in; without it there's no portal to list
+	// the HubSpot space plugin fills this in; without it there's no portal to list
 	missing_options = $derived(
 		this.plugin?.type === 'loaded' && !this.plugin.data.options.MOXY_HUBSPOT_SECRET_ID
 	)
@@ -57,9 +57,9 @@ export class HubspotFormManager {
 			const status = error?.response?.status
 			this.#fetch_error =
 				status === 401
-					? 'This field’s HubSpot connection was replaced. Open HubSpot Forms from the Apps menu to set it up again.'
+					? 'This field’s HubSpot connection was replaced. Open HubSpot from the Apps menu to set it up again.'
 					: status === 409
-						? 'HubSpot no longer accepts this space’s connection. Reconnect it in HubSpot Forms.'
+						? 'HubSpot no longer accepts this space’s connection. Reconnect it from the HubSpot app.'
 						: 'Could not load forms from HubSpot'
 		} finally {
 			this.#loading_forms = false
