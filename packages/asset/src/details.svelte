@@ -208,16 +208,17 @@
 					<dt class="text-xs text-muted-foreground">Format</dt>
 					<dd class="font-medium">.{extension(asset)}</dd>
 				</div>
-				<div>
-					<dt class="text-xs text-muted-foreground">Added</dt>
-					<dd class="font-medium">
-						{new Date(asset.attributes.created_at).toLocaleDateString(undefined, {
-							day: 'numeric',
-							month: 'short',
-							year: 'numeric',
-						})}
-					</dd>
-				</div>
+				<!-- files picked by the old asset-plus field were saved without a date -->
+				{#if asset.attributes.created_at}<div>
+						<dt class="text-xs text-muted-foreground">Added</dt>
+						<dd class="font-medium">
+							{new Date(asset.attributes.created_at).toLocaleDateString(undefined, {
+								day: 'numeric',
+								month: 'short',
+								year: 'numeric',
+							})}
+						</dd>
+					</div>{/if}
 			</dl>
 			{#if focusable}
 				<div class="flex items-end gap-2.5" aria-label="How crops will look">
