@@ -133,7 +133,8 @@
 			z-index: 1;
 		}
 
-		& input {
+		/* the :not() matches the general input rule's, so this outranks it wherever it sits */
+		& input:not([type='checkbox'], [type='radio']) {
 			flex: 1;
 			min-inline-size: 0;
 			padding-inline-start: 34px;
