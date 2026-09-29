@@ -1,8 +1,7 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { Asset } from '../types.js'
-import ky from 'ky'
-import type { R2Asset, Paths, R2FolderTree } from '../r2.js'
-import { SvelteSet } from 'svelte/reactivity'
+import type { R2Asset, R2FolderTree } from '../r2.js'
+import { SvelteMap } from 'svelte/reactivity'
 import { toast } from 'shared'
 import AssetPicker from './app.svelte'
 import { mount, unmount } from 'svelte'
@@ -16,698 +15,648 @@ export interface Props {
 	oncancel?: () => void
 }
 
+export type View = { kind: 'all' } | { kind: 'unused' } | { kind: 'trash' } | { kind: 'folder'; id: string }
+export type Kind = '' | 'image' | 'video' | 'audio' | 'document'
+export type Story = { id: number; name: string; slug: string }
+type Upload = {
+	name: string
+	progress: number
+	status: 'uploading' | 'done' | 'failed'
+	error?: string
+}
+
+const API = 'https://assets.uilo.co/api/r2'
+const PAGE_SIZE = 60
+
+// per-browser preferences, like Storyblok's own; storage can be unavailable in private windows
+const remembered = (key: string, fallback: string) => {
+	try {
+		return localStorage.getItem(`uiloco-asset:${key}`) || fallback
+	} catch {
+		return fallback
+	}
+}
+const remember = (key: string, value: string) => {
+	try {
+		localStorage.setItem(`uiloco-asset:${key}`, value)
+	} catch {
+		// not remembered, which is fine
+	}
+}
+
+// The field's state and actions. Opening the picker or a file's details goes through Storyblok's modal, which
+// can remount the plugin, so where the modal should land is also kept in sessionStorage.
 export class AssetManager {
 	plugin: Plugin | null = $state(null)
+	content: Content = $state(null)
 	readonly loaded = $derived(this.plugin?.type === 'loaded')
 	readonly link = $derived(this.plugin?.data?.options.link === 'true')
 	readonly multiple = $derived(this.plugin?.data?.options.multiple === 'true' && !this.link)
-	content: Content = $state(null)
-	selected: Array<R2Asset> = $state([])
-	toggle_selected = (asset: R2Asset) => {
-		if (this.multiple) {
-			this.selected = this.selected.includes(asset)
-				? this.selected.filter((a) => a !== asset)
-				: [...this.selected, asset]
-		} else {
-			if (this.selected.includes(asset)) {
-				this.selected = this.selected.filter((a) => a !== asset)
-			} else {
-				this.selected = [asset]
-			}
-		}
-	}
-	expanded_folders: Set<string> = $state(new SvelteSet())
-	toggle_folder_expansion = (folder_id: string) => {
-		if (this.expanded_folders.has(folder_id)) {
-			this.expanded_folders.delete(folder_id)
-		} else {
-			this.expanded_folders.add(folder_id)
-		}
-	}
-	show_deleted = $state(false)
-	search_query: string = $state('')
-	loading_assets = $state(false)
-	active_asset_ids = $derived.by(() => {
-		if (Array.isArray(this.content)) return this.content.map((item) => item._data.id)
-		return this.content?._data.id ? [this.content?._data.id] : []
-	})
-	assets: Array<R2Asset> | undefined = $state(undefined)
-	folders: Array<R2FolderTree> | undefined = $state(undefined)
-	meta: Paths.ListAssets.Responses.$200['meta'] = $state()
-	active_asset: R2Asset | null = $derived.by(() => {
-		if (sessionStorage.getItem('view') === 'details' && this.is_modal_open) {
-			return JSON.parse(sessionStorage.getItem('active_asset') || 'null')
-		}
-	})
-	active_folder = $derived(sessionStorage.getItem('active_folder') || null)
-	open_actions: string | null = $state(null)
-	is_image = $derived(this.active_asset?.attributes.content_type?.startsWith('image/'))
-	limit = 96
-	#initial = $state(true)
-	#search_timeout: number | null = $state(null)
-	readonly #secrets: {
-		r2_secret: string
-		r2_bucket: string
-	} | null = $derived.by(() => {
-		if (this.plugin?.type !== 'loaded') return null
-
-		const r2_secret = this.plugin.data.options.MOXY_R2_SECRET_ID
-		const r2_bucket = this.plugin.data.options.R2_BUCKET
-
-		return { r2_secret, r2_bucket }
-	})
+	readonly #secret = $derived(this.plugin?.data?.options.MOXY_R2_SECRET_ID ?? '')
+	readonly bucket = $derived(this.plugin?.data?.options.R2_BUCKET ?? '')
 	// the R2 Assets space plugin fills these in; without them there's nothing to browse
-	readonly configured = $derived(!!this.#secrets?.r2_secret && !!this.#secrets?.r2_bucket)
-	focus_x = $derived(this.active_asset?.attributes.focus?.split(':')[0].split('x')[0])
-	focus_y = $derived(this.active_asset?.attributes.focus?.split(':')[0].split('x')[1])
-	back = $state(false)
-	folder_modal = $state(false)
-	folder_name = $state('')
-	loading = $state(false)
-	create_folder_modal = $state(false)
-	rename_folder_modal = $state(false)
-	move_folder_modal = $state(false)
-	active_folder_id = $state<string | null>(null)
-	parent_folder_id = $state<string | null>(null)
-	move_asset_modal = $state(false)
-	item_details_open = $derived.by(() => sessionStorage.getItem('view') === 'details')
-	replace_index_target = $derived.by(() => sessionStorage.getItem('replace_index_target') || null)
+	readonly configured = $derived(!!this.#secret && !!this.bucket)
+	readonly is_modal_open = $derived(this.loaded && !!this.plugin?.data?.isModalOpen)
+
+	// the modal shows either the file browser or one file's details
+	details: R2Asset | null = $state(null)
+	details_from_picker = $state(false)
+	replace_index: number | null = $state(null)
+	readonly screen = $derived(!this.is_modal_open ? 'field' : this.details ? 'details' : 'picker')
+
+	// browser
+	view: View = $state({ kind: 'all' })
+	search = $state('')
+	kind: Kind = $state('')
+	sort = $state(remembered('sort', '-created_at'))
+	assets: Array<R2Asset> | null = $state(null)
+	total = $state(0)
+	all_total: number | null = $state(null)
+	unused_total: number | null = $state(null)
+	#page = 0
+	loading_more = $state(false)
+	readonly more = $derived(!!this.assets && this.assets.length < this.total)
+	folders: Array<R2FolderTree> = $state([])
+	readonly flat = $derived.by(() => {
+		const out: Array<{ folder: R2FolderTree; depth: number; path: string }> = []
+		const walk = (list: Array<R2FolderTree>, depth: number, path: string) =>
+			list.forEach(folder => {
+				const here = path ? `${path} / ${folder.name}` : folder.name
+				out.push({ folder, depth, path: here })
+				walk(folder.children ?? [], depth + 1, here)
+			})
+		walk(this.folders, 0, '')
+		return out
+	})
+	readonly folder = $derived(
+		this.view.kind === 'folder'
+			? this.flat.find(f => f.folder.id === (this.view as { id: string }).id)?.folder
+			: undefined
+	)
+	busy = $state(false)
+
+	// selection: ids, plus the assets themselves so a selection can span pages
+	selected = new SvelteMap<string, R2Asset>()
+	#anchor: string | null = null
+
+	// usage, from the R2 Assets usage index (null until known; indexed is false for spaces it hasn't scanned)
+	usage: Record<string, Array<Story>> = $state({})
+	indexed: boolean | null = $state(null)
+
+	uploads: Array<Upload> = $state([])
+
+	readonly in_field = $derived(
+		new Set(
+			(Array.isArray(this.content) ? this.content : this.content ? [this.content] : []).map(a => a._data.id)
+		)
+	)
+
 	onselect?: (asset: Asset) => void
 	oncancel?: () => void
-	set_modal_open = $derived.by(() => this.plugin?.actions?.setModalOpen || (() => {}))
+	#initial = true
 
 	constructor({ plugin, onselect, oncancel }: Props) {
+		this.onselect = onselect
+		this.oncancel = oncancel
 		if (plugin) {
+			// embedded by the link and SEO fields to pick one file
 			this.plugin = plugin
-			this.list_assets(1)
-		}
-		if (onselect) this.onselect = onselect
-		if (oncancel) this.oncancel = oncancel
-		if (!plugin) this.initialize_plugin()
+			this.#start()
+		} else this.#connect()
 
 		$effect(() => {
-			document.documentElement.setAttribute(
-				'data-modal-open',
-				this.is_modal_open ? 'true' : 'false'
-			)
+			document.documentElement.setAttribute('data-modal-open', this.is_modal_open ? 'true' : 'false')
 		})
 	}
 
-	private initialize_plugin() {
-		createFieldPlugin<Asset | null>({
+	#connect() {
+		createFieldPlugin<Content>({
 			enablePortalModal: true,
-			validateContent(content) {
-				if (typeof content !== 'object') return { content: null }
-				return { content: content as Asset }
-			},
-			onUpdateState: (state) => {
+			validateContent: content =>
+				typeof content === 'object' ? { content: content as Content } : { content: null },
+			onUpdateState: state => {
+				const was_open = this.is_modal_open
 				this.plugin = state as Plugin
-
-				if (state.data?.content) {
-					if (Array.isArray(state.data.content)) {
-						if (!Array.isArray(this.content)) {
-							this.content = []
-						}
-						this.content.splice(0, this.content.length, ...state.data.content)
-					} else {
-						this.content = state.data.content
-					}
-				} else {
-					this.content = null
+				this.content = (state.data?.content as Content) ?? null
+				if (state.data?.isModalOpen && !was_open) this.#restore_modal()
+				if (!state.data?.isModalOpen) this.details = null
+				if (this.#initial) {
+					this.#initial = false
+					this.#start()
 				}
-
-				if (!this.#initial) return
-
-				this.#initial = false
-				// initial fetch for picker view
-				this.list_assets(1)
-			},
+			}
 		})
 	}
 
-	static async select_asset(plugin: any) {
-		return new Promise<Asset | null>(async (resolve) => {
+	#start() {
+		if (!this.configured) return
+		this.#restore_modal()
+		this.load()
+	}
+
+	// ---- modal
+
+	#restore_modal() {
+		try {
+			const saved = sessionStorage.getItem('uiloco-asset:modal')
+			if (!saved) return
+			const { details, from_picker, replace_index } = JSON.parse(saved)
+			this.details = details ?? null
+			this.details_from_picker = !!from_picker
+			this.replace_index = replace_index ?? null
+		} catch {
+			// nothing to restore
+		}
+	}
+
+	#set_modal(state: { details?: R2Asset | null; from_picker?: boolean; replace_index?: number | null }) {
+		this.details = state.details ?? null
+		this.details_from_picker = !!state.from_picker
+		this.replace_index = state.replace_index ?? null
+		try {
+			sessionStorage.setItem('uiloco-asset:modal', JSON.stringify(state))
+		} catch {
+			// the modal still opens; a remount would just land on the browser
+		}
+	}
+
+	open_picker = (replace_index: number | null = null) => {
+		this.#set_modal({ replace_index })
+		this.plugin?.actions?.setModalOpen(true)
+	}
+
+	open_details = (asset: R2Asset, from_picker = this.screen === 'picker') => {
+		this.#set_modal({
+			details: asset,
+			from_picker,
+			replace_index: this.replace_index
+		})
+		if (!this.is_modal_open) this.plugin?.actions?.setModalOpen(true)
+		if (!(asset.id in this.usage)) this.find_usage([asset])
+	}
+
+	close_details = () => {
+		if (this.details_from_picker) this.#set_modal({ replace_index: this.replace_index })
+		else this.close_modal()
+	}
+
+	// the link and SEO fields get control back on cancel; their own modal stays as it is
+	close_modal = () => {
+		this.#set_modal({})
+		this.selected.clear()
+		if (this.oncancel) this.oncancel()
+		else this.plugin?.actions?.setModalOpen(false)
+	}
+
+	// ---- requests
+
+	async #request<T>(path: string, init: RequestInit = {}): Promise<T> {
+		const headers: Record<string, string> = {
+			authorization: `Bearer ${this.#secret}`
+		}
+		if (init.body && !(init.body instanceof FormData)) headers['content-type'] = 'application/json'
+		const res = await fetch(`${API}/${this.bucket}/${path}`, {
+			...init,
+			headers
+		})
+		if (!res.ok) {
+			const body = (await res.json().catch(() => null)) as {
+				error?: string
+			} | null
+			throw new Error(body?.error ?? `Request failed (${res.status})`)
+		}
+		return res.status === 204 ? (undefined as T) : res.json()
+	}
+	#json = (method: string, body: unknown): RequestInit => ({
+		method,
+		body: JSON.stringify(body)
+	})
+
+	// runs an action, showing any failure as a toast
+	async run(task: () => Promise<unknown>, { quiet = false } = {}) {
+		if (!quiet) this.busy = true
+		try {
+			await task()
+			return true
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : String(e))
+			return false
+		} finally {
+			if (!quiet) this.busy = false
+		}
+	}
+
+	// ---- browsing
+
+	load = () =>
+		this.run(() => Promise.all([this.list(), this.list_folders(), this.count_unused()]), {
+			quiet: true
+		})
+
+	async list() {
+		this.#page = 1
+		const res = await this.#fetch_page(1)
+		this.assets = res.data ?? []
+		this.total = res.meta?.total ?? this.assets.length
+		if (this.view.kind === 'all' && !this.search && !this.kind) this.all_total = this.total
+		this.find_usage(this.assets)
+	}
+
+	next_page = async () => {
+		if (!this.more || this.loading_more) return
+		this.loading_more = true
+		try {
+			const res = await this.#fetch_page(this.#page + 1)
+			this.#page++
+			const seen = new Set(this.assets?.map(a => a.id))
+			const fresh = (res.data ?? []).filter(a => !seen.has(a.id))
+			this.assets = [...(this.assets ?? []), ...fresh]
+			this.find_usage(fresh)
+		} finally {
+			this.loading_more = false
+		}
+	}
+
+	#fetch_page(page: number) {
+		const params = new URLSearchParams({
+			limit: String(PAGE_SIZE),
+			page: String(page),
+			sort: this.sort
+		})
+		if (this.view.kind === 'folder') params.set('folder_id', this.view.id)
+		if (this.view.kind === 'trash') params.set('deleted', 'true')
+		if (this.view.kind === 'unused') params.set('filter[unused]', 'true')
+		if (this.search) params.set('filter[q]', this.search)
+		if (this.kind) params.set('filter[type]', this.kind)
+		return this.#request<{ data?: Array<R2Asset>; meta?: { total?: number } }>(`assets?${params}`)
+	}
+
+	async list_folders() {
+		const res = await this.#request<{
+			data?: { structured?: Array<R2FolderTree> }
+		}>('folders')
+		this.folders = res.data?.structured ?? []
+	}
+
+	async count_unused() {
+		if (this.indexed === false) return
+		const res = await this.#request<{ meta?: { total?: number } }>(
+			'assets?limit=1&page=1&filter[unused]=true'
+		).catch(() => null)
+		this.unused_total = res?.meta?.total ?? null
+	}
+
+	refresh = () =>
+		this.run(() => Promise.all([this.list(), this.list_folders(), this.count_unused()]), {
+			quiet: true
+		})
+
+	async find_usage(list: Array<R2Asset>) {
+		if (this.view.kind === 'trash' || this.indexed === false) return
+		const ids = list.map(a => a.id).filter(id => !(id in this.usage))
+		for (let i = 0; i < ids.length; i += 200) {
+			const res = await this.#request<{
+				indexed: boolean
+				used: Record<string, Array<Story>>
+			}>(`usage?ids=${ids.slice(i, i + 200).join(',')}`).catch(() => null)
+			if (!res) return
+			this.indexed = res.indexed
+			Object.assign(this.usage, res.used)
+		}
+	}
+
+	go = (view: View) => {
+		this.view = view
+		this.selected.clear()
+		this.run(() => this.list(), { quiet: true })
+	}
+
+	#search_timer: ReturnType<typeof setTimeout> | undefined
+	search_changed = () => {
+		clearTimeout(this.#search_timer)
+		this.#search_timer = setTimeout(() => this.run(() => this.list(), { quiet: true }), 300)
+	}
+
+	set_sort = (sort: string) => {
+		this.sort = sort
+		remember('sort', sort)
+		this.run(() => this.list(), { quiet: true })
+	}
+
+	// ---- selection: click toggles, shift-click takes the range from the last one clicked
+
+	toggle = (asset: R2Asset, range = false) => {
+		const list = this.assets ?? []
+		const at = list.findIndex(a => a.id === this.#anchor)
+		if (range && at !== -1) {
+			const to = list.findIndex(a => a.id === asset.id)
+			const [from, until] = [at, to].sort((a, b) => a - b)
+			for (const each of list.slice(from, until + 1)) this.selected.set(each.id, each)
+		} else if (this.selected.has(asset.id)) this.selected.delete(asset.id)
+		else this.selected.set(asset.id, asset)
+		this.#anchor = asset.id
+	}
+	select_all = () => this.assets?.forEach(a => this.selected.set(a.id, a))
+
+	// ---- the field's value
+
+	update = () => this.plugin?.actions?.setContent($state.snapshot(this.content))
+
+	// a picked file as the field stores it: Storyblok's asset shape, plus the R2 record
+	to_asset = (asset: R2Asset): Asset => {
+		const { alt, title, source, copyright, name, focus } = asset.attributes
+		return {
+			id: asset.id,
+			alt,
+			filename: asset.links?.self || '',
+			focus,
+			title,
+			source,
+			copyright,
+			is_external_url: false,
+			meta_data: { alt, title, source, copyright },
+			name,
+			width: asset.attributes.width,
+			height: asset.attributes.height,
+			format: asset.attributes.format,
+			content_type: asset.attributes.content_type,
+			size_bytes: asset.attributes.size_bytes,
+			_data: asset
+		}
+	}
+
+	// picking in the browser: replaces the file being replaced, adds to a list, or sets the one file
+	pick = (asset: R2Asset) => {
+		const chosen = this.to_asset(asset)
+		if (this.onselect) {
+			this.onselect(chosen)
+			return
+		}
+		if (Array.isArray(this.content) && this.replace_index !== null) {
+			if (!this.content.some(a => a._data.id === asset.id)) this.content[this.replace_index] = chosen
+		} else if (this.multiple) {
+			const list = Array.isArray(this.content) ? this.content : []
+			if (!list.some(a => a._data.id === asset.id)) this.content = [...list, chosen]
+		} else this.content = chosen
+		this.update()
+		this.close_modal()
+	}
+
+	insert_selected = () => {
+		const list = Array.isArray(this.content) ? this.content : []
+		const fresh = [...this.selected.values()].filter(a => !list.some(item => item._data.id === a.id))
+		this.content = [...list, ...fresh.map(this.to_asset)]
+		this.update()
+		this.close_modal()
+	}
+
+	remove = (id: string) => {
+		if (Array.isArray(this.content)) this.content = this.content.filter(a => a._data.id !== id)
+		else if (this.content?._data.id === id) this.content = null
+		this.update()
+	}
+
+	// keeps this field's copies of a file in step with its record
+	#sync_content = (asset: R2Asset) => {
+		const fresh = this.to_asset(asset)
+		if (Array.isArray(this.content)) {
+			if (!this.content.some(a => a._data.id === asset.id)) return
+			this.content = this.content.map(a => (a._data.id === asset.id ? fresh : a))
+		} else if (this.content?._data.id === asset.id) this.content = fresh
+		else return
+		this.update()
+	}
+
+	// ---- files
+
+	// quiet when the change shows itself, e.g. back in the field
+	save = (
+		asset: R2Asset,
+		changes: Partial<R2Asset['attributes']> & { folder_id?: string | null },
+		{ quiet = false } = {}
+	) =>
+		this.run(async () => {
+			await this.#request(`assets/${asset.id}`, this.#json('PATCH', changes))
+			const { folder_id: _, ...fields } = changes
+			const saved = {
+				...asset,
+				attributes: { ...asset.attributes, ...fields }
+			}
+			this.assets = this.assets?.map(a => (a.id === asset.id ? saved : a)) ?? null
+			this.#sync_content(saved)
+			if ('folder_id' in changes) await this.refresh()
+			if (!quiet) toast.success('Saved')
+		})
+
+	move = (ids: Array<string>, folder_id: string | null) =>
+		this.run(async () => {
+			await this.#request(
+				'assets',
+				this.#json('PATCH', {
+					assets: ids,
+					metadata: { folder_id: folder_id ?? '' }
+				})
+			)
+			const into = folder_id ? this.flat.find(f => f.folder.id === folder_id)?.folder.name : null
+			toast.success(`Moved ${count(ids)} ${into ? `to ${into}` : 'out of folders'}`)
+			this.selected.clear()
+			await this.refresh()
+		})
+
+	// deleted files go to the trash, and out of this field
+	trash = (ids: Array<string>) =>
+		this.run(async () => {
+			await this.#request('assets', this.#json('DELETE', ids))
+			this.assets = this.assets?.filter(a => !ids.includes(a.id)) ?? null
+			this.total -= ids.length
+			if (this.all_total !== null) this.all_total -= ids.length
+			ids.forEach(id => this.selected.delete(id))
+			const in_field = ids.filter(id => this.in_field.has(id))
+			in_field.forEach(this.remove)
+			toast(`Moved ${count(ids)} to the trash${in_field.length ? ' and out of this field' : ''}`, {
+				action: { label: 'Undo', onClick: () => this.restore(ids, true) }
+			})
+			await Promise.all([this.list_folders(), this.count_unused()])
+		})
+
+	restore = (ids: Array<string>, quiet = false) =>
+		this.run(async () => {
+			await this.#request('assets/restore', this.#json('POST', ids))
+			if (!quiet) toast.success(`Restored ${count(ids)}`)
+			this.selected.clear()
+			await this.refresh()
+		})
+
+	destroy = (ids: Array<string>) =>
+		this.run(async () => {
+			await this.#request('assets?hard=true', this.#json('DELETE', ids))
+			toast.success(`Deleted ${count(ids)} for good`)
+			this.selected.clear()
+			await this.refresh()
+		})
+
+	copy = async (text: string) => {
+		await navigator.clipboard.writeText(text)
+		toast.success('Link copied')
+	}
+
+	// XHR rather than fetch, for progress; one file per request so one bad file doesn't sink the rest.
+	// Resolves to the uploaded files, so the field can use them straight away.
+	upload = async (files: FileList | Array<File> | null) => {
+		if (!files?.length || !this.configured) return []
+		const folder_id = this.view.kind === 'folder' ? this.view.id : null
+		const added: Array<R2Asset> = []
+		for (const file of [...files]) {
+			this.uploads.push({ name: file.name, progress: 0, status: 'uploading' })
+			const entry = this.uploads[this.uploads.length - 1]
+			await new Promise<void>(done => {
+				const xhr = new XMLHttpRequest()
+				xhr.open('POST', `${API}/${this.bucket}/assets`)
+				xhr.setRequestHeader('authorization', `Bearer ${this.#secret}`)
+				xhr.upload.onprogress = e => e.lengthComputable && (entry.progress = e.loaded / e.total)
+				xhr.onload = () => {
+					entry.progress = 1
+					try {
+						const body = JSON.parse(xhr.responseText)
+						if (xhr.status < 300) {
+							entry.status = 'done'
+							added.push(...(body.data ?? []))
+						} else {
+							entry.status = 'failed'
+							entry.error = body.error ?? `Upload failed (${xhr.status})`
+						}
+					} catch {
+						entry.status = xhr.status < 300 ? 'done' : 'failed'
+					}
+					done()
+				}
+				xhr.onerror = () => {
+					entry.status = 'failed'
+					entry.error = 'Network error'
+					done()
+				}
+				const body = new FormData()
+				body.append('file', file)
+				if (folder_id) body.append('folder_id', folder_id)
+				xhr.send(body)
+			})
+		}
+		if (this.view.kind === 'trash' || this.view.kind === 'unused') this.view = { kind: 'all' }
+		if (this.all_total !== null) this.all_total += added.length
+		await this.refresh()
+		// finished uploads leave the tray; failures stay until dismissed
+		setTimeout(() => (this.uploads = this.uploads.filter(u => u.status === 'failed')), 2500)
+		return added
+	}
+
+	// dropped or chosen straight onto the field: upload, then use them
+	upload_into_field = async (files: FileList | Array<File> | null) => {
+		const added = await this.upload(files)
+		if (!added.length) return
+		if (this.multiple) {
+			const list = Array.isArray(this.content) ? this.content : []
+			this.content = [...list, ...added.map(this.to_asset)]
+		} else this.content = this.to_asset(added[0])
+		this.update()
+	}
+
+	// ---- folders
+
+	create_folder = (name: string, parent_id: string | null) =>
+		this.run(async () => {
+			await this.#request('folders', this.#json('POST', { name, parent_id }))
+			await this.list_folders()
+		})
+
+	rename_folder = (folder: R2FolderTree, name: string) =>
+		this.run(async () => {
+			await this.#request(
+				`folders/${folder.id}`,
+				this.#json('PATCH', { name, parent_id: folder.parent_id ?? null })
+			)
+			await this.list_folders()
+		})
+
+	move_folder = (folder: R2FolderTree, parent_id: string | null) =>
+		this.run(async () => {
+			await this.#request(`folders/${folder.id}`, this.#json('PATCH', { name: folder.name, parent_id }))
+			const into = parent_id ? this.flat.find(f => f.folder.id === parent_id)?.folder.name : null
+			toast.success(`Moved “${folder.name}” ${into ? `into ${into}` : 'to the top level'}`)
+			await this.list_folders()
+		})
+
+	delete_folder = (folder: R2FolderTree) =>
+		this.run(async () => {
+			await this.#request(`folders/${folder.id}`, { method: 'DELETE' })
+			if (this.view.kind === 'folder' && this.view.id === folder.id) this.view = { kind: 'all' }
+			toast.success(`Deleted “${folder.name}”`)
+			await this.refresh()
+		})
+
+	// ---- used by the link and SEO fields: shows the browser in place of their UI until a file is picked
+
+	// other fields pass their own plugin (with their own content type), so it's taken loosely
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	static select_asset(plugin: FieldPluginResponse<any> | null) {
+		return new Promise<Asset | null>(resolve => {
 			const app = document.body.querySelector('#app') as HTMLElement
 			if (document.getElementById('asset_picker_mount') || !app) return
 			const target = document.createElement('div')
 			target.id = 'asset_picker_mount'
 			document.body.appendChild(target)
 			app.style.display = 'none'
-
+			const finish = async (asset: Asset | null) => {
+				resolve(asset)
+				await unmount(picker)
+				target.remove()
+				app.style.display = 'block'
+			}
 			const picker = mount(AssetPicker, {
 				target,
 				props: {
-					plugin,
-					onselect(asset) {
-						resolve(asset)
-						target.remove()
-						app.style.display = 'block'
-					},
-					async oncancel() {
-						resolve(null)
-						await unmount(picker, { outro: true })
-						target.remove()
-						document.body.removeChild(target)
-						app.style.display = 'block'
-					},
-				},
+					plugin: plugin as Plugin,
+					onselect: asset => finish(asset),
+					oncancel: () => finish(null)
+				}
 			})
 		})
 	}
-
-	close_rename_folder_modal = () => {
-		this.rename_folder_modal = false
-		this.folder_name = ''
-		this.active_folder_id = null
-	}
-	open_rename_folder_modal = (folder: R2FolderTree) => {
-		this.rename_folder_modal = true
-		this.active_folder_id = folder.id
-		this.folder_name = folder.name
-		this.parent_folder_id = folder.parent_id || null
-	}
-	open_move_folder_modal = (folder: R2FolderTree) => {
-		this.move_folder_modal = true
-		this.active_folder_id = folder.id
-		this.folder_name = folder.name
-		this.parent_folder_id = folder.parent_id || null
-	}
-	close_move_folder_modal = () => {
-		this.move_folder_modal = false
-		this.parent_folder_id = null
-	}
-	open_create_folder_modal = (parent_folder_id?: string) => {
-		this.create_folder_modal = true
-		this.parent_folder_id = parent_folder_id || null
-	}
-	close_create_folder_modal = () => {
-		this.create_folder_modal = false
-		this.parent_folder_id = null
-	}
-	open_move_asset_modal = (asset_or_assets: R2Asset | Array<R2Asset>) => {
-		this.move_asset_modal = true
-		this.selected = Array.isArray(asset_or_assets) ? asset_or_assets : [asset_or_assets]
-	}
-	close_move_asset_modal = () => {
-		this.move_asset_modal = false
-		this.active_asset = null
-		this.selected = []
-	}
-
-	view_folder = (folder_id: string) => {
-		if (folder_id) sessionStorage.setItem('active_folder', folder_id)
-		this.active_folder = folder_id
-		this.show_deleted = false
-		this.list_assets(1)
-	}
-
-	active_asset_details = (item?: R2Asset) => {
-		// Need to set the view to details in sessionStorage to persist the state between modal opens
-		if (item) {
-			sessionStorage.setItem('view', 'details')
-			sessionStorage.setItem('active_asset', JSON.stringify(item))
-		}
-
-		if (!this.is_modal_open) this.set_modal_open(true)
-		if (!item) return
-		this.active_asset = item
-		if (!this.multiple) this.set_asset(item)
-	}
-
-	close_item_details = () => {
-		sessionStorage.setItem('view', 'picker')
-		this.set_modal_open(false)
-		this.active_asset = null
-	}
-
-	#get_card_index = (event?: Event): string | undefined => {
-		if (!event) return undefined
-		const card = (event.target as HTMLElement)?.closest('[data-index]')
-		return (card as HTMLElement)?.dataset.index
-	}
-
-	open_asset_picker = async (event?: Event) => {
-		const index = this.#get_card_index(event)
-		if (index) sessionStorage.setItem('replace_index_target', index)
-		else sessionStorage.removeItem('replace_index_target')
-		sessionStorage.setItem('view', 'picker')
-		await this.set_modal_open(true)
-	}
-
-	close_modals = () => {
-		this.close_move_asset_modal()
-		this.close_rename_folder_modal()
-		this.close_create_folder_modal()
-		this.close_move_folder_modal()
-	}
-
-	get r2() {
-		return ky.create({
-			prefixUrl: 'https://assets.uilo.co/api/r2/',
-			headers: {
-				authorization: `Bearer ${this.#secrets?.r2_secret}`,
-			},
-			hooks: {
-				beforeError: [
-					async (error) => {
-						const msg = await error.response.json<{ error: string }>()
-						if (typeof msg === 'object' && 'error' in msg) {
-							toast.error(msg.error)
-						} else {
-							toast.error('An unknown error occurred')
-						}
-
-						return error
-					},
-				],
-			},
-		})
-	}
-
-	load = async () => {
-		if (!this.#secrets) return
-		await this.list_assets(1)
-		await this.list_folders()
-	}
-
-	update = () => {
-		if (!this.plugin?.actions) return
-		const state = $state.snapshot(this.content)
-		this.plugin.actions.setContent(state)
-	}
-
-	insert_selected_assets = () => {
-		if (!this.selected.length || !this.multiple) return
-
-		const content = (this.content || []) as Array<Asset>
-
-		// Only add assets that are not already in the content
-		const new_assets = this.selected.filter(
-			(asset) => !content.some((item) => item._data.id === asset.id)
-		)
-
-		if (new_assets.length) {
-			content.push(...new_assets.map(this.#turn_r2_asset_into_asset))
-			this.content = content
-			this.update()
-		}
-
-		this.selected = []
-		if (this.is_modal_open) this.set_modal_open(false)
-	}
-
-	#turn_r2_asset_into_asset = (asset: R2Asset): Asset => {
-		const { alt, title, source, copyright, name } = asset.attributes
-		const meta_data: Asset['meta_data'] = {
-			alt,
-			title,
-			source,
-			copyright,
-		}
-
-		return {
-			// Storyblok attributes
-			id: asset.id,
-			alt,
-			filename: asset.links?.self || '',
-			focus: asset.attributes.focus,
-			title,
-			source,
-			copyright,
-			is_external_url: false,
-			meta_data,
-			name,
-
-			// Additional attributes
-			width: asset.attributes.width,
-			height: asset.attributes.height,
-			format: asset.attributes.format,
-			size_bytes: asset.attributes.size_bytes,
-			_data: asset,
-		}
-	}
-
-	set_asset = (asset: R2Asset | null) => {
-		if (!asset) {
-			this.content = null
-			this.update()
-			return
-		}
-
-		this.content = this.#turn_r2_asset_into_asset(asset)
-		if (this.onselect) this.onselect(this.content)
-
-		this.update()
-	}
-
-	replace_asset_at = (index: number, asset: R2Asset) => {
-		if (!Array.isArray(this.content)) return
-
-		// don't replace if the asset is already in the content
-		if (this.content.some((item) => item._data.id === asset.id)) return
-
-		this.content[index] = this.#turn_r2_asset_into_asset(asset)
-		this.update()
-		this.close_item_details()
-	}
-
-	select_asset = (asset: R2Asset | null) => {
-		this.set_asset(asset)
-		if (this.is_modal_open) this.set_modal_open(false)
-	}
-
-	update_asset = async (): Promise<void> => {
-		if (!this.#secrets) return
-		this.loading = true
-
-		if (this.selected.length) {
-			const json: Paths.UpdateAssetsBulk.RequestBody = {
-				assets: this.selected.map((asset) => asset.id),
-				metadata: {
-					folder_id: this.parent_folder_id || '',
-				},
-			}
-
-			await this.r2.patch<Paths.UpdateAssetsBulk.Responses.$204>(
-				`${this.#secrets.r2_bucket}/assets`,
-				{ json }
-			)
-		} else {
-			const json: Paths.UpdateAssetMetadata.RequestBody = {
-				...this.active_asset?.attributes,
-				folder_id: this.parent_folder_id || '',
-			}
-			await this.r2.patch<Paths.UpdateAssetMetadata.Responses.$200>(
-				`${this.#secrets.r2_bucket}/assets/${this.active_asset?.id}`,
-				{
-					json,
-				}
-			)
-		}
-		await this.load()
-		this.close_move_asset_modal()
-		this.loading = false
-	}
-
-	update_folder = async (): Promise<void> => {
-		if (!this.#secrets) return
-		if (!this.folder_name) return
-		if (!this.active_folder_id) return
-		this.loading = true
-		try {
-			const req = await this.r2.patch<R2FolderTree>(
-				`${this.#secrets.r2_bucket}/folders/${this.active_folder_id}`,
-				{
-					json: { name: this.folder_name, parent_id: this.parent_folder_id },
-				}
-			)
-
-			if (req.ok) await this.load()
-			this.loading = false
-			this.close_modals()
-		} catch (error) {
-			this.loading = false
-		}
-	}
-
-	create_folder = async (): Promise<void> => {
-		if (!this.#secrets) return
-		if (!this.folder_name) return
-		this.loading = true
-
-		const json: Paths.CreateFolder.RequestBody = {
-			name: this.folder_name,
-			parent_id: this.parent_folder_id,
-		}
-		const req = await this.r2.post<Paths.CreateFolder.Responses.$201>(
-			`${this.#secrets.r2_bucket}/folders`,
-			{ json }
-		)
-		if (req.ok) await this.load()
-		this.loading = false
-		this.close_create_folder_modal()
-		this.folder_name = ''
-	}
-
-	list_folders = async () => {
-		if (!this.#secrets) return
-		const res = await this.r2
-			.get<Paths.ListFolders.Responses.$200>(`${this.#secrets.r2_bucket}/folders`)
-			.json()
-		this.folders = res.data?.structured
-	}
-
-	remove_asset = (asset: R2Asset) => {
-		if (Array.isArray(this.content)) {
-			const index = this.content.findIndex((item) => item._data.id === asset.id)
-			if (index !== -1) {
-				this.content.splice(index, 1)
-			}
-			this.update()
-		} else if (this.content?._data.id === asset.id) {
-			this.content = null
-			this.update()
-		}
-	}
-
-	list_assets = async (page?: number) => {
-		if (!this.#secrets) return
-		this.loading_assets = true
-		const params = new URLSearchParams([
-			['limit', this.limit.toString()],
-			['page', page?.toString() || '1'],
-		])
-
-		if (this.active_folder) params.set('folder_id', this.active_folder)
-		if (this.show_deleted) params.set('deleted', 'true')
-		if (this.search_query) params.set('filter[q]', this.search_query)
-
-		const target = `${this.#secrets.r2_bucket}/assets?${params.toString()}`
-
-		try {
-			const res = await this.r2.get<Paths.ListAssets.Responses.$200>(target).json()
-			this.assets = res.data
-			this.meta = res.meta
-		} finally {
-			this.loading_assets = false
-		}
-	}
-
-	search_keyup = (event: KeyboardEvent) => {
-		const value = (event.target as HTMLInputElement)?.value || ''
-		this.search_query = value
-
-		if (this.#search_timeout) window.clearTimeout(this.#search_timeout)
-
-		this.#search_timeout = window.setTimeout(() => {
-			this.list_assets(1)
-		}, 500)
-	}
-
-	soft_delete_asset = async (asset: R2Asset) => {
-		if (!this.#secrets) return
-		const confirm = window.confirm('Are you sure you want to delete this asset?')
-		if (!confirm) return
-		if (this.assets?.length) this.assets = this.assets.filter((item) => item.id !== asset.id)
-
-		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}`)
-
-		// If multiple assets are selected, remove the asset from the content
-		if (Array.isArray(this.content))
-			this.content = this.content.filter((item) => item._data.id !== asset.id)
-		// If a single asset is selected, deselect it
-		else if (this.content?._data.id === asset.id) this.select_asset(null)
-
-		await this.load()
-	}
-
-	hard_delete_asset = async (asset: R2Asset) => {
-		if (!this.#secrets) return
-		const confirm = window.confirm('Are you sure you want to delete this asset permanently?')
-		if (!confirm) return
-		await this.r2.delete(`${this.#secrets.r2_bucket}/assets/${asset.id}?hard=true`)
-		await this.load()
-	}
-
-	hard_delete_many_assets = async (assets: Array<R2Asset>) => {
-		if (!this.#secrets) return
-		const confirm = window.confirm('Are you sure you want to delete these assets permanently?')
-		if (!confirm) return
-		await this.r2.delete(`${this.#secrets.r2_bucket}/assets?hard=true`, {
-			json: assets.map((asset) => asset.id),
-		})
-		await this.load()
-		this.selected = []
-	}
-
-	soft_delete_many_assets = async (assets: Array<R2Asset>) => {
-		if (!this.#secrets) return
-		const confirm = window.confirm('Are you sure you want to delete these assets?')
-		if (!confirm) return
-		if (this.assets?.length)
-			this.assets = this.assets.filter((item) => !assets.some((asset) => asset.id === item.id))
-
-		await this.r2.delete(`${this.#secrets.r2_bucket}/assets`, {
-			json: assets.map((asset) => asset.id),
-		})
-
-		// If multiple assets are selected, remove the assets from the content
-		if (Array.isArray(this.content)) {
-			this.content = this.content.filter(
-				(item) => !assets.some((asset) => asset.id === item._data.id)
-			)
-			// If a single asset is selected, deselect it
-		} else if (this.content?._data.id === assets[0].id) {
-			this.select_asset(null)
-		}
-		await this.load()
-		this.selected = []
-	}
-
-	delete_folder = async (folder_id: string) => {
-		if (!this.#secrets) return
-		const confirm = window.confirm('Are you sure you want to delete this folder?')
-		if (!confirm) return
-		await this.r2.delete(`${this.#secrets.r2_bucket}/folders/${folder_id}`)
-		await this.list_folders()
-	}
-
-	save_and_close = async (event: SubmitEvent) => {
-		if (!this.active_asset) return
-		this.loading = true
-		event.preventDefault()
-		event.stopPropagation()
-
-		const data = new FormData(event.target as HTMLFormElement)
-		const [title, alt, name, copyright, source] = [
-			data.get('title'),
-			data.get('alt'),
-			data.get('name'),
-			data.get('copyright'),
-			data.get('source'),
-		] as Array<string | null>
-
-		// Update this.active_asset
-		this.active_asset.attributes.title = title || undefined
-		this.active_asset.attributes.alt = alt || undefined
-		this.active_asset.attributes.name = name || undefined
-		this.active_asset.attributes.copyright = copyright || undefined
-		this.active_asset.attributes.source = source || undefined
-
-		// Update local content if single asset is selected
-		if (!this.multiple && this.content && !Array.isArray(this.content)) {
-			this.content.alt = alt
-			this.content.title = title
-			this.content.source = source
-			this.content.copyright = copyright
-			this.content.name = name || undefined
-			this.content._data = {
-				...this.content._data,
-				attributes: {
-					...this.content._data.attributes,
-					title: title || undefined,
-					alt: alt || undefined,
-					name: name || undefined,
-					copyright: copyright || undefined,
-					source: source || undefined,
-				},
-			}
-		} else if (this.multiple && Array.isArray(this.content)) {
-			this.content = this.content.map((item) => {
-				if (item._data.id === this.active_asset!.id) {
-					return {
-						...item,
-						title,
-						alt,
-						name: name || undefined,
-						copyright,
-						source,
-						_data: {
-							...item._data,
-							attributes: {
-								...item._data.attributes,
-								title: title || undefined,
-								alt: alt || undefined,
-								name: name || undefined,
-								copyright: copyright || undefined,
-								source: source || undefined,
-							},
-						},
-					}
-				}
-				return item
-			})
-		}
-		this.update()
-		await this.update_asset()
-		this.close_item_details()
-		this.loading = false
-	}
-
-	toggle_actions(id: string) {
-		this.open_actions = this.open_actions === id ? null : id
-	}
-
-	readonly is_modal_open = $derived(this.loaded && this.plugin?.data?.isModalOpen)
-
-	set_focus(e: MouseEvent) {
-		if (!this.content) return
-		if (Array.isArray(this.content)) {
-			this.content.forEach((item) => {
-				item.focus = e ? `${e.offsetX}x${e.offsetY}:${e.offsetX + 1}x${e.offsetY + 1}` : undefined
-			})
-		} else {
-			this.content.focus = e
-				? `${e.offsetX}x${e.offsetY}:${e.offsetX + 1}x${e.offsetY + 1}`
-				: undefined
-		}
-
-		this.update()
-	}
-
-	upload = async ({ target }: Event) => {
-		if (!(target instanceof HTMLInputElement) || !target.files) return
-
-		const body = new FormData()
-		for (const file of target.files) body.append('file', file)
-
-		if (this.active_folder) body.append('folder_id', this.active_folder)
-
-		if (!this.#secrets) return
-		const req = await this.r2.post(`${this.#secrets.r2_bucket}/assets`, { body })
-
-		if (!req.ok) return
-
-		this.load()
-		target.value = ''
-	}
-
-	restore = async (asset: R2Asset) => {
-		if (!this.#secrets) return
-		await this.r2.post(`${this.#secrets.r2_bucket}/assets/${asset.id}/restore`)
-		this.load()
-	}
-
-	restore_many_assets = async (assets: Array<R2Asset>) => {
-		if (!this.#secrets) return
-		await this.r2.post(`${this.#secrets.r2_bucket}/assets/restore`, {
-			json: assets.map((asset) => asset.id),
-		})
-		this.load()
-	}
-
-	next_page = () => {
-		if (!this.meta?.page) return
-		this.list_assets(this.meta.page + 1)
-	}
-
-	previous_page = () => {
-		if (!this.meta?.page) return
-		this.list_assets(this.meta.page - 1)
-	}
-
-	go_to_page = (page: number) => {
-		if (!this.meta?.page) return
-		this.list_assets(page)
-	}
+}
+
+const count = (ids: Array<string>) => (ids.length === 1 ? '1 file' : `${ids.length.toLocaleString()} files`)
+
+// ---- display helpers
+
+export const is_image = (a: R2Asset) => !!a.attributes.content_type?.startsWith('image/') && !!a.links?.self
+export const is_svg = (a: R2Asset) => a.attributes.content_type === 'image/svg+xml'
+// formats that can be see-through get a checkerboard behind them
+export const may_be_clear = (a: R2Asset) =>
+	/^image\/(png|svg\+xml|webp|gif|avif)$/.test(a.attributes.content_type ?? '')
+export const thumb = (a: R2Asset, width: number) =>
+	is_svg(a) ? a.links!.self! : `${a.links!.self}/m/${width}x0/filters:quality(75)`
+export const label = (a: R2Asset) => a.attributes.name || a.attributes.filename.replace(/\.[^.]+$/, '')
+export const extension = (a: R2Asset) =>
+	(a.attributes.filename.includes('.')
+		? a.attributes.filename.split('.').pop()
+		: (a.attributes.format ?? 'file'))!.toLowerCase()
+export const size = (bytes: number) =>
+	bytes < 1024 * 1024
+		? `${Math.max(1, Math.round(bytes / 1024))} KB`
+		: `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+export const describe = (a: R2Asset) =>
+	[
+		`.${extension(a)}`,
+		a.attributes.width && `${a.attributes.width}×${a.attributes.height}`,
+		size(a.attributes.size_bytes)
+	]
+		.filter(Boolean)
+		.join(' · ')
+
+// a focus point ("x1xy1:x2xy2" in the image's own pixels) as percentages, for object-position and markers
+export const focus_of = (a: R2Asset, focus = a.attributes.focus) => {
+	const [x, y] = focus?.split(':')[0].split('x').map(Number) ?? []
+	const { width, height } = a.attributes
+	return width && height && Number.isFinite(x) && Number.isFinite(y)
+		? { x: (x / width) * 100, y: (y / height) * 100 }
+		: null
 }
