@@ -198,7 +198,14 @@ export class AssetManager {
 		this.plugin?.actions?.setModalOpen(true)
 	}
 
-	open_details = (asset: R2Asset, from_picker = this.screen === 'picker') => {
+	open_details = async (asset: R2Asset, from_picker = this.screen === 'picker') => {
+		// the story keeps a copy of the file from when it was picked, which older fields saved without the
+		// date, alt text and so on; the library's copy is always current
+		if (!from_picker)
+			asset = await this.#request<{ data: R2Asset }>(`assets/${asset.id}`).then(
+				(res) => res.data,
+				() => asset
+			)
 		this.#set_modal({
 			details: asset,
 			from_picker,
