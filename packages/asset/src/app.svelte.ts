@@ -252,6 +252,10 @@ export class AssetManager {
 		body: JSON.stringify(body),
 	})
 
+	// suggested alt text and a caption, from Workers AI in moxy; nothing is saved until the editor saves
+	describe = (asset: R2Asset) =>
+		this.#request<{ alt: string; title: string }>(`assets/${asset.id}/describe`, { method: 'POST' })
+
 	// runs an action, showing any failure as a toast
 	async run(task: () => Promise<unknown>, { quiet = false } = {}) {
 		if (!quiet) this.busy = true

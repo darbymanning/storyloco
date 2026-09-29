@@ -9,7 +9,9 @@
 		ExternalLinkIcon,
 		FileTextIcon,
 		Link2Icon,
+		LoaderCircleIcon,
 		RotateCcwIcon,
+		SparklesIcon,
 		Trash2Icon,
 		XIcon,
 	} from '@lucide/svelte'
@@ -43,6 +45,23 @@
 	// svelte-ignore state_referenced_locally
 	let initial = JSON.stringify(blank(asset))
 	let tab = $state<'details' | 'used'>('details')
+
+	let generating = $state<'alt' | 'title' | null>(null)
+	// the clicked field is always replaced; the other is only filled in when empty, so nothing typed is lost
+	const generate = (field: 'alt' | 'title') => {
+		generating = field
+		return manager
+			.run(
+				async () => {
+					const made = await manager.describe(asset)
+					const other = field === 'alt' ? 'title' : 'alt'
+					form[field] = made[field]
+					if (!form[other]) form[other] = made[other]
+				},
+				{ quiet: true }
+			)
+			.finally(() => (generating = null))
+	}
 	let sharp = $state(false)
 
 	const in_trash = $derived(manager.view.kind === 'trash' && manager.details_from_picker)
@@ -115,6 +134,21 @@
 		if (e.key === 'ArrowRight') step(1)
 	}
 </script>
+
+{#snippet ai(field: 'alt' | 'title')}
+	{#if is_image(asset) && !is_svg(asset)}
+		<button
+			type="button"
+			class="inline-flex items-center gap-1 text-xs font-normal text-primary hover:underline disabled:opacity-60 disabled:no-underline"
+			disabled={!!generating}
+			onclick={() => generate(field)}
+			title="Suggest {field === 'alt' ? 'alt text' : 'a caption'} with AI; check it before saving"
+		>
+			{#if generating === field}<LoaderCircleIcon class="size-3.5 animate-spin" /> Generating…
+			{:else}<SparklesIcon class="size-3.5" /> Generate{/if}
+		</button>
+	{/if}
+{/snippet}
 
 <svelte:window onkeydown={keys} />
 
@@ -350,8 +384,9 @@
 						/></label
 					>
 					<label class="field">
-						<span class="flex justify-between"
-							>Alt text <em class="text-xs text-muted-foreground not-italic tabular-nums"
+						<span class="flex items-center gap-2"
+							>Alt text {@render ai('alt')}<em
+								class="ml-auto text-xs text-muted-foreground not-italic tabular-nums"
 								>{form.alt.length}/125</em
 							></span
 						>
@@ -361,7 +396,10 @@
 							placeholder="Describe the image for people who can’t see it"
 						></textarea>
 					</label>
-					<label class="field"><span>Title / caption</span><input bind:value={form.title} /></label>
+					<label class="field"
+						><span class="flex items-center gap-2">Title / caption {@render ai('title')}</span
+						><input bind:value={form.title} /></label
+					>
 					<div class="grid grid-cols-2 gap-3">
 						<label class="field"
 							><span>Copyright</span><input
