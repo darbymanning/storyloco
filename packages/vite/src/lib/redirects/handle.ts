@@ -1,30 +1,10 @@
 import type { Handle } from "@sveltejs/kit"
 import { match, compile } from "path-to-regexp"
 import { Logger } from "../shared/logger.js"
+import { fetch_redirects, type Redirect } from "./fetch.js"
 
 const name = "vite-storyblok-redirects"
 const logger = new Logger(name)
-
-// Lazy load the redirects map to avoid import errors during dev
-let redirects_map: Map<string, string> | null = null
-
-async function load_redirects_map(): Promise<Map<string, string>> {
-	if (redirects_map) return redirects_map
-
-	try {
-		// import from virtual module
-		// @ts-expect-error - virtual module resolved at runtime by vite plugin
-		const module = await import("virtual:storyblok-redirects")
-		const redirects = (module as { redirects: Array<[string, string]> }).redirects
-		redirects_map = new Map(redirects)
-		return redirects_map
-	} catch (err) {
-		logger.warn(`Failed to load redirects from virtual module, using empty redirects map`)
-		logger.warn(String(err))
-		redirects_map = new Map()
-		return redirects_map
-	}
-}
 
 /**
  * Resolve a pathname to a redirect target using a generated redirects map.
@@ -65,39 +45,71 @@ function to_dst_pattern(glob: string): string {
 	return normalize_path(glob).replaceAll("*", () => `:w${i++}`)
 }
 
-/** Precompiled wildcard rules generated from the redirects map. */
-let wildcard_rules: Array<{
-	matcher: ReturnType<typeof match>
-	builder: ReturnType<typeof compile>
-}> = []
+type Rules = {
+	/** Exact redirect lookups, with and without leading slash variants. */
+	exact: Map<string, string>
+	/** Precompiled wildcard rules. */
+	wildcards: Array<{ matcher: ReturnType<typeof match>; builder: ReturnType<typeof compile> }>
+}
 
-/** Exact redirect lookups, with and without leading slash variants. */
-let exact_map: Map<string, string> = new Map()
-
-let rules_initialized = false
-
-async function initialize_rules() {
-	if (rules_initialized) return
-
-	const map = await load_redirects_map()
-	wildcard_rules = []
-	exact_map = new Map()
-
-	for (const [key, value] of map.entries()) {
+function build_rules(redirects: Array<Redirect>): Rules {
+	const rules: Rules = { exact: new Map(), wildcards: [] }
+	for (const [key, value] of redirects) {
 		if (key.includes("*")) {
-			const src_pattern = to_src_pattern(key)
-			const dst_pattern = to_dst_pattern(value)
-			wildcard_rules.push({
-				matcher: match(src_pattern, { decode: decodeURIComponent, end: true }),
-				builder: compile(dst_pattern, { encode: (x) => x }),
-			})
+			try {
+				rules.wildcards.push({
+					matcher: match(to_src_pattern(key), { decode: decodeURIComponent, end: true }),
+					builder: compile(to_dst_pattern(value), { encode: (x) => x }),
+				})
+			} catch (err) {
+				logger.warn(`Skipping redirect ${key} -> ${value}: ${err}`)
+			}
 		} else {
-			exact_map.set(normalize_path(key), value)
-			exact_map.set(key.startsWith("/") ? key.slice(1) : key, value)
+			rules.exact.set(normalize_path(key), value)
+			rules.exact.set(key.startsWith("/") ? key.slice(1) : key, value)
 		}
 	}
+	return rules
+}
 
-	rules_initialized = true
+/** How long a fetched list is used before it's refreshed in the background. */
+const MAX_AGE = 60_000
+
+let rules: Promise<Rules> | undefined
+let refresh: (() => Promise<Array<Redirect>>) | undefined
+let fetched_at = 0
+
+/**
+ * The current rules. The first request waits for the live datasource, falling back to the list baked
+ * in at build; after that, a list older than MAX_AGE keeps serving while a fresh one loads, and a
+ * failed refresh keeps the last good list.
+ */
+async function current_rules(): Promise<Rules> {
+	rules ??= (async () => {
+		let config: { redirects: Array<Redirect>; datasource: string; token: string }
+		try {
+			// @ts-expect-error - virtual module resolved at runtime by vite plugin
+			config = await import("virtual:storyblok-redirects")
+		} catch (err) {
+			logger.warn(`Failed to load redirects from virtual module, using no redirects: ${err}`)
+			return build_rules([])
+		}
+		refresh = config.token ? () => fetch_redirects(config.datasource, config.token) : undefined
+		fetched_at = Date.now()
+		return build_rules((await refresh?.().catch(warn)) ?? config.redirects)
+	})()
+
+	if (refresh && Date.now() - fetched_at > MAX_AGE) {
+		fetched_at = Date.now()
+		refresh()
+			.then((redirects) => (rules = Promise.resolve(build_rules(redirects))))
+			.catch(warn)
+	}
+	return rules
+}
+
+function warn(err: unknown): undefined {
+	logger.warn(`Couldn't refresh redirects, keeping the current ones: ${err}`)
 }
 
 /**
@@ -107,19 +119,19 @@ async function initialize_rules() {
  * Self-redirects are ignored.
  */
 async function resolve_redirect(url: URL): Promise<string | null> {
-	await initialize_rules()
+	const { exact, wildcards } = await current_rules()
 	try {
 		const source = normalize_path(url.pathname + (url.search || ""))
 		const source_plain = source.includes("?") ? (source.split("?")[0] as Pathname) : source
 
 		const lookup = (key: string): string | undefined =>
-			exact_map.get(key) ?? exact_map.get(key.startsWith("/") ? key.slice(1) : key)
+			exact.get(key) ?? exact.get(key.startsWith("/") ? key.slice(1) : key)
 
 		// Prefer exact including query, then plain path
 		let target = lookup(source) ?? lookup(source_plain) ?? null
 
 		if (!target) {
-			for (const { matcher, builder } of wildcard_rules) {
+			for (const { matcher, builder } of wildcards) {
 				const m = matcher(source_plain)
 				if (!m) continue
 				// names are w1, w2, ... so we can pass matcher params directly to builder

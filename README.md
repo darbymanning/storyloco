@@ -393,9 +393,11 @@ export const handle = handle_redirects
 The plugin will:
 
 - Fetch redirect entries from your Storyblok datasource
-- Generate a redirects map during build
+- Bake them into the build as a fallback
 - Support exact matches and wildcard patterns
 - Handle both internal and external redirects
+
+Redirects stay live without a rebuild: the handle fetches the datasource on a server's first request, then serves from memory and refreshes in the background once the list is a minute old. If Storyblok can't be reached, it keeps the last list it had, or the one baked in at build.
 
 ## 🔧 Development
 
