@@ -394,7 +394,7 @@ The plugin will:
 
 - Fetch redirect entries from your Storyblok datasource
 - Bake them into the build as a fallback
-- Support exact matches and wildcard patterns
+- Support exact matches and wildcard patterns, with or without a trailing slash (SvelteKit strips it before hooks run, so `/old/` matches a request for `/old`)
 - Handle both internal and external redirects
 
 Redirects stay live without a rebuild: the handle fetches the datasource on a server's first request, then serves from memory and refreshes in the background once the list is a minute old. If Storyblok can't be reached, it keeps the last list it had, or the one baked in at build.
