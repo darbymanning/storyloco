@@ -317,21 +317,29 @@ interface Link {
 	linktype?: string
 	url?: string
 	cached_url?: string
+	anchor?: string
+	email?: string
 	// The index signature stops TypeScript rejecting the generated `story` as a weak type
 	story?: { url?: string; [key: string]: unknown }
 }
 
 /**
- * Resolve a multilink to an href. Story links become root-relative, everything else passes
- * through. Prefers `story.url` over `cached_url`, which goes stale when a target moves —
- * so pair with `resolve_links: "url"`.
+ * Resolve a multilink to an href, or `undefined` when the field links nowhere (so an `<a>`
+ * renders without one). Story links become root-relative with their anchor (`#section`);
+ * email links become `mailto:`; URL and asset links pass through. Prefers `story.url` over
+ * `cached_url`, which goes stale when a target moves, so pair with `resolve_links: "url"`.
  */
 export function href(link?: Link): string | undefined {
 	if (!link) return undefined
+	if (link.linktype === "email") {
+		const email = link.email || link.url
+		return email ? `mailto:${email.replace(/^mailto:/, "")}` : undefined
+	}
+	if (link.linktype !== "story") return link.url || link.cached_url || undefined
 
-	return link.linktype === "story"
-		? `/${link.story?.url || link.cached_url}`
-		: link.url || link.cached_url
+	const path = (link.story?.url || link.cached_url || "").replace(/^\/+/, "")
+	const anchor = link.anchor ? `#${link.anchor.replace(/^#/, "")}` : ""
+	return path ? `/${path}${anchor}` : anchor || undefined
 }
 
 /**
