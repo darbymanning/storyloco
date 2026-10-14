@@ -41,10 +41,15 @@ export class CategoriesManager {
 		}
 	}
 
-	toggle = (id: number) => {
-		this.selected = this.selected.includes(id)
-			? this.selected.filter((selected) => selected !== id)
-			: [...this.selected, id]
+	toggle = (id: number) =>
+		this.set(
+			this.selected.includes(id)
+				? this.selected.filter((selected) => selected !== id)
+				: [...this.selected, id]
+		)
+
+	set = (ids: ChurchsuiteCategories) => {
+		this.selected = ids
 		if (this.plugin?.type !== 'loaded') return
 		this.plugin.actions.setContent($state.snapshot(this.selected))
 	}
