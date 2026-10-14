@@ -17,6 +17,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **⏰ Time** - Simple time input field with step control
 - **💷 Currency** - Amount input with a currency selector; configure allowed codes via the `currencies` and `default_currency` options
 - **📅 Dates** - List of dates, each with an optional time, end date and end time, plus a timezone picker; configure via the `min`, `max` and `auto_sort` options
+- **⛪ ChurchSuite Categories** - Multi-select of ChurchSuite calendar categories, read from your site's endpoint via the `endpoint` option
 
 ### Vite Plugins
 

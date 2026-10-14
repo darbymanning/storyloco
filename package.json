@@ -36,7 +36,8 @@
 		"packages/seo/types.ts",
 		"packages/hubspot_form/types.ts",
 		"packages/currency/types.ts",
-		"packages/dates/types.ts"
+		"packages/dates/types.ts",
+		"packages/churchsuite_categories/types.ts"
 	],
 	"exports": {
 		".": {
@@ -105,6 +106,9 @@
 		"./dates": {
 			"types": "./packages/dates/types.ts",
 			"svelte": "./packages/dates/src/app.svelte.ts"
+		},
+		"./churchsuite_categories": {
+			"types": "./packages/churchsuite_categories/types.ts"
 		}
 	},
 	"devDependencies": {
