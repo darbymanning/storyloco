@@ -395,7 +395,32 @@ function went(to: View) {
 			(to.ry ?? 0) * node.offsetHeight -
 			innerHeight * to.at
 		: (to.y ?? 0) * (document.documentElement.scrollHeight - innerHeight)
-	scrollTo({ top, behavior: "instant" })
+	glide(top)
+}
+
+/*
+ * Where they are arrives a few times a second, so jumping straight there stutters: the page
+ * eases toward the latest each frame instead, the same share of the way whatever the frame rate
+ */
+let gliding_to = 0
+let glide_frame = 0
+let glide_last = 0
+function glide(top: number) {
+	gliding_to = top
+	if (glide_frame) return
+	glide_last = performance.now()
+	const step = (now: number) => {
+		const dt = Math.min(now - glide_last, 64)
+		glide_last = now
+		const left = gliding_to - scrollY
+		if (Math.abs(left) < 0.5 || !editor.following) {
+			glide_frame = 0
+			return
+		}
+		scrollTo({ top: scrollY + left * (1 - Math.pow(0.002, dt / 1000)), behavior: "instant" })
+		glide_frame = requestAnimationFrame(step)
+	}
+	glide_frame = requestAnimationFrame(step)
 }
 
 let going: string | null = null

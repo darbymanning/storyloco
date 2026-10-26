@@ -334,7 +334,7 @@ async function source_of(node: HTMLElement, text: string): Promise<Source | unde
  * `[data-rich]` for editable text, `[data-storyloco-hover]` and `-selected` for blocks
  */
 const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-radius:2px;transition:opacity .2s;caret-color:var(--editor-accent,#05807f)}
-[data-field]:focus,[data-storyloco=rich]{outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:4px}
+[data-field]:focus,[data-storyloco=rich],[data-storyloco-field]{outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:4px}
 [data-edit=saving]{opacity:.55}
 [data-edit=error]{box-shadow:0 0 0 2px var(--editor-danger,#e5484d)}
 [data-image]{outline:2px solid color-mix(in srgb,var(--editor-accent,#05807f) 60%,transparent);outline-offset:-2px}
@@ -422,6 +422,38 @@ function holder(target: Element) {
 	}
 }
 
+/** Tags that only style a stretch of text, like an accent on a title's last words */
+const INLINE = /^(SPAN|EM|STRONG|B|I|U|SMALL|MARK|SUB|SUP|BR|WBR)$/
+
+/** An element showing one piece of text in inline parts, like `Title <span class="accent">words</span>` */
+function inline_run(el: Element) {
+	const parts = [...el.childNodes].filter(
+		(node) => node.nodeType !== Node.COMMENT_NODE && !(node instanceof Text && !node.data.trim())
+	)
+	return (
+		parts.length > 1 &&
+		parts.every(
+			(node) => node instanceof Text || (node instanceof Element && INLINE.test(node.tagName))
+		) &&
+		[...el.querySelectorAll("*")].every((inner) => INLINE.test(inner.tagName))
+	)
+}
+
+/** The outermost run of inline text around, or just inside, what the pointer's on */
+function run_at(el: Element) {
+	let found: HTMLElement | null = null
+	for (let at: Element | null = el, i = 0; at && i < 4 && !at.hasAttribute("data-blok-c"); i++) {
+		if (inline_run(at)) found = at as HTMLElement
+		at = at.parentElement
+	}
+	if (found) return found
+	for (let at: Node | undefined = el, i = 0; at instanceof HTMLElement && i < 3; i++) {
+		if (inline_run(at)) return at
+		at = only_child(at)
+	}
+	return null
+}
+
 const wired = new Map<HTMLElement, () => void>()
 
 /** Text on the page that others may type in too: joining it to watch, and leaving when they've gone */
@@ -467,7 +499,13 @@ function text_at(node: Node, index: number) {
 	}
 }
 
-function wire(node: HTMLElement, text: Text, source: Source) {
+/**
+ * What a field's text shows in: its one text node, or for a run in parts, something like one whose
+ * text is all of theirs and which leaves them for the page to update, as it will once it reloads
+ */
+type Shows = { data: string }
+
+function wire(node: HTMLElement, text: Shows, source: Source) {
 	const key = room_key(source)
 	let sharing: ReturnType<typeof share_text> | null = null
 
@@ -649,15 +687,90 @@ function wire(node: HTMLElement, text: Text, source: Source) {
 	})
 }
 
+/** The text node, and the place in it, under a point */
+function caret_at(x: number, y: number) {
+	type Caret = { offsetNode: Node; offset: number }
+	const doc = document as Document & { caretPositionFromPoint?(x: number, y: number): Caret | null }
+	const caret = doc.caretPositionFromPoint?.(x, y)
+	if (caret) return { node: caret.offsetNode, offset: caret.offset }
+	const range = document.caretRangeFromPoint?.(x, y)
+	return range ? { node: range.startContainer, offset: range.startOffset } : null
+}
+
+/**
+ * Text set straight into an element beside others, like a subtitle beside a "Show more" button,
+ * has no element of its own to type in. Pressed, a stand-in of ours takes its place while it's
+ * typed in, with Svelte's own node emptied meanwhile and filled again after, still Svelte's
+ */
+async function edit_loose(event: PointerEvent) {
+	// the press's own mousedown moves the focus, to the block, so typing starts once it's let go
+	const released = new Promise<void>((done) => {
+		addEventListener("pointerup", () => done(), { once: true, capture: true })
+		setTimeout(done, 1000)
+	})
+	const caret = caret_at(event.clientX, event.clientY)
+	const text = caret?.node
+	if (!(text instanceof Text) || !text.parentElement) return
+	const parent = text.parentElement
+	if (text_child(parent) || inline_run(parent) || ours(parent)) return
+	if (parent.closest("button, a[href], [data-field], [data-rich]")) return
+	const kept = text.data
+	const value = loose(kept)
+	const source = value ? await source_of(parent, value) : undefined
+	await released
+	if (!source || !active || !text.isConnected || text.data !== kept) return
+	const stand = document.createElement("span")
+	stand.textContent = kept
+	text.before(stand)
+	text.data = ""
+	wire(
+		stand,
+		{
+			get data() {
+				return loose(stand.textContent ?? "")
+			},
+			set data(next) {
+				text.data = next
+			},
+		},
+		source
+	)
+	// after the field's own blur has put its text back on Svelte's node
+	stand.addEventListener(
+		"blur",
+		() => {
+			if (!text.data) text.data = kept
+			stand.remove()
+			setTimeout(() => wired.get(stand)?.(), 2000)
+		},
+		{ once: true }
+	)
+	stand.focus()
+	const spot = text_at(stand, Math.min(caret?.offset ?? 0, stand.textContent?.length ?? 0))
+	if (spot) getSelection()?.collapse(spot.node, spot.offset)
+}
+
+/** A press's look for loose text to type in, which its click waits for before selecting */
+let loosening: Promise<void> | null = null
+
 /** Make this element's text editable, if it shows a field */
 function try_wire(node: HTMLElement) {
 	const first = text_child(node)
-	if (wired.has(node) || !first || node.closest("button") || ours(node)) return
-	const text = loose(first.data)
+	const run = !first && inline_run(node)
+	if (wired.has(node) || (!first && !run) || node.closest("button") || ours(node)) return
+	// a run whose parts are already someone's text is theirs
+	if (run && [...wired.keys()].some((other) => node.contains(other))) return
+	const text = loose(first ? first.data : (node.textContent ?? ""))
 	if (!text) return
+	const parts: Shows = {
+		get data() {
+			return loose(node.textContent ?? "")
+		},
+		set data(_) {},
+	}
 	source_of(node, text).then((source) => {
-		if (active && source && !wired.has(node) && text_child(node) === first)
-			wire(node, first, source)
+		if (!active || !source || wired.has(node)) return
+		if (first ? text_child(node) === first : inline_run(node)) wire(node, first ?? parts, source)
 	})
 }
 
@@ -670,8 +783,9 @@ function wire_all(block: HTMLElement) {
 	if (swept.has(block)) return
 	swept.add(block)
 	for (const el of block.querySelectorAll<HTMLElement>("*")) {
-		if (block_of(el) !== block || !text_child(el)) continue
-		try_wire(el)
+		if (block_of(el) !== block) continue
+		if (text_child(el)) try_wire(el)
+		else if (inline_run(el) && !(el.parentElement && inline_run(el.parentElement))) try_wire(el)
 	}
 	mark_riches(block)
 }
@@ -1226,7 +1340,10 @@ function over(event: PointerEvent) {
 
 	if (!editing_rich) rich_at(el)
 
+	if (event.type === "pointerdown" && !wired.has(el as HTMLElement)) loosening = edit_loose(event)
 	const node = holder(el)
+	const run = run_at(el)
+	if (run && run !== node) try_wire(run)
 	if (!node) return
 	try_wire(node)
 	// pressing a wrapper's padding edits the text inside it
@@ -1251,10 +1368,15 @@ function click(event: MouseEvent) {
 		event.preventDefault()
 		edit_rich(rich, { x: event.clientX, y: event.clientY })
 	}
-	selection_at(el).then((s) => {
+	const pending = loosening
+	selection_at(el).then(async (s) => {
+		await pending
 		if (!s) return
-		// typing in place keeps the toolbar out of the way; the settings follow along if open
-		if (rich || el.closest("[contenteditable]")) {
+		// typing in place keeps the toolbar out of the way; the settings follow along if open. The
+		// press may have just given text a stand-in to type in, which has the focus by now
+		const typing =
+			el.closest("[contenteditable]") || wired.has(document.activeElement as HTMLElement)
+		if (rich || typing) {
 			selected = s
 			highlight(s.uid)
 			inspector?.then((panel) => panel.showing() && panel.open(s))
@@ -1415,6 +1537,38 @@ export async function comment() {
 }
 
 /** Everyone else's pointers and selections on the page, and this person's to them */
+// --- the field being changed in the settings, marked where the page shows it
+
+/** Where the page shows a field: text typed in place, or rich text */
+function shown_at(uid: string, field: string) {
+	const found: Array<HTMLElement> = []
+	for (const [node, { key }] of shareable)
+		if (node.isConnected && key.endsWith(`:${uid}:${field}`)) found.push(node)
+	for (const node of document.querySelectorAll<HTMLElement>("[data-rich]")) {
+		const rich = riches.get(node)
+		if (rich?.blok._uid === uid && rich.field === field) found.push(node)
+	}
+	return found
+}
+
+let marking = 0
+function mark_field(event: Event) {
+	const at = (event as CustomEvent<{ uid: string; field: string } | null>).detail
+	const mark = ++marking
+	for (const node of document.querySelectorAll("[data-storyloco-field]"))
+		node.removeAttribute("data-storyloco-field")
+	if (!at || !active) return
+	// its block's text is found as it's first hovered; for this, find it now
+	const block = element_of(at.uid)
+	if (block) wire_all(block)
+	setTimeout(() => {
+		if (mark !== marking) return
+		const found = shown_at(at.uid, at.field)
+		for (const node of found) node.setAttribute("data-storyloco-field", "")
+		found[0]?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+	}, 150)
+}
+
 function present() {
 	go_live()
 	hide_presence ??= show_presence({
@@ -1570,6 +1724,7 @@ export function install() {
 		if (uid && story) select({ story, uid }, true)
 	})
 	addEventListener("scroll", place_tag, { passive: true })
+	addEventListener("storyloco:panel-field", mark_field)
 	// a save re-renders the page, and the selected blok's element with it
 	on_saved(() => {
 		swept = new WeakSet()

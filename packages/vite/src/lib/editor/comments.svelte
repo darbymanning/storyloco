@@ -50,7 +50,22 @@
 	let comments = $state.raw<Array<Comment>>([])
 	/** Every other page's comments, for the list of them all */
 	let elsewhere = $state.raw<Array<Comment>>([])
-	let people = $state.raw<Array<Person>>([])
+	let known = $state.raw<Array<Person>>([])
+	/**
+	 * Who can be mentioned: the space's people moxy knows, and anyone on the site right now, like
+	 * someone from a partner agency who's signed in since this page loaded
+	 */
+	const people = $derived.by(() => {
+		const here = editor.here.people.flatMap(({ user }) =>
+			user.name
+				? [{ id: String(user.id), name: user.name, photo: user.photo, gravatar: user.gravatar }]
+				: []
+		)
+		const ids = new Set(known.map((p) => p.id))
+		return [...known, ...here.filter((p) => !ids.has(p.id))].sort((a, b) =>
+			a.name.localeCompare(b.name)
+		)
+	})
 	let me = $state("")
 	let placing = $state(false)
 	let draft = $state<Spot | null>(null)
@@ -519,7 +534,7 @@
 	onMount(() => {
 		load()
 		ask<{ people: Array<Person>; me: string }>("people")
-			.then((found) => ((people = found.people), (me = found.me)))
+			.then((found) => ((known = found.people), (me = found.me)))
 			.catch(() => {})
 		ask<{ key: string | null }>("key")
 			.then(async (found) => {

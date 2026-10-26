@@ -17,6 +17,9 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from "svelte"
+	import { flip } from "svelte/animate"
+	import { scale } from "svelte/transition"
+	import { backIn, cubicOut } from "svelte/easing"
 	import Face from "./face.svelte"
 	import { afterNavigate, goto } from "$app/navigation"
 	import {
@@ -486,11 +489,22 @@
 				}
 			}}
 		>
-			<svg class="mark" viewBox="0 0 44 44" aria-hidden="true">
-				<rect x="11" y="13" width="22" height="18" rx="3" />
-				<path d="M11 18h22" />
-				<path class="pencil" d="m20 29 7.5-7.5a1.77 1.77 0 0 1 2.5 2.5L22.5 31.5 19 32.5z" />
-			</svg>
+			{#if here.me}
+				<!-- their own face, so nobody takes someone else's beside it for theirs -->
+				<span class="own" aria-hidden="true"
+					><Face
+						name={here.me.user.name}
+						photo={here.me.user.photo}
+						gravatar={here.me.user.gravatar}
+					/></span
+				>
+			{:else}
+				<svg class="mark" viewBox="0 0 44 44" aria-hidden="true">
+					<rect x="11" y="13" width="22" height="18" rx="3" />
+					<path d="M11 18h22" />
+					<path class="pencil" d="m20 29 7.5-7.5a1.77 1.77 0 0 1 2.5 2.5L22.5 31.5 19 32.5z" />
+				</svg>
+			{/if}
 			{#if editor.saving}<span class="ring" aria-hidden="true"></span>{/if}
 			<span class="dot" data-signal={signal} aria-hidden="true"></span>
 			{#if inbox.unread && !open}
@@ -510,6 +524,8 @@
 						style:--c={person.color}
 						aria-pressed={followed}
 						onclick={() => follow(followed ? null : person.id)}
+						animate:flip={{ duration: 350, easing: cubicOut }}
+						out:scale={{ start: 0.3, duration: 220, easing: backIn, opacity: 0 }}
 					>
 						<span class="face" aria-hidden="true"
 							><Face
@@ -865,11 +881,28 @@
 {/if}
 
 <style>
+	/*
+	 * A site's list markers, often a positioned ::before, aren't the editor's: in a list of ours
+	 * one sizes itself to the nearest positioned box, like a dialog's full-screen scrim, and takes
+	 * every click on it. Revert can't reach a pseudo-element, so this goes everywhere we draw, though
+	 * not on the site's own rich text while it's typed in, whose lists keep their markers.
+	 */
+	/* one rule each: in one list Svelte would join them in an :is(), where a pseudo-element can't be */
+	:global([data-storyloco]:not([data-storyloco="rich"]) li)::before {
+		content: none !important;
+	}
+
+	:global([data-storyloco]:not([data-storyloco="rich"]) li)::after {
+		content: none !important;
+	}
+
 	.bar {
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
 		--bg: var(--editor-bg, #fff);
+		/* a spring that overshoots a touch, for things arriving */
+		--overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
 		--ink: var(--editor-ink, #1b243f);
 		--muted: var(--editor-muted, #6b7280);
 		--line: var(--editor-line, rgb(27 36 63 / 0.12));
@@ -966,6 +999,24 @@
 		&:focus-visible {
 			outline: 2px solid var(--accent);
 			outline-offset: 2px;
+		}
+	}
+
+	.own {
+		block-size: 100%;
+		border-radius: 50%;
+		display: grid;
+		inline-size: 100%;
+		overflow: hidden;
+		/* their colour round it, as the others see them */
+		box-shadow: inset 0 0 0 2px var(--editor-badge, var(--accent));
+		transition:
+			scale 0.5s var(--overshoot),
+			opacity 0.3s ease;
+
+		@starting-style {
+			opacity: 0;
+			scale: 0.5;
 		}
 	}
 
@@ -1390,6 +1441,16 @@
 		inline-size: 1.75rem;
 		justify-content: center;
 		position: relative;
+		/* someone arriving springs in; leaving shrinks away, and the rest close up */
+		transition:
+			scale 0.5s var(--overshoot),
+			opacity 0.3s ease,
+			box-shadow 0.2s ease;
+
+		@starting-style {
+			opacity: 0;
+			scale: 0.3;
+		}
 
 		& + & {
 			margin-inline-start: -0.375rem;
