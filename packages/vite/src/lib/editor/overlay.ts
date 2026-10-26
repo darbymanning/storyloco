@@ -341,6 +341,25 @@ function linked_source(text: string, story: Linked): Source | undefined {
 }
 
 /** Where this text comes from: its blok's field first, then a story the link around it goes to, then the page's own story */
+/**
+ * Whether this is one line of rich text the page shows, from one of these bloks: a plain field
+ * whose words happen to match it, like a suptitle matching a heading in a body, isn't where it's
+ * from, even when which of several identical bodies it is can't be told
+ */
+function in_rich(shown: Node, owners: Array<Blok | undefined>) {
+	const compacts = owners.flatMap((owner) =>
+		owner ? rich_fields(owner).map(({ value }) => rich_compact(value)) : []
+	)
+	if (!compacts.length) return false
+	const own = (shown.textContent ?? "").replace(/\s+/g, "")
+	for (let at = shown.parentElement; at && !at.hasAttribute("data-blok-c"); at = at.parentElement) {
+		const text = (at.textContent ?? "").replace(/\s+/g, "")
+		if (text !== own && compacts.some((compact) => compact && shows_rich(text, compact)))
+			return true
+	}
+	return false
+}
+
 async function source_of(
 	node: HTMLElement,
 	text: string,
@@ -350,6 +369,8 @@ async function source_of(
 	await load_schema()
 	const block = block_of(node)
 	const blok = await blok_for(block)
+	const page = editor.story
+	if (in_rich(shown, [blok, page?.uid ? page_blok(page.uid) : undefined])) return
 	const own =
 		blok &&
 		block &&
@@ -360,7 +381,6 @@ async function source_of(
 	if (story) return linked_source(text, story)
 	// outside every block, or in the page's own: a template showing the page's fields under names
 	// of its own, or the page's name, like its title
-	const page = editor.story
 	const at_root = !block || (page?.uid !== undefined && meta(block).uid === page.uid)
 	const root = at_root && page?.uid ? page_blok(page.uid) : undefined
 	if (!page || !root) return
