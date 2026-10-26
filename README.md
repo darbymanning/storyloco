@@ -391,11 +391,12 @@ their own, and a Storyblok preview onto `?_storyblok`:
 ```ts
 // middleware.ts
 export { default } from 'storyloco/middleware'
-export const config = { matcher: '/((?!_app/|api/).*)' }
+export const config = { matcher: '/((?!_app/|api/).*)', runtime: 'nodejs' }
 ```
 
-Vercel reads `config` from the file itself, without following imports, so the matcher stays a
-literal there. Nor will it take a `vercel.json` `proxy.entrypoint` inside `node_modules`.
+Vercel reads `config` from the file itself, without following imports, so it stays a literal
+there; without `runtime` it runs on the deprecated edge runtime. Nor will Vercel take a
+`vercel.json` `proxy.entrypoint` inside `node_modules`.
 
 The `editor` hook keeps an editor's responses out of caches, and the `version` hook keeps a
 preview going on a cookie. For cookies of the site's own, like a shop's customers, export
