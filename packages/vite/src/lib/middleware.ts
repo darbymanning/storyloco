@@ -11,14 +11,11 @@
  * @example
  * ```ts
  * // middleware.ts
- * import { next, rewrite } from "@vercel/functions"
- * import { own_key } from "storyloco/middleware"
- *
- * export default (request: Request) => {
- * 	const url = own_key(request)
- * 	return url ? rewrite(url) : next()
- * }
+ * export { default } from "storyloco/middleware"
+ * export const config = { matcher: "/((?!_app/|api/).*)" }
  * ```
+ *
+ * Vercel reads `config` from the file itself, so that stays the site's own.
  */
 
 /** The editor's cookies: `sl_editor`, or `sl_editor_<space>`, and a guest's `sl_guest_<space>` */
@@ -48,3 +45,35 @@ export function own_key(
 	url.searchParams.set(param, "1")
 	return url
 }
+
+/** Cookies, and the parameter a request carrying any of them moves onto */
+export type Key = { cookies: Array<RegExp>; param: string }
+
+/** Someone signed in to edit, or a guest of a shared draft */
+export const EDITORS: Key = { cookies: [EDITOR_COOKIE], param: UNCACHED }
+
+/**
+ * A whole middleware: the first of `keys` whose cookie a request carries moves it onto its
+ * parameter, and every other request passes through. It answers the way Vercel's `rewrite` and
+ * `next` do, without needing them.
+ *
+ * @example
+ * ```ts
+ * // a shop's signed-in customers too, on one key with the editors
+ * export default middleware([
+ * 	{ cookies: [/^session$/, EDITOR_COOKIE], param: "_signed_in" },
+ * ])
+ * ```
+ */
+export function middleware(keys: Array<Key> = [EDITORS]) {
+	return (request: Request) => {
+		const have = names(request)
+		const key = keys.find(({ cookies }) => have.some((name) => cookies.some((c) => c.test(name))))
+		const url = key && own_key(request, key)
+		return new Response(null, {
+			headers: url ? { "x-middleware-rewrite": String(url) } : { "x-middleware-next": "1" },
+		})
+	}
+}
+
+export default middleware()
