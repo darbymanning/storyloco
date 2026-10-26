@@ -271,6 +271,109 @@ await client.get('cdn/datasource_entries', { version })
 
 Errors go through `client.handle_error`, so a missing story is a 404 and anything else a 500, shaped by the client's `error` option.
 
+### Edit on the Site
+
+Anyone with a role in the space can edit the real site in place, signed in with their own
+Storyblok account, so their permissions apply and every change is credited to them. Changes
+save as drafts; Publish in the corner badge lists what will go live, block by block, first.
+
+It needs the **Site Editor** app installed in the space (Storyblok › Apps), with the site's
+origin allowed on the app's page. `localhost` always is, and a pattern like
+`https://*-team.vercel.app` covers every preview. Then three lines:
+
+```typescript
+// hooks.server.ts
+import { editor } from 'storyloco/editor/server'
+
+export const handle = sequence(editor, version /* , ...the rest */)
+```
+
+```svelte
+<!-- +layout.svelte -->
+<script lang="ts">
+	import { EditBar } from 'storyloco/editor'
+</script>
+
+<EditBar />
+```
+
+```typescript
+// app.d.ts
+interface Locals {
+	editor?: import('storyloco/editor/server').Editor
+}
+```
+
+A site with a Content Security Policy needs `wss://moxy.uilo.co` in its `connect-src`, for the
+multiplayer socket, and `'self'` in its `frame-ancestors`, for the phone and tablet preview.
+
+A site that picks its own content version rather than using `version` asks `editor_version(event)`
+first: draft for editors and guests, published for the live view. A site that caches pages at
+its CDN (`s-maxage`) needs editors, and guests (`sl_guest…`), on a cache key of their own, or
+whoever signs in on the live site is handed the cached visitor page, with no edit bar. The CDN
+answers before the hook runs and won't vary on cookies, so it takes Routing Middleware: when a
+request carries an `sl_editor…` cookie, rewrite it onto a `?_storyloco=1` URL, and never cache
+responses there.
+
+No secrets: sign-in runs through moxy, and the space comes from `STORYBLOK_SPACE_ID` or the
+site's public token. Blocks that spread `attrs(blok)` are editable as they are; nothing marks
+fields up. With edit mode on (the badge's switch, or **E**):
+
+- **Text** edits where it is, matched to its field by what it shows. Body copy edits in place
+  as rich text, with the site's own styles.
+- **Images** offer Replace: the space's library or an upload, with alt text and a focus point.
+- **Blocks** get a toolbar on hover to move, duplicate, add after or delete (with Undo), and a
+  click opens every field of the block from its schema, nested blocks included. Drag a block
+  by its name in the toolbar to put it anywhere in its list.
+- **AI** suggests an image's alt text in the image picker, and rewrites a selection or
+  paragraph of rich text shorter, friendlier, clearer, or with its spelling fixed.
+- **Other stories** shown on the page, like cards listing the latest articles, edit as those
+  stories: their text and images where they show, and a click opens them.
+- **Video** uploads to Mux when the space has the Mux app connected.
+- **Undo** takes back any change made from the page, and Redo makes it again: **⌘Z** and
+  **⇧⌘Z** (Ctrl+Z and Ctrl+Y) outside a field, or the badge's arrows.
+- **Someone else** saving the page in Storyblok while it's open shows a note with Refresh.
+- **⌘K** (Ctrl+K), or the badge's ⌘ button, finds a page, a block on this one, or something
+  to do: make a new page, ask someone to review this one, or preview it at phone or tablet size.
+- **History** goes back through the page's saves on a timeline, the page showing itself as it
+  was at each one, and restores any of them as the draft (with Undo). Pages that `connect()`
+  their story show it in place; others list what restoring would change.
+- **Compare with live** (⌘K, or from Publish) flips the page between the draft and what
+  visitors see now, scrolled to the same place (**L**), with the blocks that aren't live yet
+  marked on the draft.
+- **Share** the draft, like a Google Doc, with people who don't edit in Storyblok: invite them
+  by email (they sign in from the link, once), or let anyone with the link look. Guests see the
+  draft and, if they can comment, comment; someone from the link confirms their email with a
+  code first, so no comment is anonymous. Guests never edit, resolve, or get a Storyblok token,
+  and their pages aren't cached or indexed.
+
+Everyone editing a site at once sees each other. Each person has a colour: their pointer and
+name move over the page, what they've selected is outlined, and their avatars sit by the
+badge. Text and rich text type together, letters merging as they're typed with everyone's
+caret showing, and saves to the same story take turns, so no one's change is lost.
+
+- **Follow** someone by clicking their avatar: the page goes where they go and scrolls with
+  them. Scroll yourself, or press Escape, to stop.
+- **Say something** by your pointer with **/**; the others see it as it's typed.
+- **Comment** with **C**, or the badge's speech bubble, then click where it goes. Threads take
+  replies, @mentions and Resolve. Anyone in one, or mentioned, finds it under the badge's bell,
+  its unread count on the badge, and gets a browser notification too once they've chosen
+  Notify me. A review request lands there too, and anything left unread for 15 minutes is
+  emailed, guests' included.
+
+Visitors never see any of it. On the live site, press **⌘⇧E** (Ctrl+Shift+E) or add `?edit` to
+any address to sign in; once signed in, the badge shows on every page, and ⌘⇧E or **E** turns
+edit mode on and off. In development the badge is always there.
+
+Links inside content don't navigate in edit mode; hold ⌘ or Ctrl to follow one. Match the
+editor to a site with `--storyloco-bar-bg`, `-ink`, `-muted`, `-line`, `-font` and
+`--storyloco-accent`, or build a bar of your own from `editor`, `set_editing`, `publish`,
+`signin` and `signout`.
+
+`bun run smoke <site url>…` (in `packages/vite`) checks each site loads and, signed in, that a
+click on a block opens its settings. Sign in once per site with `--signin`, which opens a
+window; later runs reuse it without one.
+
 ### Use Shared Components
 
 ```typescript

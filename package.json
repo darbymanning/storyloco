@@ -84,6 +84,15 @@
 			"types": "./packages/vite/dist/server.d.ts",
 			"import": "./packages/vite/dist/server.js"
 		},
+		"./editor": {
+			"types": "./packages/vite/dist/editor/index.d.ts",
+			"svelte": "./packages/vite/dist/editor/index.js",
+			"import": "./packages/vite/dist/editor/index.js"
+		},
+		"./editor/server": {
+			"types": "./packages/vite/dist/editor/server.d.ts",
+			"import": "./packages/vite/dist/editor/server.js"
+		},
 		"./time": {
 			"types": "./packages/time/types.ts",
 			"svelte": "./packages/time/src/app.svelte.ts"
@@ -138,7 +147,34 @@
 		"packages/*"
 	],
 	"dependencies": {
+		"@tiptap/core": "^3.32.0",
+		"@tiptap/extension-blockquote": "^3.32.0",
+		"@tiptap/extension-bold": "^3.32.0",
+		"@tiptap/extension-code": "^3.32.0",
+		"@tiptap/extension-code-block": "^3.32.0",
+		"@tiptap/extension-collaboration": "^3.32.0",
+		"@tiptap/extension-collaboration-caret": "^3.32.0",
+		"@tiptap/extension-document": "^3.32.0",
+		"@tiptap/extension-hard-break": "^3.32.0",
+		"@tiptap/extension-heading": "^3.32.0",
+		"@tiptap/extension-highlight": "^3.32.0",
+		"@tiptap/extension-horizontal-rule": "^3.32.0",
+		"@tiptap/extension-image": "^3.32.0",
+		"@tiptap/extension-italic": "^3.32.0",
+		"@tiptap/extension-link": "^3.32.0",
+		"@tiptap/extension-list": "^3.32.0",
+		"@tiptap/extension-paragraph": "^3.32.0",
+		"@tiptap/extension-strike": "^3.32.0",
+		"@tiptap/extension-subscript": "^3.32.0",
+		"@tiptap/extension-superscript": "^3.32.0",
+		"@tiptap/extension-table": "^3.32.0",
+		"@tiptap/extension-text": "^3.32.0",
+		"@tiptap/extension-underline": "^3.32.0",
+		"@tiptap/pm": "^3.32.0",
+		"@tiptap/y-tiptap": "^3.0.10",
 		"ora": "9.4.1",
-		"path-to-regexp": "8.4.2"
+		"path-to-regexp": "8.4.2",
+		"y-protocols": "^1.0.7",
+		"yjs": "^13.6.33"
 	}
 }

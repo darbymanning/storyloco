@@ -45,6 +45,8 @@ export default ts.config(
 				},
 			],
 			"svelte/no-at-html-tags": "off",
+			// a timer or cache the markup never reads needn't be reactive
+			"svelte/prefer-svelte-reactivity": "off",
 		},
 	}
 )
