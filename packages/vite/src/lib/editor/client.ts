@@ -518,6 +518,22 @@ export const history = {
 	},
 }
 
+/**
+ * The page's story back as it is live, as a draft: one more change, so Undo brings the draft back.
+ * `far` when its live version is further back than the history goes; restore it from Page history
+ */
+export async function discard(): Promise<"done" | "far" | "failed"> {
+	const story = editor.story
+	if (!story) return "failed"
+	const { versions } = await call<{ versions: Array<{ id: number; status: string }> }>({
+		op: "versions",
+		story: story.id,
+	}).catch(() => ({ versions: [] }))
+	const live = versions.find((version) => version.status === "published")
+	if (!live) return "far"
+	return (await send({ op: "revert", story: story.id, version: live.id })) ? "done" : "failed"
+}
+
 /** Whether there's anything Publish would send live: the page's own story, or one edited from it */
 export const unpublished = () =>
 	(editor.story && (editor.story.status === "draft" || editor.story.status === "changed")) ||

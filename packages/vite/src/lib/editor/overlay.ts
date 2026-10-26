@@ -268,6 +268,41 @@ function* own_bloks(value: unknown): Generator<Blok> {
 	for (const child of Object.values(value)) yield* own_bloks(child)
 }
 
+/** Marks a site puts on the one item of several that's showing, like the open tab */
+const ACTIVE =
+	'[aria-selected="true"], [aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-expanded="true"], .active, .selected, .current, .is-active'
+
+/**
+ * Of several bloks whose rich text is the same, with one of them showing, the one that is: the
+ * only one whose other text, like its title in a row of tabs, shows marked as the active one
+ */
+function active_of(owners: Array<Rich>, block: HTMLElement) {
+	const active = owners.filter(({ blok }) => {
+		const texts = Object.entries(blok)
+			.filter(([key, value]) => !key.startsWith("_") && typeof value === "string")
+			.map(([, value]) => loose(value as string))
+			.filter((text) => text.length > 1)
+		if (!texts.length) return false
+		for (const el of block.querySelectorAll<HTMLElement>("*")) {
+			if (!texts.includes(loose(el.textContent ?? "")) || ours(el)) continue
+			// the element itself, or what it's in, a level or two up
+			for (let at: HTMLElement | null = el, i = 0; at && i < 3; i++, at = at.parentElement)
+				if (at.matches(ACTIVE)) return true
+		}
+		return false
+	})
+	return active.length === 1 ? active[0] : undefined
+}
+
+/** Which rich field an element shows, as the page is now: the only one, or the active of several the same */
+async function rich_now(node: HTMLElement, block: HTMLElement) {
+	const blok = await blok_for(block)
+	if (!blok) return
+	const text = (node.textContent ?? "").replace(/\s+/g, "")
+	const found = rich_fields(blok).filter(({ value }) => shows_rich(text, rich_compact(value)))
+	return found.length === 1 ? found[0] : found.length > 1 ? active_of(found, block) : undefined
+}
+
 /** A rich text field, and the blok it's in: the block's own, or one nested in it */
 type Rich = { blok: Blok; field: string }
 
@@ -673,8 +708,18 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 		if (finish || event.key === "Escape") {
 			event.preventDefault()
 			node.blur()
+			return
+		}
+		// in a button, a space presses it rather than typing: typed here instead
+		if (event.key === " " && node.closest("button")) {
+			event.preventDefault()
+			document.execCommand("insertText", false, " ")
 		}
 	}
+
+	/* and the press a space makes as it's let go, in a button */
+	const keyup = (event: KeyboardEvent) =>
+		event.key === " " && node.closest("button") && event.preventDefault()
 
 	function before(event: InputEvent) {
 		const length = (node.textContent ?? "").length
@@ -722,6 +767,7 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 	node.contentEditable = "plaintext-only"
 	node.dataset.field = "name" in source ? "name" : source.field
 	node.addEventListener("keydown", keydown)
+	node.addEventListener("keyup", keyup)
 	node.addEventListener("beforeinput", before)
 	node.addEventListener("input", input)
 	node.addEventListener("focus", focus)
@@ -736,6 +782,7 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 
 	wired.set(node, () => {
 		node.removeEventListener("keydown", keydown)
+		node.removeEventListener("keyup", keyup)
 		node.removeEventListener("beforeinput", before)
 		node.removeEventListener("input", input)
 		node.removeEventListener("focus", focus)
@@ -883,6 +930,13 @@ async function mark_riches(block: HTMLElement) {
 	}
 	for (const [compact, els] of shown) {
 		const owners = wanted.filter(([want]) => want === compact).map(([, rich]) => rich)
+		// one shown of several the same, like a tab's body: the one whose tab is the active one
+		const one = els.length === 1 && owners.length > 1 ? active_of(owners, block) : undefined
+		if (one) {
+			riches.set(els[0], one)
+			els[0].dataset.rich = one.field
+			continue
+		}
 		if (owners.length !== els.length) continue
 		els.forEach((el, i) => {
 			riches.set(el, owners[i])
@@ -1079,7 +1133,10 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 		const text = (node.textContent ?? "").replace(/\s+/g, "")
 		if (!text) continue
 		const found = fields.filter(({ value }) => shows_rich(text, rich_compact(value)))
-		if (found.length === 1) {
+		// one of several the same, like a tab's body: the one whose tab is active
+		const pick =
+			found.length === 1 ? found[0] : found.length > 1 ? active_of(found, block) : undefined
+		if (pick) {
 			// the outermost wrapper showing just this text, so the editor takes the site's richtext container
 			let outer = node
 			while (
@@ -1088,7 +1145,7 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 				(outer.parentElement.textContent ?? "").replace(/\s+/g, "") === text
 			)
 				outer = outer.parentElement
-			const { blok: owner, field } = found[0]
+			const { blok: owner, field } = pick
 			riches.set(outer, { blok: owner, field })
 			;(outer as HTMLElement).dataset.rich = field
 			return outer as HTMLElement
@@ -1103,8 +1160,9 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	// otherwise get past this to open two editors on the one field
 	if (editing_rich) return
 	editing_rich = () => {}
-	const { blok, field } = riches.get(node) ?? {}
 	const block = block_of(node)
+	// which of several identical bodies, like tabs', is the one showing can change as they switch
+	const { blok, field } = (block && (await rich_now(node, block))) ?? riches.get(node) ?? {}
 	if (!field || !block || !blok?._uid) return void (editing_rich = null)
 	const source = { story: Number(meta(block).id), uid: blok._uid, field }
 	bar.hide()
