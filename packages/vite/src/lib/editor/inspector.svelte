@@ -640,7 +640,8 @@
 					if (!value || !untouched || room.users > 1 || shared(room) || focused === key) return
 					if (same(value, room.value!())) return
 					quietly(room, () => editor.editor.commands.setContent(value as RichDoc))
-					room.saved = value
+					// as the editor holds it, so its own writing of the same text isn't taken for a change
+					room.saved = room.value!()
 				})
 				editor.editor.on("focus", () => (focused = key))
 				editor.editor.on("blur", () => {
@@ -1458,7 +1459,7 @@
 
 {#snippet Control(key: string, field: Field)}
 	{@const id = `storyloco-field-${key}`}
-	<div class="field" data-type={field.type}>
+	<div class="sl-field" data-type={field.type}>
 		{#if field.type === "text"}
 			{@render Text(key, field, id)}
 		{:else if field.type === "textarea" || field.type === "markdown"}
@@ -1621,7 +1622,7 @@
 				<!-- shaped like the fields it becomes, so nothing jumps when they arrive -->
 				<div class="fields skeleton" aria-busy="true" aria-label="Loading the block’s fields">
 					{#each [7, 10, 5, 8] as width, i (i)}
-						<div class="field">
+						<div class="sl-field">
 							<span class="bone" style:inline-size="{width}rem"></span>
 							<span class="bone input" class:tall={i === 1}></span>
 						</div>
@@ -1652,12 +1653,12 @@
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
-		--bg: var(--storyloco-bar-bg, #fff);
-		--ink: var(--storyloco-bar-ink, #1b243f);
-		--muted: var(--storyloco-bar-muted, #6b7280);
-		--line: var(--storyloco-bar-line, rgb(27 36 63 / 0.12));
-		--accent: var(--storyloco-accent, #05807f);
-		--danger: var(--storyloco-danger, #e5484d);
+		--bg: var(--editor-bg, #fff);
+		--ink: var(--editor-ink, #1b243f);
+		--muted: var(--editor-muted, #6b7280);
+		--line: var(--editor-line, rgb(27 36 63 / 0.12));
+		--accent: var(--editor-accent, #05807f);
+		--danger: var(--editor-danger, #e5484d);
 		--field: color-mix(in srgb, var(--ink) 4%, transparent);
 
 		background: var(--bg);
@@ -1786,7 +1787,9 @@
 		padding: 0;
 
 		& span {
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
@@ -1853,7 +1856,7 @@
 		}
 	}
 
-	.field {
+	.sl-field {
 		display: grid;
 		gap: 0.375rem;
 	}
@@ -2319,7 +2322,9 @@
 		}
 
 		& span {
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
@@ -2472,7 +2477,9 @@
 
 		& .kid span {
 			min-inline-size: 0;
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}

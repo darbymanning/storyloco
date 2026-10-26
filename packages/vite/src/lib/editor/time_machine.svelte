@@ -38,9 +38,18 @@
 
 	const chosen = $derived(versions?.[index])
 	const last = $derived((versions?.length ?? 1) - 1)
-	const changes = $derived<Array<Difference>>(
-		versions && index ? differences(versions[0].content, versions[index].content) : []
-	)
+	/** The version the page has come to rest on, which the card's details are for */
+	let resting = $state(0)
+	const rested = $derived(versions?.[resting])
+	// worked out once a version, and only for the one the page rests on, not every one a scrub passes
+	const diffs = new Map<number, Array<Difference>>()
+	const changes = $derived.by<Array<Difference>>(() => {
+		if (!versions || !resting) return []
+		let found = diffs.get(resting)
+		if (!found)
+			diffs.set(resting, (found = differences(versions[0].content, versions[resting].content)))
+		return found
+	})
 	const focus = $derived(pointer ?? index)
 
 	const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -104,8 +113,10 @@
 			shown = index
 			in_place = show_version(shown ? versions[shown].content : null)
 			await tick()
+			resting = shown
 		}
-		if (!in_place || still() || !document.startViewTransition) return void swap()
+		// a scrub swaps straight in: capturing the whole page for a transition on every step is what drags
+		if (quick || !in_place || still() || !document.startViewTransition) return void swap()
 		document.documentElement.dataset.storylocoTime = `${back ? "back" : "forward"}${quick ? " quick" : ""}`
 		transition = document.startViewTransition(swap)
 		transition.finished.finally(() => {
@@ -341,17 +352,17 @@
 				<span>Page history</span>
 				<span>{index ? `${index} of ${last} saves back` : `${last} saves`}</span>
 			</p>
-			{#key index}
-				<div class="moment" style:--from={heading}>
-					<p class="title">
-						{index ? `${day_of(chosen.created_at)}, ${time_of(chosen.created_at)}` : "Now"}
-					</p>
-					{#if index}
+			<p class="title">
+				{index ? `${day_of(chosen.created_at)}, ${time_of(chosen.created_at)}` : "Now"}
+			</p>
+			{#key resting}
+				<div class={["moment", { passing: resting !== index }]} style:--from={heading}>
+					{#if resting && rested}
 						<p class="sub meta">
-							<span class={["status", { published: chosen.status === "published" }]}
-								>{chosen.status === "published" ? "Published" : "Saved"}</span
+							<span class={["status", { published: rested.status === "published" }]}
+								>{rested.status === "published" ? "Published" : "Saved"}</span
 							>
-							{#if chosen.by}<span>by {chosen.by}</span>{/if}
+							{#if rested.by}<span>by {rested.by}</span>{/if}
 						</p>
 						{#if !in_place}
 							<p class="sub">
@@ -388,8 +399,11 @@
 			<div class="actions">
 				<button type="button" onclick={leave}>{index ? "Back to now" : "Done"}</button>
 				{#if index}
-					<button type="button" class="primary" disabled={busy || !changes.length} onclick={restore}
-						>{busy ? "Restoring…" : "Restore this version"}</button
+					<button
+						type="button"
+						class="primary"
+						disabled={busy || resting !== index || !changes.length}
+						onclick={restore}>{busy ? "Restoring…" : "Restore this version"}</button
 					>
 				{/if}
 			</div>
@@ -409,8 +423,8 @@
 		--void: #050816;
 		--ink: #f4f6fb;
 		--muted: rgb(244 246 251 / 0.62);
-		--accent: var(--storyloco-accent, #05807f);
-		--accent-ink: var(--storyloco-accent-ink, #fff);
+		--accent: var(--editor-accent, #05807f);
+		--accent-ink: var(--editor-accent-ink, #fff);
 		--glow: color-mix(in oklab, var(--accent) 55%, #7d8cff);
 		--ease: cubic-bezier(0.22, 1, 0.36, 1);
 		--spring: cubic-bezier(0.34, 1.5, 0.55, 1);
@@ -423,7 +437,7 @@
 		--rise: 9rem;
 
 		color: var(--ink);
-		font: var(--storyloco-bar-font, 500 0.8125rem/1.4 system-ui, sans-serif);
+		font: var(--editor-font, 500 0.8125rem/1.4 system-ui, sans-serif);
 
 		& * {
 			box-sizing: border-box;
@@ -871,6 +885,12 @@
 		animation: arrive 0.4s var(--ease) both;
 		display: grid;
 		gap: 0.25rem;
+		transition: opacity 0.15s ease;
+
+		/* still the last version's, while a scrub passes others */
+		&.passing {
+			opacity: 0.45;
+		}
 	}
 
 	@keyframes arrive {
@@ -986,7 +1006,9 @@
 	}
 
 	.what {
+		margin-block: -0.15em;
 		overflow: hidden;
+		padding-block: 0.15em;
 		text-overflow: ellipsis;
 	}
 
@@ -1143,9 +1165,9 @@
 
 	:global(html[data-storyloco-time]::view-transition-old(root)),
 	:global(html[data-storyloco-time]::view-transition-new(root)) {
-		--storyloco-pass: 1.12;
-		--storyloco-sink: 0.88;
-		--storyloco-lift: -3.5rem;
+		--editor-pass: 1.12;
+		--editor-sink: 0.88;
+		--editor-lift: -3.5rem;
 		animation-duration: 0.5s;
 		animation-fill-mode: both;
 		animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
@@ -1156,9 +1178,9 @@
 	/* dragging and scrolling: the same journey, lighter and quicker, so it keeps up */
 	:global(html[data-storyloco-time~="quick"]::view-transition-old(root)),
 	:global(html[data-storyloco-time~="quick"]::view-transition-new(root)) {
-		--storyloco-pass: 1.035;
-		--storyloco-sink: 0.965;
-		--storyloco-lift: -1rem;
+		--editor-pass: 1.035;
+		--editor-sink: 0.965;
+		--editor-lift: -1rem;
 		animation-duration: 0.24s;
 	}
 
@@ -1182,7 +1204,7 @@
 	@keyframes -global-storyloco-time-pass-out {
 		to {
 			opacity: 0;
-			scale: var(--storyloco-pass);
+			scale: var(--editor-pass);
 			translate: 0 1.5rem;
 		}
 	}
@@ -1190,7 +1212,7 @@
 	@keyframes -global-storyloco-time-pass-in {
 		from {
 			opacity: 0;
-			scale: var(--storyloco-pass);
+			scale: var(--editor-pass);
 			translate: 0 1.5rem;
 		}
 	}
@@ -1198,16 +1220,16 @@
 	@keyframes -global-storyloco-time-stack-out {
 		to {
 			opacity: 0;
-			scale: var(--storyloco-sink);
-			translate: 0 var(--storyloco-lift);
+			scale: var(--editor-sink);
+			translate: 0 var(--editor-lift);
 		}
 	}
 
 	@keyframes -global-storyloco-time-stack-in {
 		from {
 			opacity: 0;
-			scale: var(--storyloco-sink);
-			translate: 0 var(--storyloco-lift);
+			scale: var(--editor-sink);
+			translate: 0 var(--editor-lift);
 		}
 	}
 </style>

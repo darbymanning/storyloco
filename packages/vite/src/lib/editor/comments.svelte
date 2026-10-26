@@ -826,12 +826,12 @@
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
-		--bg: var(--storyloco-bar-bg, #fff);
-		--ink: var(--storyloco-bar-ink, #1b243f);
-		--muted: var(--storyloco-bar-muted, #6b7280);
-		--line: var(--storyloco-bar-line, rgb(27 36 63 / 0.12));
-		--accent: var(--storyloco-accent, #05807f);
-		--danger: var(--storyloco-danger, #e5484d);
+		--bg: var(--editor-bg, #fff);
+		--ink: var(--editor-ink, #1b243f);
+		--muted: var(--editor-muted, #6b7280);
+		--line: var(--editor-line, rgb(27 36 63 / 0.12));
+		--accent: var(--editor-accent, #05807f);
+		--danger: var(--editor-danger, #e5484d);
 
 		color: var(--ink);
 		font:
@@ -916,7 +916,7 @@
 
 	.count {
 		/* the edit bar's own dark, in a light theme or a dark one, so white reads on it */
-		background: var(--storyloco-pill-bg, #1b243f);
+		background: var(--editor-pill, #1b243f);
 		color: #fff;
 		border-radius: 999px;
 		font-size: 0.5625rem;
@@ -1093,7 +1093,9 @@
 
 		.who {
 			flex: 1;
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
@@ -1121,7 +1123,7 @@
 		background: var(--accent);
 		border: 0;
 		border-radius: 999px;
-		color: var(--storyloco-accent-ink, #fff);
+		color: var(--editor-accent-ink, #fff);
 		cursor: pointer;
 		font: inherit;
 		padding: 0.3125rem 0.875rem;
@@ -1370,7 +1372,7 @@
 	}
 
 	.hint {
-		background: var(--storyloco-pill-bg, #1b243f);
+		background: var(--editor-pill, #1b243f);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
 		border-radius: 999px;
 		bottom: 1rem;

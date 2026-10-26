@@ -271,13 +271,13 @@
 		--glass: rgb(16 22 42 / 0.84);
 		--ink: #f4f6fb;
 		--muted: rgb(244 246 251 / 0.62);
-		--accent: var(--storyloco-accent, #05807f);
-		--accent-ink: var(--storyloco-accent-ink, #fff);
+		--accent: var(--editor-accent, #05807f);
+		--accent-ink: var(--editor-accent-ink, #fff);
 		--live: #ffb224;
 		--spring: cubic-bezier(0.2, 0.9, 0.25, 1.15);
 
 		color: var(--ink);
-		font: var(--storyloco-bar-font, 500 0.8125rem/1.4 system-ui, sans-serif);
+		font: var(--editor-font, 500 0.8125rem/1.4 system-ui, sans-serif);
 
 		& * {
 			box-sizing: border-box;
@@ -610,7 +610,9 @@
 		& .said {
 			color: var(--muted);
 			grid-column: 2;
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
@@ -705,7 +707,9 @@
 			inset-block-end: 1rem;
 		}
 		.count {
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 		}
 	}

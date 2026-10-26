@@ -366,9 +366,10 @@ any address to sign in; once signed in, the badge shows on every page, and ⌘�
 edit mode on and off. In development the badge is always there.
 
 Links inside content don't navigate in edit mode; hold ⌘ or Ctrl to follow one. Match the
-editor to a site with `--storyloco-bar-bg`, `-ink`, `-muted`, `-line`, `-font` and
-`--storyloco-accent`, or build a bar of your own from `editor`, `set_editing`, `publish`,
-`signin` and `signout`.
+editor to a site with `--editor-bg`, `-ink`, `-muted`, `-line`, `-shadow`, `-font`,
+`--editor-accent` (and `-accent-ink`), `--editor-good`, `--editor-danger`, and `--editor-pill`
+for the toast and the format bar, or build a bar of your own from `editor`, `set_editing`,
+`publish`, `signin` and `signout`.
 
 `bun run smoke <site url>…` (in `packages/vite`) checks each site loads and, signed in, that a
 click on a block opens its settings. Sign in once per site with `--signin`, which opens a

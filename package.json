@@ -89,6 +89,10 @@
 			"svelte": "./packages/vite/dist/editor/index.js",
 			"import": "./packages/vite/dist/editor/index.js"
 		},
+		"./middleware": {
+			"types": "./packages/vite/dist/middleware.d.ts",
+			"import": "./packages/vite/dist/middleware.js"
+		},
 		"./editor/server": {
 			"types": "./packages/vite/dist/editor/server.d.ts",
 			"import": "./packages/vite/dist/editor/server.js"

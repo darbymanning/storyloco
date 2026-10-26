@@ -5,8 +5,8 @@
 	nothing for visitors, or inside Storyblok's own editor, and keeps clear of Next.js's dev badge.
 	On the live site ⌘⇧E (Ctrl+Shift+E) signs in, and turns edit mode on and off once signed in.
 
-	Mount it once in the root layout. Match it to a site with `--storyloco-bar-bg`, `-ink`, `-muted`,
-	`-line`, `-shadow`, `-font` and `-offset`, `--storyloco-badge`, and `--storyloco-accent`, `-good`
+	Mount it once in the root layout. Match it to a site with `--editor-bg`, `-ink`, `-muted`,
+	`-line`, `-shadow`, `-font` and `-offset`, `--editor-badge`, and `--editor-accent`, `-good`
 	and `-danger`; or pass `accent`, which can follow a site's theme as it changes. For a different
 	bar altogether, build one from `editor`.
 
@@ -43,7 +43,7 @@
 		/**
 		 * The editor's accent, any CSS colour: outlines, toolbars and buttons, wherever they're
 		 * drawn on the page. It can change, say with a site's location theme. Storyblok's teal
-		 * otherwise, or `--storyloco-accent` set in CSS.
+		 * otherwise, or `--editor-accent` set in CSS.
 		 */
 		accent?: string
 		/** Text on the accent, where white won't read, like on a light yellow */
@@ -97,8 +97,8 @@
 		const tag = document.createElement("style")
 		tag.dataset.storyloco = "accent"
 		const rules = [
-			resolved.accent && `--storyloco-accent:${resolved.accent};`,
-			resolved.ink && `--storyloco-accent-ink:${resolved.ink};`,
+			resolved.accent && `--editor-accent:${resolved.accent};`,
+			resolved.ink && `--editor-accent-ink:${resolved.ink};`,
 		].filter(Boolean)
 		tag.textContent = `:root{${rules.join("")}}`
 		document.head.append(tag)
@@ -192,7 +192,7 @@
 		if (document.querySelector("style[data-storyloco=theme]")) return
 		const tag = document.createElement("style")
 		tag.dataset.storyloco = "theme"
-		tag.textContent = `@media (prefers-color-scheme: dark){:where(:root){--storyloco-bar-bg:#171c2c;--storyloco-bar-ink:#e8ecf5;--storyloco-bar-muted:#98a1b6;--storyloco-bar-line:rgb(255 255 255/.13);--storyloco-bar-shadow:0 0 0 1px rgb(255 255 255/.1),0 4px 14px rgb(0 0 0/.45);--storyloco-pill-bg:#2c3453;--storyloco-accent:#1fa79e}}`
+		tag.textContent = `@media (prefers-color-scheme: dark){:where(:root){--editor-bg:#171c2c;--editor-ink:#e8ecf5;--editor-muted:#98a1b6;--editor-line:rgb(255 255 255/.13);--editor-shadow:0 0 0 1px rgb(255 255 255/.1),0 4px 14px rgb(0 0 0/.45);--editor-pill:#2c3453;--editor-accent:#1fa79e}}`
 		document.head.append(tag)
 	}
 
@@ -869,16 +869,16 @@
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
-		--bg: var(--storyloco-bar-bg, #fff);
-		--ink: var(--storyloco-bar-ink, #1b243f);
-		--muted: var(--storyloco-bar-muted, #6b7280);
-		--line: var(--storyloco-bar-line, rgb(27 36 63 / 0.12));
-		--accent: var(--storyloco-accent, #05807f);
-		--good: var(--storyloco-good, #14b8a6);
-		--danger: var(--storyloco-danger, #e5484d);
-		--font: var(--storyloco-bar-font, 500 0.8125rem/1.25 system-ui, sans-serif);
-		--shadow: var(--storyloco-bar-shadow, 0 0 0 1px var(--line), 0 2px 8px rgb(27 36 63 / 0.08));
-		--o: var(--storyloco-bar-offset, 1rem);
+		--bg: var(--editor-bg, #fff);
+		--ink: var(--editor-ink, #1b243f);
+		--muted: var(--editor-muted, #6b7280);
+		--line: var(--editor-line, rgb(27 36 63 / 0.12));
+		--accent: var(--editor-accent, #05807f);
+		--good: var(--editor-good, #14b8a6);
+		--danger: var(--editor-danger, #e5484d);
+		--font: var(--editor-font, 500 0.8125rem/1.25 system-ui, sans-serif);
+		--shadow: var(--editor-shadow, 0 0 0 1px var(--line), 0 2px 8px rgb(27 36 63 / 0.08));
+		--o: var(--editor-offset, 1rem);
 
 		align-items: center;
 		border-radius: 999px;
@@ -936,13 +936,13 @@
 	}
 
 	.badge {
-		background: var(--storyloco-badge, var(--accent));
+		background: var(--editor-badge, var(--accent));
 		block-size: 2.25rem;
 		border: 0;
 		/* round, like the pill it opens into */
 		border-radius: 50%;
 		box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
-		color: var(--storyloco-accent-ink, #fff);
+		color: var(--editor-accent-ink, #fff);
 		cursor: grab;
 		display: grid;
 		flex: none;
@@ -1154,7 +1154,7 @@
 		background: var(--accent);
 		border: 0;
 		border-radius: 999px;
-		color: var(--storyloco-accent-ink, #fff);
+		color: var(--editor-accent-ink, #fff);
 		cursor: pointer;
 		font: inherit;
 		padding: 0.3125rem 0.75rem;
@@ -1262,7 +1262,9 @@
 
 	.name {
 		max-inline-size: 8rem;
+		margin-block: -0.15em;
 		overflow: hidden;
+		padding-block: 0.15em;
 		text-overflow: ellipsis;
 	}
 
@@ -1600,7 +1602,9 @@
 		flex: 1;
 		font-weight: 600;
 		min-inline-size: 0;
+		margin-block: -0.15em;
 		overflow: hidden;
+		padding-block: 0.15em;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -1642,7 +1646,9 @@
 
 	.what {
 		min-inline-size: 0;
+		margin-block: -0.15em;
 		overflow: hidden;
+		padding-block: 0.15em;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}

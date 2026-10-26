@@ -214,7 +214,9 @@ function meaningful(value: unknown, key = ""): unknown {
 			: items
 	}
 	if (!value || typeof value !== "object") return value
+	// in key order, since Storyblok hands back a node's keys in an order of its own
 	const kept = Object.entries(value)
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 		.filter(([k]) => k !== "_editable")
 		.map(([k, v]) => [k, meaningful(v, k)] as const)
 		.filter(

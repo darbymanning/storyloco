@@ -431,7 +431,12 @@ export function on_sent(listener: (change: Change) => void) {
  * Send a change to the `editor` hook, then reload the page's data so it shows; null if it didn't
  * save. A `shared` change, typed by several people at once, isn't any one of theirs to undo.
  */
-export async function send(change: Change, as: "change" | "undo" | "redo" | "shared" = "change") {
+export async function send(
+	change: Change,
+	as: "change" | "undo" | "redo" | "shared" = "change",
+	/** `false` while the change is being typed where it shows: the page already shows it, and reloading everything for each pause is what drags */
+	{ again = true }: { again?: boolean } = {}
+) {
 	pending++
 	changed()
 	try {
@@ -449,7 +454,7 @@ export async function send(change: Change, as: "change" | "undo" | "redo" | "sha
 		}
 		if (label && typeof change.story === "number") touched.add(change.story)
 		for (const listener of sent_listeners) listener(change)
-		await refresh()
+		if (again) await refresh()
 		return reply
 	} catch (e) {
 		problem = (e as Error).message
