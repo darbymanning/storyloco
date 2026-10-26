@@ -7,6 +7,7 @@ declare global {
 		// and `server` helpers typecheck against the shape they expect.
 		interface Locals {
 			version: import("$lib/storyblok.svelte.js").Version
+			editor?: import("$lib/editor/server.js").Editor
 		}
 		// interface PageData {}
 		// interface PageState {}

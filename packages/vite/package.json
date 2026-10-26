@@ -10,6 +10,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "oxfmt",
+		"smoke": "bun scripts/smoke.ts",
 		"lint": "oxfmt --check && eslint ."
 	},
 	"files": [
@@ -52,6 +53,7 @@
 		"eslint-plugin-svelte": "^3.12.4",
 		"globals": "^16.4.0",
 		"oxfmt": "0.55.0",
+		"playwright-core": "1.64.0",
 		"publint": "^0.3.13",
 		"svelte": "^5.57.1",
 		"svelte-check": "^4.3.2",

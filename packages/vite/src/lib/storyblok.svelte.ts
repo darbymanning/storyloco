@@ -13,6 +13,7 @@ import type { Component } from "svelte"
 import { SvelteMap } from "svelte/reactivity"
 import { createAttachmentKey as attach } from "svelte/attachments"
 import { error } from "@sveltejs/kit"
+import { in_place, track } from "./editor/client.js"
 
 /**
  * Wrapper interface for storyblok stories with reactive state management
@@ -113,8 +114,16 @@ export class StoryblokClient {
 		return this.components.get(this.aliases[name] ?? name) ?? this.components.get(fallback)
 	}
 
+	/** The client created last, which the editor hook reads the site's token from */
+	static current: StoryblokClient | undefined
+
 	/** Storyblok access token for API authentication */
 	#access_token: string
+
+	/** The public token this client reads with */
+	get token(): string {
+		return this.#access_token
+	}
 	/** Map of component import functions */
 	#component_imports: Record<string, Import>
 
@@ -167,6 +176,7 @@ export class StoryblokClient {
 		this.relations = relations
 		this.aliases = aliases
 		this.error = error
+		StoryblokClient.current = this
 
 		// Eager, but handled so a failure surfaces to whoever awaits `init` rather than
 		// as an unhandled rejection
@@ -220,6 +230,17 @@ export class StoryblokClient {
 	 */
 	connect<T extends ISbStoryData>(current: T): Storyblok<T> {
 		let story = $state<T | null>(current)
+		// an earlier version, while the editor's history shows it in place
+		let shown = $state<T | null>(null)
+
+		const view = {
+			get story() {
+				return shown ?? story
+			},
+			show(content: unknown) {
+				shown = content && story ? { ...story, content } : null
+			},
+		}
 
 		$effect(() => {
 			if (!current) return
@@ -228,13 +249,12 @@ export class StoryblokClient {
 				resolveLinks: "url",
 				resolveRelations: this.relations,
 			})
+
+			// the edit bar shows this story's status and links while its page is open
+			return track(view)
 		})
 
-		return {
-			get story() {
-				return story
-			},
-		}
+		return view
 	}
 }
 
@@ -391,6 +411,8 @@ export function attrs<T extends BlokFields>(blok: T & { _uid?: string; _editable
 			// SbBlokData is nominal ceremony here — editable only reads `_editable`.
 			editable(node, blok as unknown as SbBlokData)
 		},
+		// in-place editing for someone signed in through the `editor` hook; nothing otherwise
+		[attach()]: in_place(blok),
 		id: blok.anchor || blok._uid,
 	}
 }

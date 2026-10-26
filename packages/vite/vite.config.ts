@@ -11,4 +11,6 @@ export interface StoryblokCustomPlugins {
 
 export default defineConfig({
 	plugins: [sveltekit(), devtools(), schema(), redirects({ datasource: "301s" })],
+	// its dist imports a file without an extension, which only works bundled
+	ssr: { noExternal: ["@storyblok/svelte"] },
 })
