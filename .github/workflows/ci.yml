@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    name: Lint, check, test, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The package's own checks, with the oxfmt it pins: the root's newer one formats differently
+      - name: Lint
+        working-directory: packages/vite
+        run: bun run lint
+
+      - name: Type check
+        working-directory: packages/vite
+        run: bun run check
+
+      - name: Test
+        working-directory: packages/vite
+        run: bun test src
+
+      - name: Build
+        run: bun run build

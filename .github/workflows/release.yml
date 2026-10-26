@@ -1,0 +1,182 @@
+name: Release
+
+# A release is a merge. Label a PR `release:patch`, `release:minor` or `release:major`, and merging
+# it bumps the version, checks and builds it, commits "Release X.Y.Z: <the PR's title>" to main,
+# tags it, and has publish.yml put it on npm. An unlabelled merge does nothing.
+#
+# Or release main as it stands from Actions → Release → Run workflow.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "patch | minor | major | X.Y.Z"
+        required: true
+        default: patch
+        type: string
+      summary:
+        description: "What the release brings, for its commit message"
+        required: true
+        type: string
+
+# one release at a time: two would race on main and the version
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Bump, check, tag
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       (contains(github.event.pull_request.labels.*.name, 'release:patch') ||
+        contains(github.event.pull_request.labels.*.name, 'release:minor') ||
+        contains(github.event.pull_request.labels.*.name, 'release:major')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release commit and its tag
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve the bump
+        id: input
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_BUMP: ${{ inputs.bump }}
+          DISPATCH_SUMMARY: ${{ inputs.summary }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            bump="$DISPATCH_BUMP"
+            summary="$DISPATCH_SUMMARY"
+          else
+            labels="$(jq -r '.pull_request.labels[].name | select(test("^release:(patch|minor|major)$"))' "$GITHUB_EVENT_PATH")"
+            if [ "$(printf '%s' "$labels" | grep -c .)" -ne 1 ]; then
+              echo "✗ expected exactly one release:patch|minor|major label, found: $labels" >&2
+              exit 1
+            fi
+            bump="${labels#release:}"
+            summary="$PR_TITLE"
+          fi
+          if [[ ! "$bump" =~ ^(patch|minor|major|[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "✗ '$bump' is not patch, minor, major or X.Y.Z" >&2
+            exit 1
+          fi
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          { echo "summary<<EOF"; echo "$summary"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to release the same merge twice
+        if: github.event_name == 'pull_request'
+        env:
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          released="$(git tag --contains "$MERGE_SHA" | head -1)"
+          if [ -n "$released" ]; then
+            echo "✗ this merge is already in $released; re-run only the failed jobs" >&2
+            exit 1
+          fi
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Bump the version
+        id: bump
+        env:
+          BUMP: ${{ steps.input.outputs.bump }}
+        run: |
+          set -euo pipefail
+          npm version "$BUMP" --no-git-tag-version >/dev/null
+          version="$(node -p "require('./package.json').version")"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null || npm view "storyloco@$version" version >/dev/null 2>&1; then
+            echo "✗ $version has been released already" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      # pushed with GITHUB_TOKEN, which never starts ci.yml, so this is the release commit's CI
+      - name: Lint
+        working-directory: packages/vite
+        run: bun run lint
+
+      - name: Type check
+        working-directory: packages/vite
+        run: bun run check
+
+      - name: Test
+        working-directory: packages/vite
+        run: bun test src
+
+      - name: Build
+        run: bun run build
+
+      - name: Commit, tag and push
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          SUMMARY: ${{ steps.input.outputs.summary }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "Release $VERSION: $SUMMARY"
+          git tag -a "$TAG" -m "$VERSION"
+          # main and the tag together, or neither; something merged meanwhile is rebased over
+          for attempt in 1 2 3; do
+            if git push --atomic origin HEAD:main "refs/tags/$TAG"; then exit 0; fi
+            git tag -d "$TAG"
+            git pull --rebase origin main
+            git tag -a "$TAG" -m "$VERSION"
+          done
+          echo "✗ couldn't push the release to main" >&2
+          exit 1
+
+  publish:
+    name: Publish
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # dispatch publish.yml and watch it
+    # Dispatched, not called: npm's trusted publisher names publish.yml and checks the run's top-level
+    # workflow, so a reusable call from here would be refused. A tag pushed with GITHUB_TOKEN starts
+    # nothing, which leaves a dispatch as the way to give publish.yml a run of its own.
+    steps:
+      - name: Dispatch Publish and wait for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          t0="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main
+          run_id=""
+          for _ in $(seq 1 24); do
+            sleep 5
+            run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow publish.yml --event workflow_dispatch \
+              --created ">=$t0" --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            [ -n "$run_id" ] && break
+          done
+          if [ -z "$run_id" ]; then
+            echo "✗ the dispatched Publish run never appeared" >&2
+            exit 1
+          fi
+          echo "▶ $TAG is publishing in run $run_id"
+          gh run watch --repo "$GITHUB_REPOSITORY" "$run_id" --exit-status --interval 15
