@@ -95,10 +95,13 @@
 		problem = null
 		target = next
 		row = []
-		if (next)
+		if (next) {
 			siblings_of(next.story, next.uid)
 				.then((found) => target === next && (row = found))
 				.catch(() => {})
+			// ready before + is pressed
+			choices(next.story, next.uid).catch(() => {})
+		}
 		tick().then(place)
 	}
 

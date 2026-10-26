@@ -4,6 +4,7 @@
 	a draft as it's made and the page shows it. Mounted by the overlay; nothing for a site to add.
 -->
 <script lang="ts">
+	import { SvelteMap } from "svelte/reactivity"
 	import { tick, untrack } from "svelte"
 	import type { Attachment } from "svelte/attachments"
 	import { call, editor, last_problem, send } from "./client.js"
@@ -424,7 +425,7 @@
 		null
 	)
 
-	function drag_kid(event: PointerEvent, key: string, from: number) {
+	function drag(event: PointerEvent, key: string, from: number, moved: (to: number) => unknown) {
 		if (event.button !== 0) return
 		event.preventDefault()
 		const handle = event.currentTarget as HTMLElement
@@ -448,20 +449,23 @@
 			handle.removeEventListener("pointercancel", cancel)
 			const ended = dragging
 			dragging = null
-			if (!keep || !ended || ended.to === from) return
-			const was = values[key]
-			const list = [...kids(was)]
-			const [kid] = list.splice(from, 1)
-			list.splice(ended.to, 0, kid)
-			// in its new place at once; the save, and its Undo, follow
-			values[key] = list
-			delete failed[key]
-			await child(key, "move", kid._uid, undefined, ended.to)
-			if (failed[key]) values[key] = was
+			if (keep && ended && ended.to !== from) await moved(ended.to)
 		}
 		handle.addEventListener("pointermove", move)
 		handle.addEventListener("pointerup", up)
 		handle.addEventListener("pointercancel", cancel)
+	}
+
+	async function move_kid(key: string, from: number, to: number) {
+		const was = values[key]
+		const list = [...kids(was)]
+		const [kid] = list.splice(from, 1)
+		list.splice(to, 0, kid)
+		// in its new place at once; the save, and its Undo, follow
+		values[key] = list
+		delete failed[key]
+		await child(key, "move", kid._uid, undefined, to)
+		if (failed[key]) values[key] = was
 	}
 
 	/** Where a row shows while another is dragged: the dragged one under the pointer, the rest out of its way */
@@ -487,6 +491,59 @@
 			)
 			if (finding?.key === key && finding.search === search) finding.results = stories
 		}, 200)
+	}
+
+	// --- stories an option field picks, in the order it keeps them
+
+	/** Names for the stories fields hold, fetched as they're first shown */
+	const named = new SvelteMap<string, Story>()
+	const asked = new Set<string>()
+	function names_for(uuids: Array<string>) {
+		const missing = uuids.filter((u) => !asked.has(u))
+		if (missing.length) {
+			missing.forEach((u) => asked.add(u))
+			call<{ stories: Array<Story> }>({ op: "stories", uuids: missing })
+				.then(({ stories }) => stories.forEach((story) => named.set(story.uuid, story)))
+				.catch(() => missing.forEach((u) => asked.delete(u)))
+		}
+		return named
+	}
+
+	let picking = $state<{
+		key: string
+		search: string
+		results: Array<Story>
+		page: number
+		more: boolean
+	} | null>(null)
+	let picking_wait: ReturnType<typeof setTimeout> | undefined
+	function pick_stories(key: string, search: string, page = 1) {
+		const kept = picking?.key === key && page > 1 ? picking.results : []
+		picking = { key, search, results: kept, page, more: false }
+		clearTimeout(picking_wait)
+		picking_wait = setTimeout(
+			async () => {
+				const { stories, more } = await call<{ stories: Array<Story>; more: boolean }>({
+					op: "stories",
+					component: loaded!.blok.component,
+					field: key,
+					search,
+					page,
+				}).catch(() => ({ stories: [], more: false }))
+				if (picking?.key !== key || picking.search !== search || picking.page !== page) return
+				stories.forEach((story) => named.set(story.uuid, story))
+				picking.results = [...kept, ...stories]
+				picking.more = more
+			},
+			page > 1 ? 0 : 200
+		)
+	}
+
+	const uuids = (v: unknown) => (Array.isArray(v) ? (v as Array<string>) : [])
+	function reorder<T>(list: Array<T>, from: number, to: number) {
+		const next = [...list]
+		next.splice(to, 0, ...next.splice(from, 1))
+		return next
 	}
 
 	// --- helpers for values
@@ -768,10 +825,11 @@
 
 	/** Escape closes the panel's own menus first; the page takes it from there */
 	function keydown(event: KeyboardEvent) {
-		if (event.key !== "Escape" || (!adding && !finding && !library)) return
+		if (event.key !== "Escape" || (!adding && !finding && !picking && !library)) return
 		event.preventDefault()
 		adding = null
 		finding = null
+		picking = null
 		library = null
 	}
 </script>
@@ -875,6 +933,99 @@
 			{/if}
 		</select>
 	{/await}
+{/snippet}
+
+{#snippet Stories(key: string, field: Field, id: string)}
+	{@const chosen = uuids(values[key])}
+	{@const names = names_for(chosen)}
+	{@render Label(key, field, id)}
+	{#if chosen.length}
+		<ol class="kids picks">
+			{#each chosen as uuid, i (uuid)}
+				<li
+					class:lifted={dragging?.key === key && dragging.from === i}
+					class:shifting={dragging?.key === key}
+					style:translate={shift(key, i)}
+				>
+					{#if chosen.length > 1}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="grip"
+							title="Drag to reorder"
+							onpointerdown={(e) => drag(e, key, i, (to) => change(key, reorder(chosen, i, to)))}
+							><svg viewBox="0 0 24 24" aria-hidden="true"
+								><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle
+									cx="9"
+									cy="12"
+									r="1.4"
+								/><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle
+									cx="15"
+									cy="18"
+									r="1.4"
+								/></svg
+							></span
+						>
+					{/if}
+					<span class="pick">
+						<span>{names.get(uuid)?.name ?? "…"}</span>
+						{#if names.get(uuid)}<small>/{names.get(uuid)?.full_slug}</small>{/if}
+					</span>
+					<span class="tools">
+						<button
+							type="button"
+							aria-label="Remove"
+							onclick={() =>
+								change(
+									key,
+									chosen.filter((u) => u !== uuid)
+								)}
+							><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+							></button
+						>
+					</span>
+				</li>
+			{/each}
+		</ol>
+	{/if}
+	<div class="combo">
+		<input
+			{id}
+			placeholder={chosen.length ? "Add another" : "Find a story to add"}
+			value={picking?.key === key ? picking.search : ""}
+			onfocus={() => pick_stories(key, "")}
+			oninput={(e) => pick_stories(key, e.currentTarget.value)}
+			onblur={() => setTimeout(() => picking?.key === key && (picking = null), 150)}
+		/>
+		{#if picking?.key === key && picking.results.length}
+			<ul class="results">
+				{#each picking.results as story (story.uuid)}
+					{@const has = chosen.includes(story.uuid)}
+					<li>
+						<button
+							type="button"
+							class:on={has}
+							aria-pressed={has}
+							onmousedown={(e) => e.preventDefault()}
+							onclick={() =>
+								change(key, has ? chosen.filter((u) => u !== story.uuid) : [...chosen, story.uuid])}
+							><strong>{story.name}</strong><span>/{story.full_slug}</span></button
+						>
+					</li>
+				{/each}
+				{#if picking.more}
+					<li>
+						<button
+							type="button"
+							class="more"
+							onmousedown={(e) => e.preventDefault()}
+							onclick={() => picking && pick_stories(key, picking.search, picking.page + 1)}
+							>Show more</button
+						>
+					</li>
+				{/if}
+			</ul>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet Options(key: string, field: Field, id: string)}
@@ -1183,7 +1334,10 @@
 				{#if list.length > 1}
 					<!-- the pointer's way to reorder; Move up and down do it from the keyboard -->
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<span class="grip" title="Drag to reorder" onpointerdown={(e) => drag_kid(e, key, i)}
+					<span
+						class="grip"
+						title="Drag to reorder"
+						onpointerdown={(e) => drag(e, key, i, (to) => move_kid(key, i, to))}
 						><svg viewBox="0 0 24 24" aria-hidden="true"
 							><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle
 								cx="9"
@@ -1469,6 +1623,8 @@
 			{@render Boolean_(key, field, id)}
 		{:else if field.type === "option"}
 			{@render Option(key, field, id)}
+		{:else if field.type === "options" && field.source === "internal_stories"}
+			{@render Stories(key, field, id)}
 		{:else if field.type === "options"}
 			{@render Options(key, field, id)}
 		{:else if field.type === "datetime"}
@@ -1917,7 +2073,7 @@
 	input:not([type="checkbox"]),
 	textarea,
 	select {
-		background: var(--field);
+		background-color: var(--field);
 		border: 1px solid var(--line);
 		border-radius: 0.5rem;
 		color: inherit;
@@ -1933,9 +2089,39 @@
 		}
 
 		&:focus-visible {
-			background: var(--bg);
+			background-color: var(--bg);
 			border-color: var(--accent);
 			outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent);
+		}
+	}
+
+	/* our own chevron, inset like the field's text, where the native one hugs the edge */
+	select {
+		appearance: none;
+		/* the chevron's two strokes, meeting at the bottom */
+		background-image:
+			linear-gradient(
+				45deg,
+				transparent calc(50% - 0.75px),
+				var(--muted) calc(50% - 0.75px) calc(50% + 0.75px),
+				transparent calc(50% + 0.75px)
+			),
+			linear-gradient(
+				-45deg,
+				transparent calc(50% - 0.75px),
+				var(--muted) calc(50% - 0.75px) calc(50% + 0.75px),
+				transparent calc(50% + 0.75px)
+			);
+		background-position:
+			calc(100% - 15px) 50%,
+			calc(100% - 10px) 50%;
+		background-repeat: no-repeat;
+		background-size: 5px 5px;
+		cursor: pointer;
+		padding-inline-end: 2rem;
+
+		&:disabled {
+			cursor: default;
 		}
 	}
 
@@ -2198,6 +2384,47 @@
 		inset-inline: 0;
 		position: absolute;
 		z-index: 1;
+
+		/* a story the field already holds; choosing it again takes it out */
+		& .on {
+			background: var(--wash);
+
+			& strong::after {
+				color: var(--accent);
+				content: " ✓";
+			}
+		}
+
+		& .more {
+			color: var(--accent);
+			font-weight: 500;
+		}
+	}
+
+	.picks {
+		margin-block-end: 0.375rem;
+
+		& .pick {
+			display: grid;
+			flex: 1;
+			min-inline-size: 0;
+			padding: 0.4375rem 0.625rem;
+
+			& > * {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			& small {
+				color: var(--muted);
+				font-size: 0.75rem;
+			}
+		}
+
+		& .grip + .pick {
+			padding-inline-start: 0;
+		}
 	}
 
 	.adding {

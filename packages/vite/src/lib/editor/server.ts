@@ -505,7 +505,16 @@ type Operation =
 	| { op: "name"; story: number; value: string }
 	| { op: "restore"; story: number; parent: string; field: string; index: number; blok: Node }
 	| { op: "choices"; component: string; field: string }
-	| { op: "stories"; search?: string }
+	| {
+			op: "stories"
+			search?: string
+			/** an option field's own folder and content types, and the page of them */
+			component?: string
+			field?: string
+			page?: number
+			/** these stories, in this order, for the ones a field already holds */
+			uuids?: Array<string>
+	  }
 	| { op: "linked"; path: string }
 	| { op: "story"; story: number }
 	| { op: "changes"; stories: Array<number> }
@@ -574,6 +583,7 @@ type Field = {
 	source?: string | null
 	datasource_slug?: string | null
 	folder_slug?: string | null
+	filter_content_type?: Array<string> | null
 	filetypes?: Array<string> | null
 	max_length?: number | string | null
 	required?: boolean
@@ -895,6 +905,24 @@ export function input_of(field: Field | undefined, stored: unknown): unknown {
 	}
 }
 
+/** The stories a field picks from: its folder, and its content types */
+function story_filter(field: Field) {
+	const query = new URLSearchParams({ story_only: "1" })
+	if (field.folder_slug) query.set("starts_with", field.folder_slug)
+	if (field.filter_content_type?.length)
+		query.set("filter_query[component][in]", field.filter_content_type.join(","))
+	return query
+}
+
+/** An option field, by its block and name; only these, since a plugin's options are its secrets */
+async function option_field(editor: Editor, component: unknown, field: unknown) {
+	const schema = (await components_of(editor)).find((c) => c.name === component)?.schema
+	const found = typeof field === "string" ? schema?.[field] : undefined
+	if (!found || (found.type !== "option" && found.type !== "options"))
+		throw new EditorError(404, "That field isn’t an option field")
+	return found
+}
+
 /** A datasource's or folder's entries, for option fields that take theirs */
 async function choices_for(editor: Editor, field: Field) {
 	if (field.source === "internal" && field.datasource_slug) {
@@ -906,8 +934,9 @@ async function choices_for(editor: Editor, field: Field) {
 		return datasource_entries.map(({ name, value }) => ({ name, value }))
 	}
 	if (field.source === "internal_stories") {
-		const query = new URLSearchParams({ per_page: "100", sort_by: "name:asc", story_only: "1" })
-		if (field.folder_slug) query.set("starts_with", field.folder_slug)
+		const query = story_filter(field)
+		query.set("per_page", "100")
+		query.set("sort_by", "name:asc")
 		const { stories } = await editor.mapi<{ stories: Array<{ uuid: string; name: string }> }>(
 			`/stories/?${query}`
 		)
@@ -915,6 +944,8 @@ async function choices_for(editor: Editor, field: Field) {
 	}
 	return (field.options ?? []).map(({ name, value }) => ({ name, value }))
 }
+
+const STORY_PAGE = 25
 
 type Summary = {
 	id: number
@@ -1091,25 +1122,34 @@ async function operate(
 
 	if (body.op === "schema") return { components: public_schema(await components_of(editor)) }
 
-	if (body.op === "choices") {
-		const { component, field } = body
-		const schema = (await components_of(editor)).find((c) => c.name === component)?.schema
-		const found = typeof field === "string" ? schema?.[field] : undefined
-		// option fields only: a plugin's options are its secrets
-		if (!found || (found.type !== "option" && found.type !== "options"))
-			throw new EditorError(404, "That field isn’t an option field")
-		return { choices: await choices_for(editor, found) }
-	}
+	if (body.op === "choices")
+		return {
+			choices: await choices_for(editor, await option_field(editor, body.component, body.field)),
+		}
 
 	if (body.op === "stories") {
-		const query = new URLSearchParams({
-			per_page: "25",
-			sort_by: "updated_at:desc",
-			story_only: "1",
-		})
-		if (text(body.search, 200) && body.search.trim()) query.set("text_search", body.search.trim())
+		if (Array.isArray(body.uuids)) {
+			const uuids = body.uuids.filter((u) => typeof u === "string" && /^[\w-]{1,64}$/.test(u))
+			if (!uuids.length) return { stories: [] }
+			const query = new URLSearchParams({
+				by_uuids_ordered: uuids.slice(0, 100).join(","),
+				per_page: "100",
+			})
+			const { stories } = await editor.mapi<{ stories: Array<Summary> }>(`/stories/?${query}`)
+			return { stories: stories.map(summary) }
+		}
+		const field =
+			body.component || body.field ? await option_field(editor, body.component, body.field) : null
+		const query = field ? story_filter(field) : new URLSearchParams({ story_only: "1" })
+		query.set("per_page", String(STORY_PAGE))
+		query.set("sort_by", field ? "name:asc" : "updated_at:desc")
+		const page = Number(body.page)
+		if (Number.isInteger(page) && page > 1 && page < 1000) query.set("page", String(page))
+		if (text(body.search, 200) && body.search.trim())
+			query.set(field ? "search" : "text_search", body.search.trim())
 		const { stories } = await editor.mapi<{ stories: Array<Summary> }>(`/stories/?${query}`)
-		return { stories: stories.map(summary) }
+		// a full page says there may be more, without asking Storyblok to count them
+		return { stories: stories.map(summary), more: stories.length === STORY_PAGE }
 	}
 
 	if (body.op === "linked") {
