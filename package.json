@@ -37,7 +37,8 @@
 		"packages/hubspot_form/types.ts",
 		"packages/currency/types.ts",
 		"packages/dates/types.ts",
-		"packages/churchsuite_categories/types.ts"
+		"packages/churchsuite_categories/types.ts",
+		"middleware.js"
 	],
 	"exports": {
 		".": {
