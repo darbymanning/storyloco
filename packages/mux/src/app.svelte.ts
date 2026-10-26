@@ -201,8 +201,7 @@ export class MuxManager {
 		// keeps polling for pending deletes too, so they go as soon as they're ready
 		const has_preparing = assets.some(({ status }) => status === 'preparing')
 
-		if (has_preparing)
-			this.#poll = setTimeout(this.list, 3000) // 3 seconds
+		if (has_preparing) this.#poll = setTimeout(this.list, 3000) // 3 seconds
 		else if (this.#poll) clearTimeout(this.#poll)
 	}
 

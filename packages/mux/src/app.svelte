@@ -15,7 +15,7 @@
 		PlusIcon,
 		ExternalLinkIcon,
 		XIcon,
-		YoutubeIcon,
+		MonitorPlayIcon,
 		LoaderCircleIcon,
 		CircleAlertIcon,
 	} from '@lucide/svelte'
@@ -314,7 +314,7 @@
 						onclick={() => {
 							importing = importing === 'youtube' ? null : 'youtube'
 							import_problem = null
-						}}><YoutubeIcon class="size-4" /> From YouTube</Button
+						}}><MonitorPlayIcon class="size-4" /> From YouTube</Button
 					>
 					{#if manager.has_vimeo}
 						<Button

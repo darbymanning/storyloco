@@ -759,7 +759,7 @@
 							{#if !problem}{@render Loading(3)}{/if}
 						{:else}
 							<form onsubmit={create}>
-								<label class="field">
+								<label class="sl-field">
 									<span>Name</span>
 									<input
 										required
@@ -773,7 +773,7 @@
 										}}
 									/>
 								</label>
-								<label class="field">
+								<label class="sl-field">
 									<span>Slug</span>
 									<span class="joined">
 										{#key prefix}
@@ -790,7 +790,7 @@
 									</span>
 								</label>
 								<div class="pair">
-									<label class="field">
+									<label class="sl-field">
 										<span>In</span>
 										<span class="select">
 											<select bind:value={page.parent}>
@@ -803,7 +803,7 @@
 										</span>
 									</label>
 									{#if options.components.length > 1}
-										<label class="field">
+										<label class="sl-field">
 											<span>Kind</span>
 											<span class="select">
 												<select bind:value={page.component}>
@@ -862,8 +862,7 @@
 											maxlength="1000"
 											aria-label="A note for them"
 											placeholder="A note for them, if it helps"
-											bind:value={invite_note}
-										></textarea>
+											bind:value={invite_note}></textarea>
 										<div class="actions">
 											<button type="submit" class="primary" disabled={busy}>
 												{#if busy}{@render Icon(ICONS.spin, "spin")}{/if}
@@ -1044,11 +1043,11 @@
 							)}
 							{#if who.stage === "who"}
 								<form onsubmit={send_code}>
-									<label class="field">
+									<label class="sl-field">
 										<span>Your name</span>
 										<input required maxlength="80" autocomplete="name" bind:value={who.name} />
 									</label>
-									<label class="field">
+									<label class="sl-field">
 										<span>Email</span>
 										<input
 											required
@@ -1069,7 +1068,7 @@
 								</form>
 							{:else}
 								<form onsubmit={check_code}>
-									<label class="field">
+									<label class="sl-field">
 										<span>The code we sent to {who.email}</span>
 										<input
 											class="code"
@@ -1148,14 +1147,13 @@
 											</li>
 										{/each}
 									</ul>
-									<label class="field">
+									<label class="sl-field">
 										<span>A note, if it helps</span>
 										<textarea
 											rows="3"
 											maxlength="1000"
 											placeholder="Anything you'd like them to look at?"
-											bind:value={note}
-										></textarea>
+											bind:value={note}></textarea>
 									</label>
 									<div class="actions">
 										<button type="button" class="ghost" onclick={close}>Cancel</button>
@@ -1191,19 +1189,19 @@
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
-		--bg: var(--storyloco-bar-bg, #fff);
-		--ink: var(--storyloco-bar-ink, #1b243f);
-		--muted: var(--storyloco-bar-muted, #6b7280);
-		--line: var(--storyloco-bar-line, rgb(27 36 63 / 0.12));
-		--accent: var(--storyloco-accent, #05807f);
-		--accent-ink: var(--storyloco-accent-ink, #fff);
-		--danger: var(--storyloco-danger, #e5484d);
+		--bg: var(--editor-bg, #fff);
+		--ink: var(--editor-ink, #1b243f);
+		--muted: var(--editor-muted, #6b7280);
+		--line: var(--editor-line, rgb(27 36 63 / 0.12));
+		--accent: var(--editor-accent, #05807f);
+		--accent-ink: var(--editor-accent-ink, #fff);
+		--danger: var(--editor-danger, #e5484d);
 		--wash: color-mix(in oklab, var(--ink) 6%, transparent);
 		--tint: color-mix(in oklab, var(--accent) 12%, transparent);
 		--ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
 		color: var(--ink);
-		font: var(--storyloco-bar-font, 500 0.8125rem/1.4 system-ui, sans-serif);
+		font: var(--editor-font, 500 0.8125rem/1.4 system-ui, sans-serif);
 		inset: 0;
 		position: fixed;
 		z-index: 2147483000;
@@ -1426,7 +1424,9 @@
 	}
 
 	.label {
+		margin-block: -0.15em;
 		overflow: hidden;
+		padding-block: 0.15em;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -1441,7 +1441,9 @@
 		color: var(--muted);
 		font-size: 0.75rem;
 		max-inline-size: 14rem;
+		margin-block: -0.15em;
 		overflow: hidden;
+		padding-block: 0.15em;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -1588,7 +1590,7 @@
 		margin: 0;
 	}
 
-	.field {
+	.sl-field {
 		display: grid;
 		gap: 0.3125rem;
 
@@ -1654,7 +1656,9 @@
 		color: var(--muted);
 		display: inline-block;
 		max-inline-size: 55%;
+		margin-block: -0.15em;
 		overflow: hidden;
+		padding-block: 0.15em;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
@@ -1833,7 +1837,9 @@
 
 		& .title {
 			font-weight: 600;
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
@@ -1841,7 +1847,9 @@
 		& .sub {
 			color: var(--muted);
 			font-size: 0.75rem;
+			margin-block: -0.15em;
 			overflow: hidden;
+			padding-block: 0.15em;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}

@@ -6,6 +6,7 @@ import {
 	StoryblokComponent as Block,
 	storyblokEditable as editable,
 	useStoryblokApi,
+	type ISbConfig,
 	type ISbStoryData,
 	type SbBlokData,
 } from "@storyblok/svelte"
@@ -45,6 +46,8 @@ type Import<T = unknown> = () => Promise<T>
 export interface ClientOptions {
 	/** Your Storyblok access token */
 	token: string
+	/** Passed to the SDK as `apiOptions`, e.g. `{ endpoint }` to read through a proxy */
+	api?: ISbConfig
 	/**
 	 * The block and template components to register.
 	 *
@@ -70,9 +73,9 @@ export interface ClientOptions {
 /** Shapes the body of a 404 (missing story) or 500 (anything else Storyblok threw) */
 export type ErrorBody = (status: 404 | 500, cause?: unknown) => App.Error
 
-const default_error: ErrorBody = (status) => ({
-	message: status === 404 ? "Story not found" : "Internal server error",
-})
+// `status` too, which SvelteKit 3 has every error carry
+const default_error: ErrorBody = (status) =>
+	({ status, message: status === 404 ? "Story not found" : "Internal server error" }) as App.Error
 
 /** Type alias for the storyblok api instance */
 type API = ReturnType<typeof useStoryblokApi>
@@ -124,6 +127,8 @@ export class StoryblokClient {
 	get token(): string {
 		return this.#access_token
 	}
+	/** Passed to the SDK as `apiOptions` */
+	#api_options: ISbConfig
 	/** Map of component import functions */
 	#component_imports: Record<string, Import>
 
@@ -166,12 +171,14 @@ export class StoryblokClient {
 	 */
 	constructor({
 		token,
+		api = {},
 		components = {},
 		relations = [],
 		aliases = {},
 		error = default_error,
 	}: ClientOptions) {
 		this.#access_token = token
+		this.#api_options = api
 		this.#component_imports = components
 		this.relations = relations
 		this.aliases = aliases
@@ -208,6 +215,7 @@ export class StoryblokClient {
 		// Initialize the Storyblok SDK
 		storyblokInit({
 			accessToken: this.#access_token,
+			apiOptions: this.#api_options,
 			use: [apiPlugin],
 			components: Object.fromEntries(this.components),
 		})
@@ -374,9 +382,19 @@ export function handle_error(err: unknown, body: ErrorBody = default_error): nev
 
 	const status = typeof err === "object" && err !== null && "status" in err ? err.status : undefined
 
-	if (status === 404) error(404, body(404, err))
+	fail(status === 404 ? 404 : 500, body(status === 404 ? 404 : 500, err))
+}
 
-	error(500, body(500, err))
+/**
+ * SvelteKit's `error`, as the installed version takes it: 3 a message and the rest beside it, 2 the
+ * whole body. Either way the page gets the same error.
+ */
+function fail(status: number, body: App.Error): never {
+	if (error.length > 2) {
+		const { message, ...rest } = body
+		return (error as unknown as (s: number, m: string, p: object) => never)(status, message, rest)
+	}
+	return (error as unknown as (s: number, b: App.Error) => never)(status, body)
 }
 
 /** Declaring these keeps `SbBlokData`'s index signature from widening every access. */

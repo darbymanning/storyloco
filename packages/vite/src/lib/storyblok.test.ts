@@ -20,11 +20,11 @@ describe("handle_error", () => {
 	afterAll(() => (console.error = log))
 
 	test("a missing story is a 404, anything else a 500", () => {
-		expect(thrown(() => handle_error({ status: 404 }))).toEqual({
+		expect(thrown(() => handle_error({ status: 404 }))).toMatchObject({
 			status: 404,
 			body: { message: "Story not found" },
 		})
-		expect(thrown(() => handle_error(new Error("socket hang up")))).toEqual({
+		expect(thrown(() => handle_error(new Error("socket hang up")))).toMatchObject({
 			status: 500,
 			body: { message: "Internal server error" },
 		})
@@ -37,9 +37,9 @@ describe("handle_error", () => {
 				message: "Nope",
 				code: status === 404 ? "NOT_FOUND" : "STORYBLOK",
 				cause: err,
-			}) as App.Error
+			}) as unknown as App.Error
 
-		expect(thrown(() => handle_error(cause, body))).toEqual({
+		expect(thrown(() => handle_error(cause, body))).toMatchObject({
 			status: 500,
 			body: { message: "Nope", code: "STORYBLOK", cause },
 		})
@@ -48,11 +48,11 @@ describe("handle_error", () => {
 	test("the client passes its own shape, detached as a `.catch` callback", () => {
 		const client = new StoryblokClient({
 			token: "",
-			error: (status) => ({ message: "Gone", code: status }) as App.Error,
+			error: (status) => ({ message: "Gone", code: status }) as unknown as App.Error,
 		})
 		const { handle_error } = client
 
-		expect(thrown(() => handle_error({ status: 404 }))).toEqual({
+		expect(thrown(() => handle_error({ status: 404 }))).toMatchObject({
 			status: 404,
 			body: { message: "Gone", code: 404 },
 		})

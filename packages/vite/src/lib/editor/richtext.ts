@@ -84,7 +84,7 @@ function showing(source: Element, text: string, block = false) {
 	const fits = (el: Element) =>
 		squash(el.textContent) === text && (!block || getComputedStyle(el).display !== "inline")
 	let found = [...source.querySelectorAll("*")].find(fits)
-	for (let only = found; only?.children.length === 1; ) {
+	for (let only = found; only?.children.length === 1;) {
 		only = only.firstElementChild!
 		if (!fits(only)) break
 		found = only
@@ -340,21 +340,21 @@ function extensions(shows: Shows = { colour: false }) {
 
 // --- the format bar
 
-const STYLE = `[data-storyloco=format]{position:fixed;z-index:2147483001;display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;background:var(--storyloco-pill-bg,var(--storyloco-bar-ink,#1b243f));color:#fff;font:500 13px/1 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .15s,translate .15s;animation:storyloco-format .16s ease-out}
-[data-storyloco=format][data-fixed]{position:sticky;top:0;inset-inline:auto;margin-block-end:6px;width:max-content;max-width:100%;flex-wrap:wrap;background:color-mix(in srgb,var(--storyloco-bar-ink,#1b243f) 6%,var(--storyloco-bar-bg,#fff));color:var(--storyloco-bar-ink,#1b243f);box-shadow:none;animation:none}
+const STYLE = `[data-storyloco=format]{position:fixed;z-index:2147483001;display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;background:var(--editor-pill,var(--editor-ink,#1b243f));color:#fff;font:500 13px/1 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .15s,translate .15s;animation:storyloco-format .16s ease-out}
+[data-storyloco=format][data-fixed]{position:sticky;top:0;inset-inline:auto;margin-block-end:6px;width:max-content;max-width:100%;flex-wrap:wrap;background:color-mix(in srgb,var(--editor-ink,#1b243f) 6%,var(--editor-bg,#fff));color:var(--editor-ink,#1b243f);box-shadow:none;animation:none}
 [data-storyloco=format] button{all:unset;box-sizing:border-box;display:grid;place-items:center;min-width:28px;height:28px;padding:0 6px;border-radius:8px;cursor:pointer;font:inherit}
 [data-storyloco=format] button:hover{background:rgb(255 255 255/.14)}
 [data-storyloco=format][data-fixed] button:hover{background:rgb(0 0 0/.07)}
-[data-storyloco=format] button[aria-pressed=true]{background:var(--storyloco-accent,#05807f);color:var(--storyloco-accent-ink,#fff)}
-[data-storyloco=format] button:focus-visible{outline:2px solid var(--storyloco-accent,#05807f)}
+[data-storyloco=format] button[aria-pressed=true]{background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff)}
+[data-storyloco=format] button:focus-visible{outline:2px solid var(--editor-accent,#05807f)}
 [data-storyloco=format] svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 [data-storyloco=format] .sep{width:1px;height:16px;background:currentColor;opacity:.2;margin:0 3px}
 [data-storyloco=format] .word{padding:0 9px;white-space:nowrap}
 [data-storyloco=format] .kind{gap:2px;grid-auto-flow:column;min-width:64px;justify-content:space-between;padding:0 6px 0 9px}
 [data-storyloco=format] .kind svg{width:13px;height:13px;opacity:.6}
 [data-storyloco=format] [aria-expanded=true],[data-storyloco=format] .more-button[aria-pressed=true]{background:rgb(255 255 255/.14)}
-[data-storyloco=format] .menu{position:absolute;top:calc(100% + 6px);left:0;z-index:1;display:grid;gap:10px;width:max-content;max-width:min(296px,calc(100vw - 32px));padding:10px;border-radius:12px;background:var(--storyloco-pill-bg,var(--storyloco-bar-ink,#1b243f));color:#fff;box-shadow:0 12px 32px rgb(0 0 0/.3);animation:storyloco-format .14s ease-out}
-[data-storyloco=format][data-fixed] .menu{background:var(--storyloco-bar-bg,#fff);color:var(--storyloco-bar-ink,#1b243f);box-shadow:0 12px 32px rgb(0 0 0/.18),0 0 0 1px rgb(0 0 0/.06)}
+[data-storyloco=format] .menu{position:absolute;top:calc(100% + 6px);left:0;z-index:1;display:grid;gap:10px;width:max-content;max-width:min(296px,calc(100vw - 32px));padding:10px;border-radius:12px;background:var(--editor-pill,var(--editor-ink,#1b243f));color:#fff;box-shadow:0 12px 32px rgb(0 0 0/.3);animation:storyloco-format .14s ease-out}
+[data-storyloco=format][data-fixed] .menu{background:var(--editor-bg,#fff);color:var(--editor-ink,#1b243f);box-shadow:0 12px 32px rgb(0 0 0/.18),0 0 0 1px rgb(0 0 0/.06)}
 [data-storyloco=format] .group{display:grid;gap:4px}
 [data-storyloco=format] .legend{padding:0 6px;font-size:11px;font-weight:600;letter-spacing:.02em;opacity:.55}
 [data-storyloco=format] .row{display:flex;flex-wrap:wrap;gap:2px}
@@ -375,20 +375,20 @@ const STYLE = `[data-storyloco=format]{position:fixed;z-index:2147483001;display
 [data-storyloco=inspector] .ProseMirror table{width:100%;margin:.5em 0;table-layout:fixed}
 [data-storyloco=inspector] .ProseMirror :is(td,th){border:1px solid rgb(127 127 127/.35);padding:4px 6px;vertical-align:top}
 [data-storyloco=inspector] .ProseMirror th{font-weight:650;text-align:start}
-.ProseMirror .selectedCell{box-shadow:inset 0 0 0 9999px color-mix(in srgb,var(--storyloco-accent,#05807f) 16%,transparent)}
+.ProseMirror .selectedCell{box-shadow:inset 0 0 0 9999px color-mix(in srgb,var(--editor-accent,#05807f) 16%,transparent)}
 [data-storyloco=format] button:disabled{cursor:progress;opacity:.6}
 [data-storyloco=format] input{all:unset;box-sizing:border-box;width:220px;height:28px;padding:0 8px;border-radius:8px;background:rgb(255 255 255/.12);font:inherit}
 [data-storyloco=format][data-fixed] input{background:rgb(0 0 0/.06)}
-[data-storyloco=rich] .ProseMirror{font-variant-ligatures:inherit;font-feature-settings:inherit;word-wrap:inherit;overflow-wrap:inherit;white-space:pre-wrap}
-[data-storyloco=rich] .ProseMirror>:first-child{margin-top:var(--storyloco-first,revert-layer)!important}
-[data-storyloco=rich] .ProseMirror>:last-child{margin-bottom:var(--storyloco-last,revert-layer)!important}
-[data-storyloco-embed]{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:.75em 0;padding:.75em 1em;border:1px dashed color-mix(in srgb,var(--storyloco-accent,#05807f) 60%,transparent);border-radius:8px;font:500 13px/1.3 system-ui,sans-serif;color:var(--storyloco-accent,#05807f);text-transform:capitalize;cursor:pointer;transition:background-color .15s}
-[data-storyloco-embed]:hover{background:color-mix(in srgb,var(--storyloco-accent,#05807f) 8%,transparent)}
+[data-storyloco=rich] .ProseMirror{cursor:text;font-variant-ligatures:inherit;font-feature-settings:inherit;word-wrap:inherit;overflow-wrap:inherit;white-space:pre-wrap}
+[data-storyloco=rich] .ProseMirror>:first-child{margin-top:var(--editor-first,revert-layer)!important}
+[data-storyloco=rich] .ProseMirror>:last-child{margin-bottom:var(--editor-last,revert-layer)!important}
+[data-storyloco-embed]{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:.75em 0;padding:.75em 1em;border:1px dashed color-mix(in srgb,var(--editor-accent,#05807f) 60%,transparent);border-radius:8px;font:500 13px/1.3 system-ui,sans-serif;color:var(--editor-accent,#05807f);text-transform:capitalize;cursor:pointer;transition:background-color .15s}
+[data-storyloco-embed]:hover{background:color-mix(in srgb,var(--editor-accent,#05807f) 8%,transparent)}
 [data-storyloco-embed-edit]{font-weight:650;text-transform:none;opacity:.8}
 [data-storyloco-embed][data-site]{all:unset;display:block;border-radius:4px;cursor:pointer}
-[data-storyloco-embed][data-site]:hover{outline:1px dashed var(--storyloco-accent,#05807f);outline-offset:4px}
+[data-storyloco-embed][data-site]:hover{outline:1px dashed var(--editor-accent,#05807f);outline-offset:4px}
 [data-storyloco-embed][data-site] *{pointer-events:none}
-[data-storyloco-embed].ProseMirror-selectednode{outline:2px solid var(--storyloco-accent,#05807f);outline-offset:4px}
+[data-storyloco-embed].ProseMirror-selectednode{outline:2px solid var(--editor-accent,#05807f);outline-offset:4px}
 .ProseMirror{outline:none;white-space:pre-wrap}
 .collaboration-carets__caret{position:relative;margin:0 -1px;border-left:2px solid;pointer-events:none;word-break:normal}
 .collaboration-carets__label{position:absolute;left:-2px;bottom:100%;padding:1px 6px;border-radius:4px 4px 4px 0;color:#fff;font:600 11px/1.4 system-ui,sans-serif;white-space:nowrap;user-select:none;pointer-events:none}
@@ -813,7 +813,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 		}
 		bar.append(...lists.map((t) => button(t)))
 		if (few) bar.append(...extra.map((t) => button(t)))
-		bar.append(sep())
+		if (bar.childElementCount) bar.append(sep())
 		if (more.length) {
 			const b = document.createElement("button")
 			b.type = "button"
@@ -1166,7 +1166,9 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 	}
 
 	render()
-	return { bar, update, place, close }
+	// a field Storyblok gives no tools to is plain text, as a textarea is: no bar at all
+	const empty = !main.length && !levels.length && !extra.length
+	return { bar, update, place, close, empty }
 }
 
 // --- editors
@@ -1243,13 +1245,13 @@ export function rich_editor({
 				}),
 		}
 	)
-	if (fixed) element.prepend(tools.bar)
-	else document.body.append(tools.bar)
-	tools.bar.hidden = !fixed
+	if (fixed && !tools.empty) element.prepend(tools.bar)
+	else if (!tools.empty) document.body.append(tools.bar)
+	tools.bar.hidden = !fixed || tools.empty
 
 	const refresh = () => {
 		tools.update()
-		if (!fixed) {
+		if (!fixed && !tools.empty) {
 			tools.bar.hidden = !editor.isFocused && !tools.bar.contains(document.activeElement)
 			if (!tools.bar.hidden) tools.place()
 		}
@@ -1332,7 +1334,7 @@ export function edit_in_place(
 	let mount = host
 	/** What holds the text's own blocks, the paragraphs and headings */
 	let source: Element = element
-	for (let from: Element = element; from.children.length === 1; ) {
+	for (let from: Element = element; from.children.length === 1;) {
 		const only = from.firstElementChild!
 		// a heading or paragraph that holds the text's own blocks is a wrapper, like `<h1 class="title">`
 		// round the paragraphs, so it's copied for the styles it scopes; one that doesn't is the text
@@ -1387,8 +1389,8 @@ export function edit_in_place(
 		})
 		.join("\n")
 	host.prepend(sized)
-	area.style.setProperty("--storyloco-first", first)
-	area.style.setProperty("--storyloco-last", last)
+	area.style.setProperty("--editor-first", first)
+	area.style.setProperty("--editor-last", last)
 
 	function finish() {
 		document.removeEventListener("focusin", away)

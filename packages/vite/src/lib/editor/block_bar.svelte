@@ -458,13 +458,13 @@
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
-		--bg: var(--storyloco-bar-bg, #fff);
-		--ink: var(--storyloco-bar-ink, #1b243f);
-		--muted: var(--storyloco-bar-muted, #6b7280);
-		--line: var(--storyloco-bar-line, rgb(27 36 63 / 0.12));
-		--accent: var(--storyloco-accent, #05807f);
-		--danger: var(--storyloco-danger, #e5484d);
-		--shadow: var(--storyloco-bar-shadow, 0 0 0 1px var(--line), 0 2px 8px rgb(27 36 63 / 0.08));
+		--bg: var(--editor-bg, #fff);
+		--ink: var(--editor-ink, #1b243f);
+		--muted: var(--editor-muted, #6b7280);
+		--line: var(--editor-line, rgb(27 36 63 / 0.12));
+		--accent: var(--editor-accent, #05807f);
+		--danger: var(--editor-danger, #e5484d);
+		--shadow: var(--editor-shadow, 0 0 0 1px var(--line), 0 2px 8px rgb(27 36 63 / 0.08));
 
 		background: var(--bg);
 		border-radius: 0.75rem;
@@ -472,7 +472,7 @@
 			var(--shadow),
 			0 4px 16px rgb(0 0 0 / 0.12);
 		color: var(--ink);
-		font: var(--storyloco-bar-font, 500 0.8125rem/1.25 system-ui, sans-serif);
+		font: var(--editor-font, 500 0.8125rem/1.25 system-ui, sans-serif);
 		max-inline-size: min(20rem, 100vw - 1rem);
 		padding: 0.25rem;
 		position: fixed;
@@ -494,7 +494,7 @@
 	}
 
 	.drop {
-		background: var(--storyloco-accent, #05807f);
+		background: var(--editor-accent, #05807f);
 		border-radius: 1px;
 		box-shadow: 0 0 0 2px rgb(255 255 255 / 0.8);
 		pointer-events: none;

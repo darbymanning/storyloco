@@ -89,6 +89,10 @@
 			"svelte": "./packages/vite/dist/editor/index.js",
 			"import": "./packages/vite/dist/editor/index.js"
 		},
+		"./middleware": {
+			"types": "./packages/vite/dist/middleware.d.ts",
+			"import": "./packages/vite/dist/middleware.js"
+		},
 		"./editor/server": {
 			"types": "./packages/vite/dist/editor/server.d.ts",
 			"import": "./packages/vite/dist/editor/server.js"
@@ -121,19 +125,19 @@
 		}
 	},
 	"devDependencies": {
-		"@types/node": "26.1.1",
-		"@typescript-eslint/eslint-plugin": "8.65.0",
-		"@typescript-eslint/parser": "8.65.0",
-		"kitto": "1.6.0",
-		"oxfmt": "0.59.0",
+		"@types/node": "26.6.5",
+		"@typescript-eslint/eslint-plugin": "8.72.0",
+		"@typescript-eslint/parser": "8.72.0",
+		"kitto": "1.16.1",
+		"oxfmt": "0.74.0",
 		"typescript": "6.0.3",
-		"vite": "7.2.2"
+		"vite": "8.3.5"
 	},
 	"peerDependencies": {
 		"@storyblok/svelte": "7.2.2",
 		"@storyblok/field-plugin": "^1.7.1",
 		"svelte": "^5.0.0",
-		"@sveltejs/kit": "^2.0.0",
+		"@sveltejs/kit": "^2.0.0 || ^3.0.0",
 		"storyblok-js-client": "^7.0.0"
 	},
 	"scripts": {
@@ -173,7 +177,7 @@
 		"@tiptap/pm": "^3.32.0",
 		"@tiptap/y-tiptap": "^3.0.10",
 		"ora": "9.4.1",
-		"path-to-regexp": "8.4.2",
+		"path-to-regexp": "9.0.0",
 		"y-protocols": "^1.0.7",
 		"yjs": "^13.6.33"
 	}

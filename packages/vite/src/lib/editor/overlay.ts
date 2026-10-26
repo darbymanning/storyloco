@@ -296,22 +296,22 @@ async function source_of(node: HTMLElement, text: string): Promise<Source | unde
  * In a layer, so a site restyles any of it without fighting specificity: `[data-field]` and
  * `[data-rich]` for editable text, `[data-storyloco-hover]` and `-selected` for blocks
  */
-const STYLE = `[data-field],[data-rich]{cursor:text;border-radius:2px;transition:opacity .2s;caret-color:var(--storyloco-accent,#05807f)}
-[data-field]:focus{outline:2px solid var(--storyloco-accent,#05807f);outline-offset:4px}
+const STYLE = `[data-field],[data-rich]{cursor:text;border-radius:2px;transition:opacity .2s;caret-color:var(--editor-accent,#05807f)}
+[data-field]:focus{outline:2px solid var(--editor-accent,#05807f);outline-offset:4px}
 [data-edit=saving]{opacity:.55}
-[data-edit=error]{box-shadow:0 0 0 2px var(--storyloco-danger,#e5484d)}
-[data-image]{outline:2px solid color-mix(in srgb,var(--storyloco-accent,#05807f) 60%,transparent);outline-offset:-2px}
-[data-storyloco=rich]{border-radius:2px;box-shadow:0 0 0 6px color-mix(in srgb,var(--storyloco-accent,#05807f) 8%,transparent),0 0 0 8px var(--storyloco-accent,#05807f)}
-[data-storyloco-hover]{outline:1px solid color-mix(in srgb,var(--storyloco-accent,#05807f) 70%,transparent);outline-offset:-1px}
-[data-storyloco-selected]{outline:2px solid var(--storyloco-accent,#05807f)!important;outline-offset:-2px}
-[data-blok-c][data-storyloco-empty]{min-block-size:3.5rem;background:repeating-linear-gradient(-45deg,transparent 0 8px,color-mix(in srgb,var(--storyloco-accent,#05807f) 6%,transparent) 8px 16px)}
-[data-blok-c]:focus-visible{outline:2px solid var(--storyloco-accent,#05807f);outline-offset:-2px}`
+[data-edit=error]{box-shadow:0 0 0 2px var(--editor-danger,#e5484d)}
+[data-image]{outline:2px solid color-mix(in srgb,var(--editor-accent,#05807f) 60%,transparent);outline-offset:-2px}
+[data-storyloco=rich]{border-radius:2px;box-shadow:0 0 0 6px color-mix(in srgb,var(--editor-accent,#05807f) 8%,transparent),0 0 0 8px var(--editor-accent,#05807f)}
+[data-storyloco-hover]{outline:1px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:-1px}
+[data-storyloco-selected]{outline:2px solid var(--editor-accent,#05807f)!important;outline-offset:-2px}
+[data-blok-c][data-storyloco-empty]{min-block-size:3.5rem;background:repeating-linear-gradient(-45deg,transparent 0 8px,color-mix(in srgb,var(--editor-accent,#05807f) 6%,transparent) 8px 16px)}
+[data-blok-c]:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:-2px}`
 
 /* Outside the layer, so a site's reset can't unpin our own bits */
-const OURS = `button.storyloco-replace{position:fixed;z-index:2147483000;white-space:nowrap;display:flex;align-items:center;gap:.375rem;padding:.375rem .75rem;border:0;border-radius:999px;background:var(--storyloco-accent,#05807f);color:var(--storyloco-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2);animation:storyloco-in .16s ease-out}
+const OURS = `button.storyloco-replace{position:fixed;z-index:2147483000;white-space:nowrap;display:flex;align-items:center;gap:.375rem;padding:.375rem .75rem;border:0;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2);animation:storyloco-in .16s ease-out}
 button.storyloco-replace[hidden]{display:none}
 button.storyloco-replace:focus-visible{outline:2px solid #fff;outline-offset:-4px}
-[data-storyloco=tag]{position:fixed;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--storyloco-accent,#05807f);color:var(--storyloco-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
+[data-storyloco=tag]{position:fixed;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
 [data-storyloco=tag][hidden]{display:block;opacity:0}
 @keyframes storyloco-in{from{opacity:0;translate:0 -2px}}
 @media (prefers-reduced-motion:reduce){[data-storyloco],[data-storyloco] *{animation:none!important;transition-property:opacity!important}}`
@@ -363,9 +363,11 @@ function place_tag() {
 
 // --- text, edited where it is
 
-/** An element's one child that matters, ignoring the comments a framework anchors its updates with */
+/** An element's one child that matters, ignoring the comments and empty text a framework anchors its updates with */
 function only_child(el: Node) {
-	const nodes = [...el.childNodes].filter((node) => node.nodeType !== Node.COMMENT_NODE)
+	const nodes = [...el.childNodes].filter(
+		(node) => node.nodeType !== Node.COMMENT_NODE && !(node instanceof Text && !node.data)
+	)
 	return nodes.length === 1 ? nodes[0] : undefined
 }
 
@@ -484,13 +486,17 @@ function wire(node: HTMLElement, text: Text, source: Source) {
 		},
 	}
 
+	/** Saved while being typed in, so the page's data catches up once it's left */
+	let behind = false
 	async function persist(value: string, together = false) {
 		node.dataset.edit = "saving"
 		const change =
 			"name" in source
 				? { op: "name", story: source.story, value }
 				: { op: "set", story: source.story, uid: source.uid, field: source.field, value }
-		if (await send(change, together ? "shared" : "change")) {
+		const typing = document.activeElement === node
+		if (await send(change, together ? "shared" : "change", { again: !typing })) {
+			if (typing) behind = true
 			delete node.dataset.edit
 			forget(source.story)
 			return true
@@ -564,6 +570,10 @@ function wire(node: HTMLElement, text: Text, source: Source) {
 		live_select(selected ? { uid: selected.uid } : null)
 		// with someone else still typing in it, it stays joined to watch; otherwise leaving saves what changed
 		if (sharing && !typed_in().includes(key)) await unshare()
+		if (behind) {
+			behind = false
+			await refresh()
+		}
 	}
 
 	node.contentEditable = "plaintext-only"
@@ -894,11 +904,15 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	}
 	const doc = saved ?? (blok[field] as Record<string, unknown>)
 
+	// saves while it's open leave the page's data be; it catches up once, when the editing's done
+	let open = true
+	let behind = false
 	async function save(value: unknown, together = false) {
 		node.dataset.edit = "saving"
 		const values = { [source.field]: value }
 		const change = { op: "fields", story: source.story, uid: source.uid, values }
-		const ok = await send(change, together ? "shared" : "change")
+		const ok = await send(change, together ? "shared" : "change", { again: !open })
+		if (ok && open) behind = true
 		delete node.dataset.edit
 		if (ok) {
 			riches.delete(node)
@@ -923,8 +937,11 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 			editing_rich = null
 			reselect()
 			live_select(selected ? { uid: selected.uid } : null)
+			open = false
 			// leaving saves what's unsaved when it's this browser's to save
-			leave_room(room)
+			void leave_room(room).then(() => {
+				if (behind) return refresh()
+			})
 		},
 		save,
 	})
@@ -959,7 +976,7 @@ function peek({ story, uid }: Selection) {
 		(content && (find_blok(content, uid) as Blok | undefined))
 	if (!blok?.component) return
 	const trail: Array<{ uid: string; component: string }> = []
-	for (let at = node?.parentElement?.closest<HTMLElement>("[data-blok-c]"); at; ) {
+	for (let at = node?.parentElement?.closest<HTMLElement>("[data-blok-c]"); at;) {
 		const { id, uid: above, name } = meta(at)
 		if (Number(id) === story && above && name) trail.unshift({ uid: above, component: name })
 		at = at.parentElement?.closest<HTMLElement>("[data-blok-c]")
@@ -1070,7 +1087,7 @@ async function selection_at(el: Element): Promise<Selection | undefined> {
 
 // --- a word after a change, with a way back
 
-const TOAST = `[data-storyloco=toast]{position:fixed;left:50%;bottom:1.25rem;translate:-50% 0;z-index:2147483003;display:flex;align-items:center;gap:.75rem;max-inline-size:calc(100vw - 2rem);padding:.5rem .5rem .5rem .875rem;border-radius:999px;background:var(--storyloco-pill-bg,var(--storyloco-bar-ink,#1b243f));color:#fff;font:500 .8125rem/1.25 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .2s,translate .2s}
+const TOAST = `[data-storyloco=toast]{position:fixed;left:50%;bottom:1.25rem;translate:-50% 0;z-index:2147483003;display:flex;align-items:center;gap:.75rem;max-inline-size:calc(100vw - 2rem);padding:.5rem .5rem .5rem .875rem;border-radius:999px;background:var(--editor-pill,var(--editor-ink,#1b243f));color:#fff;font:500 .8125rem/1.25 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .2s,translate .2s}
 [data-storyloco=toast][hidden]{display:flex;opacity:0;translate:-50% .75rem;pointer-events:none}
 [data-storyloco=toast]:not(:has(button)){padding-inline-end:.875rem}
 [data-storyloco=toast] button{all:unset;cursor:pointer;padding:.3rem .75rem;border-radius:999px;background:rgb(255 255 255/.14);white-space:nowrap}

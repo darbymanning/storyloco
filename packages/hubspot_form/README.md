@@ -11,8 +11,8 @@ fills in this field's option for you.
 
 ## Options
 
-| Option                   | Value                                              |
-| ------------------------ | -------------------------------------------------- |
+| Option                   | Value                                        |
+| ------------------------ | -------------------------------------------- |
 | `MOXY_HUBSPOT_SECRET_ID` | Set by the HubSpot space plugin; don't edit. |
 
 ## Value

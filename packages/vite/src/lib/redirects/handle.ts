@@ -1,4 +1,4 @@
-import type { Handle } from "@sveltejs/kit"
+import type { Handle } from "../kit.js"
 import { match, compile } from "path-to-regexp"
 import { Logger } from "../shared/logger.js"
 import { fetch_redirects, type Redirect } from "./fetch.js"

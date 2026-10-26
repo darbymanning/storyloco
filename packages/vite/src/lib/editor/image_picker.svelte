@@ -250,8 +250,7 @@
 					<textarea
 						rows="3"
 						bind:value={alt}
-						placeholder="What the image shows, for people who can’t see it"
-					></textarea>
+						placeholder="What the image shows, for people who can’t see it"></textarea>
 				</label>
 				{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
 					<p class="hint">
@@ -345,13 +344,13 @@
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
-		--bg: var(--storyloco-bar-bg, #fff);
-		--ink: var(--storyloco-bar-ink, #1b243f);
-		--muted: var(--storyloco-bar-muted, #6b7280);
-		--line: var(--storyloco-bar-line, rgb(27 36 63 / 0.12));
-		--accent: var(--storyloco-accent, #05807f);
-		--danger: var(--storyloco-danger, #e5484d);
-		--font: var(--storyloco-bar-font, 500 0.8125rem/1.25 system-ui, sans-serif);
+		--bg: var(--editor-bg, #fff);
+		--ink: var(--editor-ink, #1b243f);
+		--muted: var(--editor-muted, #6b7280);
+		--line: var(--editor-line, rgb(27 36 63 / 0.12));
+		--accent: var(--editor-accent, #05807f);
+		--danger: var(--editor-danger, #e5484d);
+		--font: var(--editor-font, 500 0.8125rem/1.25 system-ui, sans-serif);
 
 		background: var(--bg);
 		border: 0;
@@ -602,7 +601,7 @@
 		&.primary {
 			background: var(--accent);
 			border-color: transparent;
-			color: var(--storyloco-accent-ink, #fff);
+			color: var(--editor-accent-ink, #fff);
 		}
 
 		&:disabled {

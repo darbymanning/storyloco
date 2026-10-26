@@ -393,8 +393,7 @@
 						<textarea
 							bind:value={form.alt}
 							rows="3"
-							placeholder="Describe the image for people who can’t see it"
-						></textarea>
+							placeholder="Describe the image for people who can’t see it"></textarea>
 					</label>
 					<label class="field"
 						><span class="flex items-center gap-2">Title / caption {@render ai('title')}</span

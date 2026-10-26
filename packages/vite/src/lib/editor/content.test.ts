@@ -8,6 +8,7 @@ import {
 	rich_compact,
 	shows_rich,
 	rich_supported,
+	same,
 	set_asset,
 	set_text,
 	trail,
@@ -224,5 +225,20 @@ describe("an old version shown on the page", () => {
 			body: [{ _uid: "x", component: "cards", title: "Now", picks: [b.uuid, "gone"], link }],
 		}
 		expect((like_page(version, page) as typeof page).body[0].picks).toEqual([b])
+	})
+})
+
+describe("same", () => {
+	test("text Storyblok hands back with its keys in another order is the same text", () => {
+		const typed = {
+			type: "doc",
+			content: [{ type: "paragraph", content: [{ type: "text", text: "Hi" }] }],
+		}
+		const stored = {
+			content: [{ content: [{ text: "Hi", type: "text" }], type: "paragraph" }],
+			type: "doc",
+		}
+		expect(same(typed, stored)).toBe(true)
+		expect(same(typed, { ...stored, content: [] })).toBe(false)
 	})
 })

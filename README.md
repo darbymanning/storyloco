@@ -115,6 +115,19 @@ API methods await it, so you never call it on the server. `components` takes the
 `import.meta.glob`: Vite has to see the literal pattern to rewrite it, so the glob has to stay
 at your call site rather than move into the client.
 
+`api` goes to the SDK as its `apiOptions`. To keep the token off the browser, read through a
+proxy of your own that adds it, and give the client a stand-in:
+
+```typescript
+export const client = new StoryblokClient({
+	token: 'proxy',
+	// the SDK wants a whole URL
+	api: { endpoint: `${browser ? location.origin : 'http://localhost'}/api/storyblok` }
+})
+```
+
+The editor then takes the real token from `STORYBLOK_ACCESS_TOKEN`.
+
 `client.handle_error` is on the instance, so `.catch(client.handle_error)` works without
 wrapping anything.
 
@@ -366,9 +379,10 @@ any address to sign in; once signed in, the badge shows on every page, and ⌘�
 edit mode on and off. In development the badge is always there.
 
 Links inside content don't navigate in edit mode; hold ⌘ or Ctrl to follow one. Match the
-editor to a site with `--storyloco-bar-bg`, `-ink`, `-muted`, `-line`, `-font` and
-`--storyloco-accent`, or build a bar of your own from `editor`, `set_editing`, `publish`,
-`signin` and `signout`.
+editor to a site with `--editor-bg`, `-ink`, `-muted`, `-line`, `-shadow`, `-font`,
+`--editor-accent` (and `-accent-ink`), `--editor-good`, `--editor-danger`, and `--editor-pill`
+for the toast and the format bar, or build a bar of your own from `editor`, `set_editing`,
+`publish`, `signin` and `signout`.
 
 `bun run smoke <site url>…` (in `packages/vite`) checks each site loads and, signed in, that a
 click on a block opens its settings. Sign in once per site with `--signin`, which opens a
