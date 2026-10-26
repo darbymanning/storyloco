@@ -384,6 +384,20 @@ editor to a site with `--editor-bg`, `-ink`, `-muted`, `-line`, `-shadow`, `-fon
 for the toast and the format bar, or build a bar of your own from `editor`, `set_editing`,
 `publish`, `signin` and `signout`.
 
+A CDN in front of the site answers editors with the page it cached for visitors, before any of
+the site's code runs. Routing middleware runs first, and `storyloco/middleware` moves an editor
+onto a key of their own:
+
+```ts
+// middleware.ts
+export { default } from 'storyloco/middleware'
+export const config = { matcher: '/((?!_app/|api/).*)' }
+```
+
+`middleware(keys)` takes other cookies too, the first a request has winning: say a shop's
+customers, `[{ cookies: [/^session$/, EDITOR_COOKIE], param: '_signed_in' }]`. Never cache
+a response for a key's parameter.
+
 `bun run smoke <site url>…` (in `packages/vite`) checks each site loads and, signed in, that a
 click on a block opens its settings. Sign in once per site with `--signin`, which opens a
 window; later runs reuse it without one.

@@ -100,6 +100,13 @@
 	/** Whether a blok is showing, for the overlay */
 	export const showing = () => selection !== null
 
+	/** The field typed in on the page, which the settings mark so it's clear what's changing */
+	let on_page = $state<{ uid: string; field: string } | null>(null)
+	export function typing(at: { uid: string; field: string } | null) {
+		on_page = at
+	}
+	const typed_here = (key: string) => on_page?.uid === selection?.uid && on_page?.field === key
+
 	const label = (name: string) => {
 		const words = name.replace(/[_-]+/g, " ").trim()
 		return words.charAt(0).toUpperCase() + words.slice(1)
@@ -1612,7 +1619,14 @@
 
 {#snippet Control(key: string, field: Field)}
 	{@const id = `storyloco-field-${key}`}
-	<div class="sl-field" data-type={field.type}>
+	<div
+		class="sl-field"
+		class:on-page={typed_here(key)}
+		data-type={field.type}
+		{@attach (node) => {
+			if (typed_here(key)) node.scrollIntoView({ block: "nearest", behavior: "smooth" })
+		}}
+	>
 		{#if field.type === "text"}
 			{@render Text(key, field, id)}
 		{:else if field.type === "textarea" || field.type === "markdown"}
@@ -2014,6 +2028,17 @@
 	.sl-field {
 		display: grid;
 		gap: 0.375rem;
+
+		/* typed in on the page: its label and box in the accent, quietly */
+		&.on-page {
+			& .head label {
+				color: var(--accent);
+			}
+
+			& :is(input:not([type="checkbox"]), textarea, select, .rich) {
+				border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+			}
+		}
 	}
 
 	.head,
@@ -2401,7 +2426,7 @@
 		}
 	}
 
-	.picks {
+	.kids.picks {
 		margin-block-end: 0.375rem;
 
 		& .pick {
@@ -2422,8 +2447,18 @@
 			}
 		}
 
+		& .grip {
+			padding-inline: 0.5rem 0;
+		}
+
 		& .grip + .pick {
-			padding-inline-start: 0;
+			padding-inline-start: 0.5rem;
+		}
+
+		/* in the row, so a long path stops short of it rather than running under */
+		& .tools {
+			margin-inline-end: 0.375rem;
+			position: static;
 		}
 	}
 

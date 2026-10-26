@@ -252,6 +252,33 @@ function* each_blok(value: unknown): Generator<Blok> {
 	for (const child of Object.values(value)) yield* each_blok(child)
 }
 
+/**
+ * The bloks nested in a block with no element of their own, like a list's items when only the
+ * list is marked: their text is the block's to edit
+ */
+const inner_bloks = (blok: Blok) =>
+	[...own_bloks(blok)].filter((inner) => inner !== blok && !element_of(inner._uid!))
+
+/** Like `each_blok`, but not into the stories a field links to, which are theirs to edit */
+function* own_bloks(value: unknown): Generator<Blok> {
+	if (!value || typeof value !== "object") return
+	if ("uuid" in value && "content" in value) return
+	const node = value as Blok
+	if (typeof node._uid === "string" && typeof node.component === "string") yield node
+	for (const child of Object.values(value)) yield* own_bloks(child)
+}
+
+/** A rich text field, and the blok it's in: the block's own, or one nested in it */
+type Rich = { blok: Blok; field: string }
+
+/** The rich text a block shows: its own fields, then its unmarked nested bloks' */
+const rich_fields = (blok: Blok) =>
+	[blok, ...inner_bloks(blok)].flatMap((owner) =>
+		Object.entries(owner)
+			.filter(([key, value]) => !key.startsWith("_") && is_rich(value) && rich_supported(value))
+			.map(([field, value]) => ({ blok: owner, field, value }))
+	)
+
 /** Spaces aside, as text shows on the page however the site wraps it */
 const loose = (text: string) => text.replace(/\s+/g, " ").trim()
 
@@ -284,7 +311,11 @@ async function source_of(node: HTMLElement, text: string): Promise<Source | unde
 	await load_schema()
 	const block = block_of(node)
 	const blok = await blok_for(block)
-	const own = blok && block && match(text, [blok], Number(meta(block).id))
+	const own =
+		blok &&
+		block &&
+		(match(text, [blok], Number(meta(block).id)) ??
+			match(text, inner_bloks(blok), Number(meta(block).id)))
 	if (own) return own
 	const story = await story_at(node.closest("a[href]"))
 	if (story) return linked_source(text, story)
@@ -293,7 +324,7 @@ async function source_of(node: HTMLElement, text: string): Promise<Source | unde
 	const root = !block && page?.uid ? page_blok(page.uid) : undefined
 	if (!page || !root) return
 	if (loose(page.name) === text) return { story: page.id, name: true, max: 255 }
-	return match(text, [root], page.id)
+	return match(text, [root], page.id) ?? match(text, inner_bloks(root), page.id)
 }
 
 // --- how it all looks on the page
@@ -303,11 +334,10 @@ async function source_of(node: HTMLElement, text: string): Promise<Source | unde
  * `[data-rich]` for editable text, `[data-storyloco-hover]` and `-selected` for blocks
  */
 const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-radius:2px;transition:opacity .2s;caret-color:var(--editor-accent,#05807f)}
-[data-field]:focus{outline:2px solid var(--editor-accent,#05807f);outline-offset:4px}
+[data-field]:focus,[data-storyloco=rich]{outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:4px}
 [data-edit=saving]{opacity:.55}
 [data-edit=error]{box-shadow:0 0 0 2px var(--editor-danger,#e5484d)}
 [data-image]{outline:2px solid color-mix(in srgb,var(--editor-accent,#05807f) 60%,transparent);outline-offset:-2px}
-[data-storyloco=rich]{border-radius:2px;box-shadow:0 0 0 6px color-mix(in srgb,var(--editor-accent,#05807f) 8%,transparent),0 0 0 8px var(--editor-accent,#05807f)}
 [data-storyloco-hover]{outline:1px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:-1px}
 [data-storyloco-selected]{outline:2px solid var(--editor-accent,#05807f)!important;outline-offset:-2px}
 [data-blok-c][data-storyloco-empty]{min-block-size:3.5rem;background:repeating-linear-gradient(-45deg,transparent 0 8px,color-mix(in srgb,var(--editor-accent,#05807f) 6%,transparent) 8px 16px)}
@@ -570,7 +600,7 @@ function wire(node: HTMLElement, text: Text, source: Source) {
 		share()
 		if ("uid" in source) {
 			typing_in = { uid: source.uid, field: source.field }
-			live_select(typing_in)
+			tell(typing_in)
 		}
 	}
 
@@ -580,7 +610,7 @@ function wire(node: HTMLElement, text: Text, source: Source) {
 		settle(shown ?? value)
 		reselect()
 		typing_in = null
-		live_select(selected ? { uid: selected.uid } : null)
+		tell(selected ? { uid: selected.uid } : null)
 		// with someone else still typing in it, it stays joined to watch; otherwise leaving saves what changed
 		if (sharing && !typed_in().includes(key)) await unshare()
 		if (behind) {
@@ -652,21 +682,20 @@ function wire_all(block: HTMLElement) {
  */
 async function mark_riches(block: HTMLElement) {
 	const blok = await blok_for(block)
-	const fields = blok
-		? Object.entries(blok).filter(
-				([key, value]) => !key.startsWith("_") && is_rich(value) && rich_supported(value)
-			)
-		: []
+	const fields = blok ? rich_fields(blok) : []
 	if (!fields.length) return
-	const wanted = fields.map(([key, value]) => [rich_compact(value), key] as const)
+	const wanted = fields.map(({ value, ...rich }) => [rich_compact(value), rich] as const)
 	let inside: Element | null = null
 	for (const el of block.querySelectorAll("*")) {
 		if (inside?.contains(el) || block_of(el) !== block) continue
 		const text = (el.textContent ?? "").replace(/\s+/g, "")
-		const field = wanted.find(([compact]) => shows_rich(text, compact))?.[1]
-		if (!field || el.querySelector("[data-blok-c]")) continue
-		riches.set(el, field)
-		;(el as HTMLElement).dataset.rich = field
+		if (!text) continue
+		// only one field showing it, or which one is being edited is a guess
+		const found = wanted.filter(([compact]) => shows_rich(text, compact))
+		const rich = found.length === 1 ? found[0][1] : undefined
+		if (!rich || el.querySelector("[data-blok-c]")) continue
+		riches.set(el, rich)
+		;(el as HTMLElement).dataset.rich = rich.field
 		inside = el
 	}
 }
@@ -840,7 +869,7 @@ export async function rich_inserts(field: Field | undefined): Promise<Inserts> {
 // --- richtext, edited where it shows
 
 /** The richtext field each element shows; its content is read fresh when editing starts */
-const riches = new WeakMap<Element, string>()
+const riches = new WeakMap<Element, Rich>()
 
 /**
  * The element showing one of its blok's richtext fields: the nearest one around `el` whose
@@ -851,16 +880,14 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 	const block = block_of(el)
 	const blok = await blok_for(block)
 	if (!block || !blok) return
-	const fields = Object.entries(blok).filter(
-		([key, value]) => !key.startsWith("_") && is_rich(value) && rich_supported(value)
-	)
+	const fields = rich_fields(blok)
 	if (!fields.length) return
 	for (let node: Element | null = el; node && node !== block; node = node.parentElement) {
 		if (riches.has(node)) return node as HTMLElement
 		if (node.querySelector("[data-blok-c]")) return
 		const text = (node.textContent ?? "").replace(/\s+/g, "")
 		if (!text) continue
-		const found = fields.filter(([, value]) => shows_rich(text, rich_compact(value)))
+		const found = fields.filter(({ value }) => shows_rich(text, rich_compact(value)))
 		if (found.length === 1) {
 			// the outermost wrapper showing just this text, so the editor takes the site's richtext container
 			let outer = node
@@ -870,8 +897,8 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 				(outer.parentElement.textContent ?? "").replace(/\s+/g, "") === text
 			)
 				outer = outer.parentElement
-			const [field] = found[0]
-			riches.set(outer, field)
+			const { blok: owner, field } = found[0]
+			riches.set(outer, { blok: owner, field })
 			;(outer as HTMLElement).dataset.rich = field
 			return outer as HTMLElement
 		}
@@ -885,9 +912,8 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	// otherwise get past this to open two editors on the one field
 	if (editing_rich) return
 	editing_rich = () => {}
-	const field = riches.get(node)
+	const { blok, field } = riches.get(node) ?? {}
 	const block = block_of(node)
-	const blok = await blok_for(block)
 	if (!field || !block || !blok?._uid) return void (editing_rich = null)
 	const source = { story: Number(meta(block).id), uid: blok._uid, field }
 	bar.hide()
@@ -940,7 +966,7 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	room.value = () => shared_doc(room)
 	room.save = save
 
-	live_select({ uid: source.uid, field })
+	tell({ uid: source.uid, field })
 	editing_rich = edit_in_place(node, doc, {
 		at,
 		field: schema as RichField | undefined,
@@ -949,7 +975,7 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 		end: () => {
 			editing_rich = null
 			reselect()
-			live_select(selected ? { uid: selected.uid } : null)
+			tell(selected ? { uid: selected.uid } : null)
 			open = false
 			// leaving saves what's unsaved when it's this browser's to save
 			void leave_room(room).then(() => {
@@ -969,11 +995,19 @@ let bar: { show(target: Target | null): void; hide(): void }
 
 type Inspector = {
 	open(selection: Selection, keyboard?: boolean): void
+	typing(at: { uid: string; field: string } | null): void
 	refresh(): void
 	close(): void
 	showing(): boolean
 }
 let inspector: Promise<Inspector> | undefined
+
+/** Where this person is, for the others, and for the settings, which mark the field typed in on the page */
+function tell(at: { uid: string; field?: string } | null) {
+	live_select(at)
+	const field = at?.field
+	inspector?.then((panel) => panel.typing(field ? { uid: at.uid, field } : null))
+}
 
 /**
  * What the settings can show straight away, from content the page already has: the blok, the
@@ -1046,7 +1080,7 @@ function highlight(uid: string | null) {
 	// the others outline it in this person's colour, and the field in it being typed in
 	const field = typing_in?.uid === uid ? typing_in.field : undefined
 	const telling = `${uid}:${field ?? ""}`
-	if (telling !== told) live_select(uid ? { uid, field } : null)
+	if (telling !== told) tell(uid ? { uid, field } : null)
 	told = telling
 }
 

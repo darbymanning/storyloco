@@ -32,6 +32,14 @@ export type Cursor = {
 	uid?: string
 	rx?: number
 	ry?: number
+	/** The element under it, by child indices from the block; then a share of that element's box */
+	path?: Array<number>
+	ex?: number
+	ey?: number
+	/** Over text: the character under it, counted through the element's text, and how far off it */
+	char?: number
+	dx?: number
+	dy?: number
 	x?: number
 	y?: number
 	gone?: boolean

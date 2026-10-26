@@ -78,10 +78,78 @@ function element(kind: string, color: string, name?: string) {
 	return el
 }
 
+// --- pointers held to what's under them, so screens of another size still agree
+
+/** An element's place under a block, as child indices */
+function path_of(block: Element, el: Element) {
+	const path: Array<number> = []
+	for (let at = el; at !== block && at.parentElement; at = at.parentElement)
+		path.unshift([...at.parentElement.children].indexOf(at))
+	return path
+}
+
+function walk(block: Element, path: Array<number>) {
+	let at: Element | undefined = block
+	for (const i of path) at = at?.children[i]
+	return at ?? null
+}
+
+/** The text in an element, a node at a time */
+function texts(el: Element) {
+	const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+	const out: Array<Text> = []
+	while (walker.nextNode()) out.push(walker.currentNode as Text)
+	return out
+}
+
+/** One character's box, by its place through the element's text */
+function char_box(el: Element, index: number) {
+	let left = index
+	for (const node of texts(el)) {
+		if (left < node.length) {
+			const range = document.createRange()
+			range.setStart(node, left)
+			range.setEnd(node, left + 1)
+			return range.getClientRects()[0] ?? null
+		}
+		left -= node.length
+	}
+	return null
+}
+
+/** The character under a point, when there's text right there rather than merely nearest */
+function char_at(x: number, y: number) {
+	type Caret = { offsetNode: Node; offset: number }
+	const doc = document as Document & { caretPositionFromPoint?(x: number, y: number): Caret | null }
+	const caret = doc.caretPositionFromPoint?.(x, y)
+	const range = caret ? null : document.caretRangeFromPoint?.(x, y)
+	const node = caret?.offsetNode ?? range?.startContainer
+	const offset = caret?.offset ?? range?.startOffset ?? 0
+	if (!(node instanceof Text) || !node.parentElement) return null
+	const el = node.parentElement
+	let index = Math.min(offset, Math.max(node.length - 1, 0))
+	for (const before of texts(el)) {
+		if (before === node) break
+		index += before.length
+	}
+	const box = char_box(el, index)
+	if (!box || y < box.top || y > box.bottom || Math.abs(x - box.left) > box.width + 24) return null
+	return { el, index, dx: x - box.left, dy: y - box.top }
+}
+
 /** Where a pointer is on this screen, from where it is on the content */
 function point(at: Cursor) {
 	if (at.uid) {
 		const node = tools.element_of(at.uid)
+		const el = node && at.path ? walk(node, at.path) : null
+		if (el && at.char !== undefined) {
+			const box = char_box(el, at.char)
+			if (box) return { x: box.left + (at.dx ?? 0), y: box.top + (at.dy ?? 0) }
+		}
+		if (el && at.ex !== undefined && at.ey !== undefined) {
+			const box = el.getBoundingClientRect()
+			return { x: box.left + at.ex * box.width, y: box.top + at.ey * box.height }
+		}
 		if (node) {
 			const box = node.getBoundingClientRect()
 			return { x: box.left + (at.rx ?? 0) * box.width, y: box.top + (at.ry ?? 0) * box.height }
@@ -199,11 +267,23 @@ function send() {
 	const block = tools.block_of(event.target as Element)
 	const uid = block && tools.uid_of(block)
 	if (block && uid) {
+		const { clientX: x, clientY: y } = event
 		const box = block.getBoundingClientRect()
-		here = {
-			uid,
-			rx: (event.clientX - box.left) / box.width,
-			ry: (event.clientY - box.top) / box.height,
+		here = { uid, rx: (x - box.left) / box.width, ry: (y - box.top) / box.height }
+		// what's right under it, which a narrower or wider screen still shows, if somewhere else
+		const text = char_at(x, y)
+		const el = text?.el ?? (event.target as Element)
+		if (el !== block && block.contains(el)) {
+			here.path = path_of(block, el)
+			if (text) Object.assign(here, { char: text.index, dx: text.dx, dy: text.dy })
+			else {
+				const inner = el.getBoundingClientRect()
+				if (inner.width && inner.height)
+					Object.assign(here, {
+						ex: (x - inner.left) / inner.width,
+						ey: (y - inner.top) / inner.height,
+					})
+			}
 		}
 	} else here = { x: event.pageX / document.documentElement.scrollWidth, y: event.pageY }
 	cursor({ ...here, chat: saying })
