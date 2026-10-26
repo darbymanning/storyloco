@@ -22,6 +22,8 @@
 	let versions = $state.raw<Array<Version> | null>(null)
 	let index = $state(0)
 	let problem = $state<string | null>(null)
+	/** A version the site's code couldn't show, like one saved before a template changed */
+	let unshowable = $state<number | null>(null)
 	let busy = $state(false)
 	/** Whether the page can show a version in place, which needs its story connected */
 	let in_place = $state(true)
@@ -76,6 +78,15 @@
 				})
 				.catch((e: Error) => (problem = e.message))
 		tick().then(() => rail?.focus())
+		// showing an old version threw: back to now, rather than the page left broken, and say so
+		const broke = () => {
+			if (!shown || !versions) return
+			const id = versions[shown].id
+			go(0, true)
+			unshowable = id
+		}
+		addEventListener("error", broke)
+		addEventListener("unhandledrejection", broke)
 		// not passive, so scrolling the timeline doesn't scroll the page too
 		rail?.addEventListener("wheel", wheel, { passive: false })
 		const stop = on_navigate(close)
@@ -84,6 +95,8 @@
 			clearTimeout(settle)
 			transition?.skipTransition()
 			rail?.removeEventListener("wheel", wheel)
+			removeEventListener("error", broke)
+			removeEventListener("unhandledrejection", broke)
 			stop()
 			show_version(null)
 			delete root.dataset.storylocoTime
@@ -94,6 +107,7 @@
 	/** To another version; quick moves, like a drag, get a lighter transition */
 	function go(next: number, quick = false) {
 		if (!versions || leaving || restored) return
+		unshowable = null
 		next = Math.max(0, Math.min(last, next))
 		if (next === index) return
 		heading = next > index ? -1 : 1
@@ -352,6 +366,12 @@
 				<span>Page history</span>
 				<span>{index ? `${index} of ${last} saves back` : `${last} saves`}</span>
 			</p>
+			{#if unshowable !== null}
+				<p class="problem" role="status">
+					A save the page couldn’t show with its code as it is now, likely from before a block
+					changed. It can still be restored.
+				</p>
+			{/if}
 			<p class="title">
 				{index ? `${day_of(chosen.created_at)}, ${time_of(chosen.created_at)}` : "Now"}
 			</p>
