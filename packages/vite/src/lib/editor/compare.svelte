@@ -5,7 +5,8 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from "svelte"
-	import { editor, on_navigate, review, set_editing } from "./client.js"
+	import { editor, on_navigate, page_blok, review, set_editing } from "./client.js"
+	import { trail } from "./content.js"
 
 	let { label, close }: { label: (name: string) => string; close: () => void } = $props()
 
@@ -23,6 +24,8 @@
 	let marks = $state.raw<Array<Mark>>([])
 	/** The list of what's changed, open */
 	let listing = $state(false)
+	/** What the bar holds is this wide, which the bar eases to rather than jumping */
+	let bar_width = $state(0)
 	/** A block just gone to from the list, lit up for a moment */
 	let flash = $state<string | null>(null)
 
@@ -51,7 +54,7 @@
 		frame?.contentWindow?.scrollTo({ top: scrollY, left: scrollX, behavior: "instant" })
 	}
 
-	const element_of = (uid: string) =>
+	const marked = (uid: string) =>
 		[...document.querySelectorAll<HTMLElement>("[data-blok-c]")].find((node) => {
 			try {
 				return JSON.parse(node.dataset.blokC ?? "{}").uid === uid
@@ -60,12 +63,28 @@
 			}
 		})
 
+	/** A changed blok's element, or the nearest one around it, for one the site doesn't mark */
+	function element_of(uid: string) {
+		const own = marked(uid)
+		if (own) return own
+		const root = editor.story?.uid ? page_blok(editor.story.uid) : undefined
+		const above = root ? (trail(root, uid) ?? []).slice(0, -1).reverse() : []
+		for (const blok of above) {
+			const node = typeof blok._uid === "string" ? marked(blok._uid) : undefined
+			if (node) return node
+		}
+	}
+
 	/** Where each changed block is on screen now */
 	function measure() {
 		if (!changes) return
+		const seen = new Set<HTMLElement>()
 		marks = changes.flatMap((change) => {
 			if (!KINDS[change.kind]) return []
 			const node = element_of(change.uid)
+			// changes inside one block it shows for, once
+			if (node && seen.has(node)) return []
+			if (node) seen.add(node)
 			const box = node?.getBoundingClientRect()
 			if (!box || !box.height || box.bottom < 0 || box.top > innerHeight) return []
 			// what shows of a block taller or wider than the window, so its outline is always seen
@@ -208,53 +227,61 @@
 			</div>
 		{/if}
 
-		<div class="bar" role="group" aria-label="Compare with live">
-			<div bind:this={toggle} class="switch" role="radiogroup" aria-label="Show">
-				<span class="pill" aria-hidden="true"></span>
-				{#each ["draft", "live"] as const as which (which)}
+		<div
+			class="bar"
+			role="group"
+			aria-label="Compare with live"
+			style:inline-size={bar_width ? `${bar_width}px` : null}
+		>
+			<div class="fit" bind:offsetWidth={bar_width}>
+				<div bind:this={toggle} class="switch" role="radiogroup" aria-label="Show">
+					<span class="pill" aria-hidden="true"></span>
+					{#each ["draft", "live"] as const as which (which)}
+						<button
+							type="button"
+							role="radio"
+							aria-checked={side === which}
+							tabindex={side === which ? 0 : -1}
+							disabled={which === "live" && !loaded}
+							onclick={() => flip(which)}
+							onkeydown={(e) => {
+								if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+									e.preventDefault()
+									flip()
+									tick().then(() =>
+										toggle?.querySelector<HTMLElement>("[aria-checked=true]")?.focus()
+									)
+								}
+							}}
+						>
+							{which === "draft" ? "Draft" : "Live"}
+							{#if which === "live" && !loaded}<span class="loading" aria-label="loading"
+								></span>{/if}
+						</button>
+					{/each}
+				</div>
+				{#if side === "draft" && changes?.length}
 					<button
 						type="button"
-						role="radio"
-						aria-checked={side === which}
-						tabindex={side === which ? 0 : -1}
-						disabled={which === "live" && !loaded}
-						onclick={() => flip(which)}
-						onkeydown={(e) => {
-							if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-								e.preventDefault()
-								flip()
-								tick().then(() =>
-									toggle?.querySelector<HTMLElement>("[aria-checked=true]")?.focus()
-								)
-							}
-						}}
+						class="count changes"
+						aria-expanded={listing}
+						onclick={() => (listing = !listing)}
 					>
-						{which === "draft" ? "Draft" : "Live"}
-						{#if which === "live" && !loaded}<span class="loading" aria-label="loading"></span>{/if}
+						{changes.length} change{changes.length === 1 ? "" : "s"}
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
 					</button>
-				{/each}
+				{:else}
+					<span class="count" aria-live="polite">
+						{side === "live"
+							? "What visitors see now"
+							: changes === null
+								? "Finding changes…"
+								: "Nothing new since it was published"}
+					</span>
+				{/if}
+				<span class="hint" aria-hidden="true"><kbd>L</kbd> flips</span>
+				<button type="button" class="done" onclick={leave}>Done</button>
 			</div>
-			{#if side === "draft" && changes?.length}
-				<button
-					type="button"
-					class="count changes"
-					aria-expanded={listing}
-					onclick={() => (listing = !listing)}
-				>
-					{changes.length} change{changes.length === 1 ? "" : "s"}
-					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
-				</button>
-			{:else}
-				<span class="count" aria-live="polite">
-					{side === "live"
-						? "What visitors see now"
-						: changes === null
-							? "Finding changes…"
-							: "Nothing new since it was published"}
-				</span>
-			{/if}
-			<span class="hint" aria-hidden="true"><kbd>L</kbd> flips</span>
-			<button type="button" class="done" onclick={leave}>Done</button>
 		</div>
 	{/if}
 </div>
@@ -387,14 +414,26 @@
 			opacity: 0;
 			translate: -50% 1rem;
 		}
+		/* its width follows what it says, between draft and live, rather than jumping */
+		box-sizing: content-box;
+		overflow: clip;
 		transition:
 			opacity 0.3s ease,
-			translate 0.45s var(--spring);
+			translate 0.45s var(--spring),
+			inline-size 0.35s var(--spring);
 
 		.leaving & {
 			opacity: 0;
 			translate: -50% 1rem;
 		}
+	}
+
+	.fit {
+		align-items: center;
+		display: flex;
+		flex: none;
+		gap: 0.75rem;
+		inline-size: max-content;
 	}
 
 	.switch {

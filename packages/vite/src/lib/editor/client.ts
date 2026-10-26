@@ -296,12 +296,13 @@ export const editor = {
 		watch()
 		return following
 	},
-	/** Everyone else editing this page right now, and this person's colour among them */
-	get here(): { color: string | null; people: Array<Person> } {
+	/** Everyone else editing this page right now, and this person as the others see them */
+	get here(): { color: string | null; me: Person | null; people: Array<Person> } {
 		watch()
 		const page = typeof location === "undefined" ? null : location.pathname
 		return {
 			color: presence.me?.color ?? null,
+			me: presence.people.find((p) => p.id === presence.me?.id) ?? null,
 			// whoever's followed stays listed as they move between pages, since this page goes after them
 			people: presence.people.filter(
 				(p) => p.id !== presence.me?.id && (p.page === page || p.id === following)
@@ -388,7 +389,24 @@ export function on_saved(listener: () => void) {
 }
 
 type Change = Record<string, unknown>
-type Done = { change: Change; label: string }
+type Done = { change: Change; label: string; at?: number }
+
+/**
+ * Typing saves at each pause, so one edit is several saves. Another to the same fields of the same
+ * blok, soon after, is the same edit: its undo keeps what was there before the first
+ */
+const TYPING = 30_000
+function same_edit(last: Done | undefined, back: Change) {
+	if (!last?.at || Date.now() - last.at > TYPING) return false
+	const was = last.change
+	if (was.op !== "fields" || back.op !== "fields") return false
+	if (was.story !== back.story || was.uid !== back.uid) return false
+	const keys = (change: Change) =>
+		Object.keys((change.values as object) ?? {})
+			.sort()
+			.join()
+	return keys(was) === keys(back)
+}
 
 /** What each change undoes, newest last; each undo's own reverse goes on `redos` */
 const undos: Array<Done> = []
@@ -448,8 +466,11 @@ export async function send(
 		const label = LABELS[String(change.op)]
 		if (back && label && as !== "shared") {
 			if (as === "undo") redos.push({ change: back, label })
-			else {
-				undos.push({ change: back, label })
+			else if (as === "change" && same_edit(undos.at(-1), back)) {
+				undos.at(-1)!.at = Date.now()
+				redos.length = 0
+			} else {
+				undos.push({ change: back, label, at: as === "change" ? Date.now() : undefined })
 				if (undos.length > 100) undos.shift()
 				if (as === "change") redos.length = 0
 			}

@@ -105,6 +105,9 @@
 	export function typing(at: { uid: string; field: string } | null) {
 		on_page = at
 	}
+	/** The field being changed here, which the page marks where it shows it */
+	const on_panel = (at: { uid: string; field: string } | null) =>
+		dispatchEvent(new CustomEvent("storyloco:panel-field", { detail: at }))
 	const typed_here = (key: string) => on_page?.uid === selection?.uid && on_page?.field === key
 
 	const label = (name: string) => {
@@ -1623,6 +1626,8 @@
 		class="sl-field"
 		class:on-page={typed_here(key)}
 		data-type={field.type}
+		onfocusin={() => selection && on_panel({ uid: selection.uid, field: key })}
+		onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && on_panel(null)}
 		{@attach (node) => {
 			if (typed_here(key)) node.scrollIntoView({ block: "nearest", behavior: "smooth" })
 		}}

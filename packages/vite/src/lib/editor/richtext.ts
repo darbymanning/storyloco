@@ -486,9 +486,12 @@ const DEFAULT_TOOLS = [
 	"subscript",
 ]
 
-/** The Storyblok toolbar items a field has: its own choice, none when it's customised without one, as Storyblok has it, or the default */
+/**
+ * The Storyblok toolbar items a field has: its own choice when it's made one, which can be none at
+ * all, or the default. Customised with no list saved is the default too, as Storyblok shows it
+ */
 export const tools_of = (field?: RichField) =>
-	new Set(field?.customize_toolbar ? (field.toolbar ?? []) : DEFAULT_TOOLS)
+	new Set(field?.customize_toolbar && field.toolbar ? field.toolbar : DEFAULT_TOOLS)
 
 type Tool = {
 	/** Storyblok's name for it, in a field's toolbar */
