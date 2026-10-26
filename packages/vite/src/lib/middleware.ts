@@ -13,7 +13,7 @@
  * ```ts
  * // middleware.ts
  * export { default } from "storyloco/middleware"
- * export const config = { matcher: "/((?!_app/|api/).*)" }
+ * export const config = { matcher: "/((?!_app/|api/).*)", runtime: "nodejs" }
  * ```
  *
  * Vercel reads `config` from the file itself, so that stays the site's own.
