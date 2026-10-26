@@ -414,8 +414,10 @@ const touched = new Set<number>()
 /** The page's data again, as after a save, for a change made somewhere else */
 export async function refresh() {
 	// only the browser ever saves, so the server and tests never load this
-	const { invalidateAll } = await import("$app/navigation")
-	await invalidateAll()
+	// refreshAll on SvelteKit 3, which deprecates invalidateAll; it keeps page.state too
+	const navigation = await import("$app/navigation")
+	const all = navigation as unknown as Record<string, () => Promise<void>>
+	await (all.refreshAll ?? all.invalidateAll)()
 	for (const listener of saved_listeners) listener()
 }
 

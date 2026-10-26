@@ -363,9 +363,11 @@ function place_tag() {
 
 // --- text, edited where it is
 
-/** An element's one child that matters, ignoring the comments a framework anchors its updates with */
+/** An element's one child that matters, ignoring the comments and empty text a framework anchors its updates with */
 function only_child(el: Node) {
-	const nodes = [...el.childNodes].filter((node) => node.nodeType !== Node.COMMENT_NODE)
+	const nodes = [...el.childNodes].filter(
+		(node) => node.nodeType !== Node.COMMENT_NODE && !(node instanceof Text && !node.data)
+	)
 	return nodes.length === 1 ? nodes[0] : undefined
 }
 
@@ -974,7 +976,7 @@ function peek({ story, uid }: Selection) {
 		(content && (find_blok(content, uid) as Blok | undefined))
 	if (!blok?.component) return
 	const trail: Array<{ uid: string; component: string }> = []
-	for (let at = node?.parentElement?.closest<HTMLElement>("[data-blok-c]"); at; ) {
+	for (let at = node?.parentElement?.closest<HTMLElement>("[data-blok-c]"); at;) {
 		const { id, uid: above, name } = meta(at)
 		if (Number(id) === story && above && name) trail.unshift({ uid: above, component: name })
 		at = at.parentElement?.closest<HTMLElement>("[data-blok-c]")

@@ -602,8 +602,7 @@
 			oninput={typed}
 			onkeydown={(event) => keys(event, () => post(thread))}
 			onblur={() => ((suggest = null), (menu = null))}
-			aria-label={thread ? "Reply" : "Comment"}
-		></textarea>
+			aria-label={thread ? "Reply" : "Comment"}></textarea>
 		<div class="row">
 			{#if key && !subscribed && "Notification" in globalThis}
 				<button type="button" class="quiet" onclick={notify_me}>Notify me of replies</button>

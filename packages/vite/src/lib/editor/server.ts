@@ -1,4 +1,5 @@
-import { json, redirect, type Handle, type RequestEvent } from "@sveltejs/kit"
+import { redirect, type RequestEvent } from "@sveltejs/kit"
+import type { Handle } from "../kit.js"
 import { StoryblokClient } from "../storyblok.svelte.js"
 import {
 	allowed,
@@ -275,13 +276,13 @@ async function setting(name: string) {
 	return secret?.env[name] || open?.env[name] || env(name)
 }
 
-/** The public token the site reads content with */
+/** The token the site reads content with; the environment's first, since a client reading through a proxy carries a stand-in */
 async function site_token() {
 	return (
-		StoryblokClient.current?.token ??
-		(await setting("PUBLIC_STORYBLOK_ACCESS_TOKEN")) ??
-		(await setting("STORYBLOK_ACCESS_TOKEN")) ??
-		(await setting("PUBLIC_STORYBLOK_TOKEN"))
+		(await setting("PUBLIC_STORYBLOK_ACCESS_TOKEN")) ||
+		(await setting("STORYBLOK_ACCESS_TOKEN")) ||
+		(await setting("PUBLIC_STORYBLOK_TOKEN")) ||
+		StoryblokClient.current?.token
 	)
 }
 
@@ -436,21 +437,25 @@ async function route(
 					const expired = cookies.serialize(guest_name, "", { ...cookie, maxAge: 0 })
 					return new Response(null, { status: 204, headers: { "set-cookie": expired } })
 				}
-				return json(await as_guest(body, { moxy, handle: guest_handle, origin: url.origin }))
+				return Response.json(
+					await as_guest(body, { moxy, handle: guest_handle, origin: url.origin })
+				)
 			} catch (e) {
-				if (e instanceof EditorError) return json({ message: e.message }, { status: e.status })
+				if (e instanceof EditorError)
+					return Response.json({ message: e.message }, { status: e.status })
 				throw e
 			}
 		}
-		if (!editor) return json({ message: "Sign in to edit" }, { status: 401 })
+		if (!editor) return Response.json({ message: "Sign in to edit" }, { status: 401 })
 		try {
 			const body = await request.json()
 			const run = () => operate(editor, body, { moxy, origin: url.origin })
-			return json(
+			return Response.json(
 				CHANGES.has(body?.op) && id(body.story) ? await editor.locked(body.story, run) : await run()
 			)
 		} catch (e) {
-			if (e instanceof EditorError) return json({ message: e.message }, { status: e.status })
+			if (e instanceof EditorError)
+				return Response.json({ message: e.message }, { status: e.status })
 			throw e
 		}
 	}

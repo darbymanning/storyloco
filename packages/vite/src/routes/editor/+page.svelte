@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { attrs, StoryblokClient } from "$lib/storyblok.svelte.js"
-	import { EditBar } from "$lib/editor/index.js"
+	import { attrs, StoryblokClient } from "../../lib/storyblok.svelte.js"
+	import { EditBar } from "../../lib/editor/index.js"
 
 	let { data } = $props()
 

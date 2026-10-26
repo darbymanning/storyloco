@@ -1,6 +1,5 @@
-import type { Handle } from "@sveltejs/kit"
+import type { Handle } from "./kit.js"
 import type { Version } from "./storyblok.svelte.js"
-import { dev } from "$app/environment"
 
 export { handle_redirects as redirects } from "./redirects/handle.js"
 
@@ -33,7 +32,7 @@ export function editor_version(event: { locals: object; url: URL }): Version | n
 export const version: Handle = async ({ event, resolve }) => {
 	event.locals.version =
 		editor_version(event) ??
-		(dev || event.url.searchParams.has("_storyblok") ? "draft" : "published")
+		(import.meta.env.DEV || event.url.searchParams.has("_storyblok") ? "draft" : "published")
 
 	return await resolve(event)
 }

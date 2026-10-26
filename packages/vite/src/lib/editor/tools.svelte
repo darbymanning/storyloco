@@ -862,8 +862,7 @@
 											maxlength="1000"
 											aria-label="A note for them"
 											placeholder="A note for them, if it helps"
-											bind:value={invite_note}
-										></textarea>
+											bind:value={invite_note}></textarea>
 										<div class="actions">
 											<button type="submit" class="primary" disabled={busy}>
 												{#if busy}{@render Icon(ICONS.spin, "spin")}{/if}
@@ -1154,8 +1153,7 @@
 											rows="3"
 											maxlength="1000"
 											placeholder="Anything you'd like them to look at?"
-											bind:value={note}
-										></textarea>
+											bind:value={note}></textarea>
 									</label>
 									<div class="actions">
 										<button type="button" class="ghost" onclick={close}>Cancel</button>

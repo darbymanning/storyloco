@@ -827,8 +827,7 @@
 			focused = null
 			flush()
 		}}
-		oninput={(e) => change(key, e.currentTarget.value, 700)}
-	></textarea>
+		oninput={(e) => change(key, e.currentTarget.value, 700)}></textarea>
 {/snippet}
 
 {#snippet Number_(key: string, field: Field, id: string)}

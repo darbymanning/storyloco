@@ -1,4 +1,4 @@
-import { StoryblokClient } from "$lib/storyblok.svelte.js"
+import { StoryblokClient } from "../../lib/storyblok.svelte.js"
 import type { ISbStoryData } from "@storyblok/svelte"
 
 // A story to try in-place editing on: run with DEMO_STORYBLOK_TOKEN set to a space's preview token, and the

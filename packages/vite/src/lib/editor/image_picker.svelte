@@ -250,8 +250,7 @@
 					<textarea
 						rows="3"
 						bind:value={alt}
-						placeholder="What the image shows, for people who can’t see it"
-					></textarea>
+						placeholder="What the image shows, for people who can’t see it"></textarea>
 				</label>
 				{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
 					<p class="hint">

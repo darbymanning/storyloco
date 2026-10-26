@@ -115,6 +115,19 @@ API methods await it, so you never call it on the server. `components` takes the
 `import.meta.glob`: Vite has to see the literal pattern to rewrite it, so the glob has to stay
 at your call site rather than move into the client.
 
+`api` goes to the SDK as its `apiOptions`. To keep the token off the browser, read through a
+proxy of your own that adds it, and give the client a stand-in:
+
+```typescript
+export const client = new StoryblokClient({
+	token: 'proxy',
+	// the SDK wants a whole URL
+	api: { endpoint: `${browser ? location.origin : 'http://localhost'}/api/storyblok` }
+})
+```
+
+The editor then takes the real token from `STORYBLOK_ACCESS_TOKEN`.
+
 `client.handle_error` is on the instance, so `.catch(client.handle_error)` works without
 wrapping anything.
 

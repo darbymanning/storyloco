@@ -84,7 +84,7 @@ function showing(source: Element, text: string, block = false) {
 	const fits = (el: Element) =>
 		squash(el.textContent) === text && (!block || getComputedStyle(el).display !== "inline")
 	let found = [...source.querySelectorAll("*")].find(fits)
-	for (let only = found; only?.children.length === 1; ) {
+	for (let only = found; only?.children.length === 1;) {
 		only = only.firstElementChild!
 		if (!fits(only)) break
 		found = only
@@ -1334,7 +1334,7 @@ export function edit_in_place(
 	let mount = host
 	/** What holds the text's own blocks, the paragraphs and headings */
 	let source: Element = element
-	for (let from: Element = element; from.children.length === 1; ) {
+	for (let from: Element = element; from.children.length === 1;) {
 		const only = from.firstElementChild!
 		// a heading or paragraph that holds the text's own blocks is a wrapper, like `<h1 class="title">`
 		// round the paragraphs, so it's copied for the styles it scopes; one that doesn't is the text
