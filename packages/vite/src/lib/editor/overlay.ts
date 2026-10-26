@@ -283,7 +283,8 @@ const rich_fields = (blok: Blok) =>
 const loose = (text: string) => text.replace(/\s+/g, " ").trim()
 
 /** The one field among these bloks showing exactly this text, if only one does */
-function match(text: string, candidates: Iterable<Blok>, story: number): Source | undefined {
+/** Every field among these bloks showing exactly this text */
+function matches(text: string, candidates: Iterable<Blok>, story: number) {
 	const found: Array<Source> = []
 	for (const blok of candidates)
 		for (const [key, value] of Object.entries(blok)) {
@@ -297,7 +298,40 @@ function match(text: string, candidates: Iterable<Blok>, story: number): Source 
 				max: Number(field.max_length) || undefined,
 			})
 		}
-	return found.length === 1 ? found[0] : undefined
+	return found
+}
+
+/**
+ * Where on the page this text shows, in the order it does: each innermost element showing just
+ * it, and text set straight into an element beside others
+ */
+function showing(scope: Element, text: string) {
+	const out: Array<Node> = []
+	const walker = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT)
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		if (node instanceof Element) {
+			if (ours(node) || loose(node.textContent ?? "") !== text) continue
+			if (![...node.children].some((child) => loose(child.textContent ?? "") === text))
+				out.push(node)
+		} else if (node instanceof Text && loose(node.data) === text) {
+			if (loose(node.parentElement?.textContent ?? "") !== text) out.push(node)
+		}
+	}
+	return out
+}
+
+/**
+ * The one field showing this text, or, when several hold the same and the page shows each once,
+ * the one at the same place among them as `shown` is among the page's: fields in the content's
+ * order, as a template mostly shows them
+ */
+function match(text: string, candidates: Iterable<Blok>, story: number, shown?: Node) {
+	const found = matches(text, candidates, story)
+	if (found.length === 1) return found[0]
+	if (found.length < 2 || !shown) return
+	const scope = block_of(shown instanceof Element ? shown : shown.parentElement) ?? document.body
+	const places = showing(scope, text)
+	return places.length === found.length ? found[places.indexOf(shown)] : undefined
 }
 
 /** Where text inside a link to another story comes from: its name, or one of its fields */
@@ -307,24 +341,31 @@ function linked_source(text: string, story: Linked): Source | undefined {
 }
 
 /** Where this text comes from: its blok's field first, then a story the link around it goes to, then the page's own story */
-async function source_of(node: HTMLElement, text: string): Promise<Source | undefined> {
+async function source_of(
+	node: HTMLElement,
+	text: string,
+	/** what shows the text, when it's not `node` itself, like loose text in it */
+	shown: Node = node
+): Promise<Source | undefined> {
 	await load_schema()
 	const block = block_of(node)
 	const blok = await blok_for(block)
 	const own =
 		blok &&
 		block &&
-		(match(text, [blok], Number(meta(block).id)) ??
-			match(text, inner_bloks(blok), Number(meta(block).id)))
+		(match(text, [blok], Number(meta(block).id), shown) ??
+			match(text, inner_bloks(blok), Number(meta(block).id), shown))
 	if (own) return own
 	const story = await story_at(node.closest("a[href]"))
 	if (story) return linked_source(text, story)
-	// outside every block, a template showing the page's own fields, under names of its own
+	// outside every block, or in the page's own: a template showing the page's fields under names
+	// of its own, or the page's name, like its title
 	const page = editor.story
-	const root = !block && page?.uid ? page_blok(page.uid) : undefined
+	const at_root = !block || (page?.uid !== undefined && meta(block).uid === page.uid)
+	const root = at_root && page?.uid ? page_blok(page.uid) : undefined
 	if (!page || !root) return
 	if (loose(page.name) === text) return { story: page.id, name: true, max: 255 }
-	return match(text, [root], page.id) ?? match(text, inner_bloks(root), page.id)
+	return match(text, [root], page.id, shown) ?? match(text, inner_bloks(root), page.id, shown)
 }
 
 // --- how it all looks on the page
@@ -346,6 +387,7 @@ const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-r
 /* Outside the layer, so a site's reset can't unpin our own bits */
 const OURS = `button.storyloco-replace{position:fixed;z-index:2147483000;white-space:nowrap;display:flex;align-items:center;gap:.375rem;padding:.375rem .75rem;border:0;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2);animation:storyloco-in .16s ease-out}
 button.storyloco-replace[hidden]{display:none}
+[data-storyloco=field-ring]{position:fixed;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
 button.storyloco-replace:focus-visible{outline:2px solid #fff;outline-offset:-4px}
 [data-storyloco=tag]{position:fixed;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
 [data-storyloco=tag][hidden]{display:block;opacity:0}
@@ -712,11 +754,15 @@ async function edit_loose(event: PointerEvent) {
 	const text = caret?.node
 	if (!(text instanceof Text) || !text.parentElement) return
 	const parent = text.parentElement
-	if (text_child(parent) || inline_run(parent) || ours(parent)) return
-	if (parent.closest("button, a[href], [data-field], [data-rich]")) return
+	// its own text, or a run of parts that is a field, is typed in where it is
+	if (text_child(parent) || wired.has(parent) || ours(parent)) return
+	if (parent.closest("a[href], [data-field], [data-rich]")) return
 	const kept = text.data
 	const value = loose(kept)
-	const source = value ? await source_of(parent, value) : undefined
+	const source = value ? await source_of(parent, value, text) : undefined
+	// found before the press is let go, so its click edits rather than presses a button round it
+	const button = parent.closest("button")
+	if (source && button) claimed.add(button)
 	await released
 	if (!source || !active || !text.isConnected || text.data !== kept) return
 	const stand = document.createElement("span")
@@ -750,6 +796,9 @@ async function edit_loose(event: PointerEvent) {
 	if (spot) getSelection()?.collapse(spot.node, spot.offset)
 }
 
+/** Buttons whose text a press is about to edit, so their click doesn't press them too */
+const claimed = new WeakSet<Element>()
+
 /** A press's look for loose text to type in, which its click waits for before selecting */
 let loosening: Promise<void> | null = null
 
@@ -757,7 +806,7 @@ let loosening: Promise<void> | null = null
 function try_wire(node: HTMLElement) {
 	const first = text_child(node)
 	const run = !first && inline_run(node)
-	if (wired.has(node) || (!first && !run) || node.closest("button") || ours(node)) return
+	if (wired.has(node) || (!first && !run) || ours(node)) return
 	// a run whose parts are already someone's text is theirs
 	if (run && [...wired.keys()].some((other) => node.contains(other))) return
 	const text = loose(first ? first.data : (node.textContent ?? ""))
@@ -799,18 +848,26 @@ async function mark_riches(block: HTMLElement) {
 	const fields = blok ? rich_fields(blok) : []
 	if (!fields.length) return
 	const wanted = fields.map(({ value, ...rich }) => [rich_compact(value), rich] as const)
+	// the outermost element showing each text, in order, so the same text in several fields pairs
+	// up with where it shows, as `match` does
+	const shown = new Map<string, Array<HTMLElement>>()
 	let inside: Element | null = null
-	for (const el of block.querySelectorAll("*")) {
+	for (const el of block.querySelectorAll<HTMLElement>("*")) {
 		if (inside?.contains(el) || block_of(el) !== block) continue
 		const text = (el.textContent ?? "").replace(/\s+/g, "")
-		if (!text) continue
-		// only one field showing it, or which one is being edited is a guess
-		const found = wanted.filter(([compact]) => shows_rich(text, compact))
-		const rich = found.length === 1 ? found[0][1] : undefined
-		if (!rich || el.querySelector("[data-blok-c]")) continue
-		riches.set(el, rich)
-		;(el as HTMLElement).dataset.rich = rich.field
+		if (!text || el.querySelector("[data-blok-c]")) continue
+		const compact = wanted.find(([want]) => shows_rich(text, want))?.[0]
+		if (compact === undefined) continue
+		shown.set(compact, [...(shown.get(compact) ?? []), el])
 		inside = el
+	}
+	for (const [compact, els] of shown) {
+		const owners = wanted.filter(([want]) => want === compact).map(([, rich]) => rich)
+		if (owners.length !== els.length) continue
+		els.forEach((el, i) => {
+			riches.set(el, owners[i])
+			el.dataset.rich = owners[i].field
+		})
 	}
 }
 
@@ -1340,7 +1397,10 @@ function over(event: PointerEvent) {
 
 	if (!editing_rich) rich_at(el)
 
-	if (event.type === "pointerdown" && !wired.has(el as HTMLElement)) loosening = edit_loose(event)
+	// a held key means press what's there, as it follows a link
+	const held = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+	if (event.type === "pointerdown" && !held && !wired.has(el as HTMLElement))
+		loosening = edit_loose(event)
 	const node = holder(el)
 	const run = run_at(el)
 	if (run && run !== node) try_wire(run)
@@ -1362,6 +1422,15 @@ function click(event: MouseEvent) {
 	if (link && block.contains(link)) {
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 		event.preventDefault()
+	}
+	// so does a button's text, which is edited rather than pressed, like a tab's label
+	const button = el.closest("button")
+	const editing_label = el.closest("[data-field], [data-rich]") || (button && claimed.has(button))
+	if (button && block.contains(button) && editing_label) {
+		claimed.delete(button)
+		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+		event.preventDefault()
+		event.stopPropagation()
 	}
 	const rich = el.closest<HTMLElement>("[data-rich]")
 	if (rich && riches.has(rich)) {
@@ -1551,12 +1620,54 @@ function shown_at(uid: string, field: string) {
 	return found
 }
 
+/** Text set straight into an element beside others, showing a field: no element of its own to mark */
+function loose_text(uid: string, field: string) {
+	const value = loose(
+		text_of((page_blok(uid) as Record<string, unknown> | undefined)?.[field]) ?? ""
+	)
+	if (!value) return null
+	const walker = document.createTreeWalker(element_of(uid) ?? document.body, NodeFilter.SHOW_TEXT)
+	for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null)
+		if (loose(node.data) === value && node.parentElement && !ours(node.parentElement)) return node
+	return null
+}
+
+/** An outline drawn round loose text, kept on it as the page scrolls */
+let ring: { el: HTMLElement; place(): void } | null = null
+function ring_round(text: Text) {
+	const el = document.createElement("div")
+	el.dataset.storyloco = "field-ring"
+	const range = document.createRange()
+	range.selectNodeContents(text)
+	const place = () => {
+		const box = range.getBoundingClientRect()
+		Object.assign(el.style, {
+			top: `${box.top - 4}px`,
+			left: `${box.left - 4}px`,
+			width: `${box.width + 8}px`,
+			height: `${box.height + 8}px`,
+		})
+	}
+	place()
+	document.body.append(el)
+	addEventListener("scroll", place, { passive: true })
+	ring = { el, place }
+}
+
+function unring() {
+	if (!ring) return
+	removeEventListener("scroll", ring.place)
+	ring.el.remove()
+	ring = null
+}
+
 let marking = 0
 function mark_field(event: Event) {
 	const at = (event as CustomEvent<{ uid: string; field: string } | null>).detail
 	const mark = ++marking
 	for (const node of document.querySelectorAll("[data-storyloco-field]"))
 		node.removeAttribute("data-storyloco-field")
+	unring()
 	if (!at || !active) return
 	// its block's text is found as it's first hovered; for this, find it now
 	const block = element_of(at.uid)
@@ -1565,7 +1676,11 @@ function mark_field(event: Event) {
 		if (mark !== marking) return
 		const found = shown_at(at.uid, at.field)
 		for (const node of found) node.setAttribute("data-storyloco-field", "")
-		found[0]?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+		if (found[0]) return found[0].scrollIntoView({ block: "nearest", behavior: "smooth" })
+		const text = loose_text(at.uid, at.field)
+		if (!text) return
+		text.parentElement!.scrollIntoView({ block: "nearest", behavior: "smooth" })
+		ring_round(text)
 	}, 150)
 }
 

@@ -505,7 +505,7 @@
 		const x = at.x + 24 + width > right ? Math.max(at.x - width - 16, 16) : at.x + 24
 		// beside the pin, lifted to stay on screen near the bottom, and going off screen with it either way
 		const y = Math.min(at.y - 16, Math.max(innerHeight - 200, at.y - 184))
-		return `translate: ${x}px ${y}px; width: ${width}px`
+		return `translate: ${x + scrollX}px ${y + scrollY}px; width: ${width}px`
 	}
 
 	/** Open the thread a notification's link names, from the push or the bell, and take it out of the address */
@@ -671,108 +671,6 @@
 			{/each}
 		</ul>
 	{/if}
-	{#each threads as { root, replies } (root.id)}
-		{@const spot = point(root)}
-		{#if spot}
-			{@const at = shown_at(root.id, spot)}
-			<button
-				type="button"
-				class={[
-					"pin",
-					{
-						open: opened === root.id,
-						moving: moving?.id === root.id,
-						lit: lit === root.id,
-						resolved: !!root.resolved_at,
-					},
-				]}
-				class:movable={may_move(root)}
-				style:translate="{at.x}px {at.y}px"
-				style:--c={color_of(root.user_id) ?? "var(--accent)"}
-				aria-label="Comment from {root.user_name ?? 'someone'}{replies.length
-					? `, ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`
-					: ''}"
-				onpointerdown={(e) => may_move(root) && grab(e, root.id, spot)}
-				onclick={() => {
-					if (dragged) return
-					opened = opened === root.id ? null : root.id
-					draft = null
-					text = ""
-				}}
-			>
-				<span class="face"><Face name={root.user_name} {...face_of(root.user_id)} /></span>
-				{#if replies.length}<span class="count">{replies.length + 1}</span>{/if}
-			</button>
-		{/if}
-	{/each}
-
-	{#if draft}
-		{@const spot = point(draft)}
-		{#if spot}
-			{@const at = shown_at(null, spot)}
-			<span
-				class={["pin new-pin movable", { moving: moving?.id === null }]}
-				style:translate="{at.x}px {at.y}px"
-				aria-hidden="true"
-				title="Drag to move"
-				onpointerdown={(e) => grab(e, null, spot)}>+</span
-			>
-			<div class="card new" role="dialog" aria-label="New comment" style={card_at(at)}>
-				{@render Writer()}
-				{#if problem}<p class="problem">{problem}</p>{/if}
-			</div>
-		{/if}
-	{/if}
-
-	{#if open_thread}
-		{@const spot = point(open_thread.root)}
-		{@const at = spot && shown_at(open_thread.root.id, spot)}
-		<div class="card" role="dialog" aria-label="Comments" style={card_at(at)}>
-			<div class="head">
-				<span>Comments</span>
-				{#if !editor.guest}
-					{#if open_thread.root.resolved_at}
-						<button type="button" class="quiet" onclick={() => resolve(open_thread.root.id, false)}
-							>Reopen</button
-						>
-					{:else}
-						<button type="button" class="quiet" onclick={() => resolve(open_thread.root.id)}
-							>Resolve</button
-						>
-					{/if}
-				{/if}
-				<button type="button" class="close" aria-label="Close" onclick={() => (opened = null)}>
-					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-				</button>
-			</div>
-			<ol class="list">
-				{#each [open_thread.root, ...open_thread.replies] as comment (comment.id)}
-					<li>
-						<span class="avatar" style:--c={color_of(comment.user_id) ?? "var(--muted)"}>
-							<Face name={comment.user_name} {...face_of(comment.user_id)} />
-						</span>
-						<div>
-							<p class="meta">
-								<b>{comment.user_name ?? "Someone"}</b>
-								<span>{when(comment.created_at)}</span>
-								{#if comment.user_id === me}
-									<button type="button" class="quiet small" onclick={() => remove(comment.id)}>
-										Delete
-									</button>
-								{/if}
-							</p>
-							<p class="body">
-								{#each pieces(comment) as piece, i (i)}{#if piece.mention}<mark>{piece.text}</mark
-										>{:else}{piece.text}{/if}{/each}
-							</p>
-						</div>
-					</li>
-				{/each}
-			</ol>
-			{@render Writer(open_thread.root.id)}
-			{#if problem}<p class="problem">{problem}</p>{/if}
-		</div>
-	{/if}
 
 	{#if listing}
 		<aside
@@ -835,8 +733,117 @@
 	{/if}
 </div>
 
+<!-- on the page itself, see .on-page -->
+<div class="on-page" data-storyloco="comments">
+	{#each threads as { root, replies } (root.id)}
+		{@const spot = point(root)}
+		{#if spot}
+			{@const at = shown_at(root.id, spot)}
+			<button
+				type="button"
+				class={[
+					"pin",
+					{
+						open: opened === root.id,
+						moving: moving?.id === root.id,
+						lit: lit === root.id,
+						resolved: !!root.resolved_at,
+					},
+				]}
+				class:movable={may_move(root)}
+				style:translate="{at.x + scrollX}px {at.y + scrollY}px"
+				style:--c={color_of(root.user_id) ?? "var(--accent)"}
+				aria-label="Comment from {root.user_name ?? 'someone'}{replies.length
+					? `, ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`
+					: ''}"
+				onpointerdown={(e) => may_move(root) && grab(e, root.id, spot)}
+				onclick={() => {
+					if (dragged) return
+					opened = opened === root.id ? null : root.id
+					draft = null
+					text = ""
+				}}
+			>
+				<span class="face"><Face name={root.user_name} {...face_of(root.user_id)} /></span>
+				{#if replies.length}<span class="count">{replies.length + 1}</span>{/if}
+			</button>
+		{/if}
+	{/each}
+
+	{#if draft}
+		{@const spot = point(draft)}
+		{#if spot}
+			{@const at = shown_at(null, spot)}
+			<span
+				class={["pin new-pin movable", { moving: moving?.id === null }]}
+				style:translate="{at.x + scrollX}px {at.y + scrollY}px"
+				aria-hidden="true"
+				title="Drag to move"
+				onpointerdown={(e) => grab(e, null, spot)}>+</span
+			>
+			<div class="card new" role="dialog" aria-label="New comment" style={card_at(at)}>
+				{@render Writer()}
+				{#if problem}<p class="problem">{problem}</p>{/if}
+			</div>
+		{/if}
+	{/if}
+
+	{#if open_thread}
+		{@const spot = point(open_thread.root)}
+		{@const at = spot && shown_at(open_thread.root.id, spot)}
+		<div class="card" role="dialog" aria-label="Comments" style={card_at(at)}>
+			<div class="head">
+				<span>Comments</span>
+				{#if !editor.guest}
+					{#if open_thread.root.resolved_at}
+						<button type="button" class="quiet" onclick={() => resolve(open_thread.root.id, false)}
+							>Reopen</button
+						>
+					{:else}
+						<button type="button" class="quiet" onclick={() => resolve(open_thread.root.id)}
+							>Resolve</button
+						>
+					{/if}
+				{/if}
+				<button type="button" class="close" aria-label="Close" onclick={() => (opened = null)}>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+				</button>
+			</div>
+			<ol class="list">
+				{#each [open_thread.root, ...open_thread.replies] as comment (comment.id)}
+					<li>
+						<span class="avatar" style:--c={color_of(comment.user_id) ?? "var(--muted)"}>
+							<Face name={comment.user_name} {...face_of(comment.user_id)} />
+						</span>
+						<div>
+							<p class="meta">
+								<b>{comment.user_name ?? "Someone"}</b>
+								<span>{when(comment.created_at)}</span>
+								{#if comment.user_id === me}
+									<button type="button" class="quiet small" onclick={() => remove(comment.id)}>
+										Delete
+									</button>
+								{/if}
+							</p>
+							<p class="body">
+								{#each pieces(comment) as piece, i (i)}{#if piece.mention}<mark>{piece.text}</mark
+										>{:else}{piece.text}{/if}{/each}
+							</p>
+						</div>
+					</li>
+				{/each}
+			</ol>
+			{@render Writer(open_thread.root.id)}
+			{#if problem}<p class="problem">{problem}</p>{/if}
+		</div>
+	{/if}
+</div>
+
 <style>
-	.comments {
+	/* the panel and menus, fixed to the window; pins and their cards on the page, so scrolling
+	   carries them with it rather than them catching up after */
+	.comments,
+	.on-page {
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
 
@@ -851,14 +858,23 @@
 		font:
 			500 0.8125rem/1.4 system-ui,
 			sans-serif;
-		inset: 0;
 		pointer-events: none;
-		position: fixed;
 		z-index: 2147482995;
 
 		& > * {
 			pointer-events: auto;
 		}
+	}
+
+	.comments {
+		inset: 0;
+		position: fixed;
+	}
+
+	.on-page {
+		inset-block-start: 0;
+		inset-inline-start: 0;
+		position: absolute;
 	}
 
 	:global(html[data-storyloco-commenting]),
