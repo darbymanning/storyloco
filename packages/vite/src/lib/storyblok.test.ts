@@ -73,6 +73,13 @@ describe("href", () => {
 		expect(href({ linktype: "story", cached_url: "old", story: { url: "new/" } })).toBe("/new/")
 	})
 
+	test("a story resolved to the root links to it", () => {
+		expect(href({ linktype: "story", cached_url: "home", story: { url: "/" } })).toBe("/")
+		expect(href({ linktype: "story", cached_url: "home", story: { url: "/" }, anchor: "a" })).toBe(
+			"/#a"
+		)
+	})
+
 	test("a field that links nowhere has no href", () => {
 		expect(href(undefined)).toBeUndefined()
 		expect(href({ linktype: "story", cached_url: "" })).toBeUndefined()

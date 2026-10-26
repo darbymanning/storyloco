@@ -357,9 +357,9 @@ export function href(link?: Link): string | undefined {
 	}
 	if (link.linktype !== "story") return link.url || link.cached_url || undefined
 
-	const path = (link.story?.url || link.cached_url || "").replace(/^\/+/, "")
+	const path = link.story?.url || link.cached_url
 	const anchor = link.anchor ? `#${link.anchor.replace(/^#/, "")}` : ""
-	return path ? `/${path}${anchor}` : anchor || undefined
+	return path ? `/${path.replace(/^\/+/, "")}${anchor}` : anchor || undefined
 }
 
 /**
