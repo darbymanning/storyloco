@@ -79,16 +79,21 @@ type Source = ({ story: number; uid: string; field: string } | { story: number; 
 	max?: number
 }
 
-const meta = (node: Element) => {
-	try {
-		return JSON.parse((node as HTMLElement).dataset.blokC ?? "{}") as {
-			id?: string | number
-			uid?: string
-			name?: string
+type Meta = { id?: string | number; uid?: string; name?: string }
+/** Parsed once each: it's read for every block, over and over, as the page is looked through */
+const metas = new Map<string, Meta>()
+const meta = (node: Element): Meta => {
+	const raw = (node as HTMLElement).dataset.blokC ?? "{}"
+	let found = metas.get(raw)
+	if (!found) {
+		try {
+			found = JSON.parse(raw) as Meta
+		} catch {
+			found = {}
 		}
-	} catch {
-		return {}
+		metas.set(raw, found)
 	}
+	return found
 }
 
 const block_of = (el: Element | null) => el?.closest<HTMLElement>("[data-blok-c]") ?? null
@@ -119,9 +124,21 @@ function parent_of(target: Target) {
 }
 
 /** The element showing the blok with this `_uid`, once the page has caught up with a change */
+/** Each block's element by its `_uid`, gathered once a frame rather than on every look-up */
+let by_uid: Map<string, HTMLElement> | null = null
 export function element_of(uid: string) {
-	for (const node of document.querySelectorAll<HTMLElement>("[data-blok-c]"))
-		if (meta(node).uid === uid) return node
+	let node = by_uid?.get(uid)
+	if (node?.isConnected) return node
+	if (!by_uid || node) {
+		by_uid = new Map()
+		for (const el of document.querySelectorAll<HTMLElement>("[data-blok-c]")) {
+			const at = meta(el).uid
+			if (at && !by_uid.has(at)) by_uid.set(at, el)
+		}
+		requestAnimationFrame(() => (by_uid = null))
+		node = by_uid.get(uid)
+	}
+	return node
 }
 
 export const find = (uid: string) => {
@@ -382,17 +399,40 @@ function linked_source(text: string, story: Linked): Source | undefined {
  * from, even when which of several identical bodies it is can't be told
  */
 function in_rich(shown: Node, owners: Array<Blok | undefined>) {
-	const compacts = owners.flatMap((owner) =>
-		owner ? rich_fields(owner).map(({ value }) => rich_compact(value)) : []
-	)
+	const compacts = owners.flatMap((owner) => (owner ? riches_of(owner) : []))
 	if (!compacts.length) return false
-	const own = (shown.textContent ?? "").replace(/\s+/g, "")
+	const own = compact_text(shown)
 	for (let at = shown.parentElement; at && !at.hasAttribute("data-blok-c"); at = at.parentElement) {
-		const text = (at.textContent ?? "").replace(/\s+/g, "")
-		if (text !== own && compacts.some((compact) => compact && shows_rich(text, compact)))
-			return true
+		const text = compact_text(at)
+		if (text !== own && compacts.some((compact) => shows_rich(text, compact))) return true
 	}
 	return false
+}
+
+/*
+ * A whole page's text is looked through for every piece of it as a block is first hovered, so
+ * what that asks again and again is kept: a blok's rich text for a moment, as its content only
+ * changes with a save, and each element's text, spaces aside, for the frame
+ */
+const rich_cache = new WeakMap<object, { at: number; compacts: Array<string> }>()
+function riches_of(blok: Blok) {
+	const kept = rich_cache.get(blok)
+	if (kept && performance.now() - kept.at < 1000) return kept.compacts
+	const compacts = rich_fields(blok)
+		.map(({ value }) => rich_compact(value))
+		.filter(Boolean)
+	rich_cache.set(blok, { at: performance.now(), compacts })
+	return compacts
+}
+
+let texts = new WeakMap<Node, string>()
+let texts_frame = 0
+function compact_text(node: Node) {
+	if (!texts_frame)
+		texts_frame = requestAnimationFrame(() => ((texts = new WeakMap()), (texts_frame = 0)))
+	let text = texts.get(node)
+	if (text === undefined) texts.set(node, (text = (node.textContent ?? "").replace(/\s+/g, "")))
+	return text
 }
 
 async function source_of(
