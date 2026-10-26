@@ -1736,8 +1736,9 @@ export function create_editor({
 				)
 			},
 		})
-		// a guest's draft is for them: kept out of caches and search engines
-		if (guest)
+		// an editor's or guest's page is theirs, drafts and all: kept out of caches, whatever key
+		// the site's middleware moved them onto, and out of search engines
+		if (guest || editor)
 			try {
 				response.headers.set("cache-control", "private, no-store")
 				response.headers.set("x-robots-tag", "noindex, nofollow")

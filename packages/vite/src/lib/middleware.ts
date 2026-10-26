@@ -5,8 +5,9 @@
  *
  * A CDN answers a cached page before any of the site's own code runs, and doesn't vary it on
  * cookies, so an editor would be handed the page visitors see. Middleware runs first, and moving
- * the request onto `?_storyloco=1` puts it on a key nothing is ever cached under. Nothing here
- * imports anything, so it bundles into middleware as it is.
+ * the request onto `?_storyloco=1` puts it on a key nothing is ever cached under, and a Storyblok
+ * preview onto `?_storyblok=1`. Nothing here imports anything, so it bundles into middleware as
+ * it is.
  *
  * @example
  * ```ts
@@ -53,6 +54,13 @@ export type Key = { cookies: Array<RegExp>; param: string }
 export const EDITORS: Key = { cookies: [EDITOR_COOKIE], param: UNCACHED }
 
 /**
+ * A Storyblok preview, onto `?_storyblok`, which the `version` hook reads as it does inside the
+ * visual editor; kept in step with its `PREVIEW_COOKIE`. One already there passes through, which
+ * is what lets `?_storyblok=off` reach the hook and end it.
+ */
+export const PREVIEW: Key = { cookies: [/^storyblok_preview$/], param: "_storyblok" }
+
+/**
  * A whole middleware: the first of `keys` whose cookie a request carries moves it onto its
  * parameter, and every other request passes through. It answers the way Vercel's `rewrite` and
  * `next` do, without needing them.
@@ -65,7 +73,7 @@ export const EDITORS: Key = { cookies: [EDITOR_COOKIE], param: UNCACHED }
  * ])
  * ```
  */
-export function middleware(keys: Array<Key> = [EDITORS]) {
+export function middleware(keys: Array<Key> = [PREVIEW, EDITORS]) {
 	return (request: Request) => {
 		const have = names(request)
 		const key = keys.find(({ cookies }) => have.some((name) => cookies.some((c) => c.test(name))))

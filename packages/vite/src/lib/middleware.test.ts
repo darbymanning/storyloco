@@ -35,6 +35,13 @@ describe("middleware", () => {
 		return response.headers.get("x-middleware-rewrite") ?? response.headers.get("x-middleware-next")
 	}
 
+	test("a Storyblok preview onto its own key before an editor's, and ?_storyblok=off through", () => {
+		expect(run(handle, "storyblok_preview=1; sl_editor=x")).toBe(
+			"https://example.com/about?_storyblok=1"
+		)
+		expect(run(handle, "storyblok_preview=1", "https://example.com/about?_storyblok=off")).toBe("1")
+	})
+
 	test("editors onto their own key, everyone else through", () => {
 		expect(run(handle, "sl_editor_1=x")).toBe("https://example.com/about?_storyloco=1")
 		expect(run(handle)).toBe("1")

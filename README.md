@@ -385,18 +385,22 @@ for the toast and the format bar, or build a bar of your own from `editor`, `set
 `publish`, `signin` and `signout`.
 
 A CDN in front of the site answers editors with the page it cached for visitors, before any of
-the site's code runs. Routing middleware runs first, and `storyloco/middleware` moves an editor
-onto a key of their own:
+the site's code runs. Routing middleware runs first, and storyloco's moves an editor onto a key of
+their own, and a Storyblok preview onto `?_storyblok`. On Vercel it needs no code of the site's,
+just `vercel.json`:
 
-```ts
-// middleware.ts
-export { default } from 'storyloco/middleware'
-export const config = { matcher: '/((?!_app/|api/).*)' }
+```json
+"proxy": {
+	"entrypoint": "node_modules/storyloco/middleware.js",
+	"matcher": "/((?!_app/|api/).*)"
+}
 ```
 
-`middleware(keys)` takes other cookies too, the first a request has winning: say a shop's
-customers, `[{ cookies: [/^session$/, EDITOR_COOKIE], param: '_signed_in' }]`. Never cache
-a response for a key's parameter.
+The `editor` hook keeps an editor's responses out of caches, and the `version` hook keeps a
+preview going on a cookie. For cookies of the site's own, like a shop's customers, write a
+`middleware.ts` instead: `export default middleware([{ cookies: [/^session$/, EDITOR_COOKIE],
+param: '_signed_in' }])`, the first key a request has winning, and keep its parameter's responses
+out of caches yourself.
 
 `bun run smoke <site url>…` (in `packages/vite`) checks each site loads and, signed in, that a
 click on a block opens its settings. Sign in once per site with `--signin`, which opens a
