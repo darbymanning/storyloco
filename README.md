@@ -669,6 +669,13 @@ MIT License - feel free to use this however you want, you absolute legend! 🎯
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+### Releasing
+
+A release is a merge. Label a PR `release:patch`, `release:minor` or `release:major` before merging
+it, and the Release workflow bumps the version, checks and builds it, commits "Release X.Y.Z: <the
+PR's title>" to main with its tag, and publishes it to npm through trusted publishing, with no
+token or login. To release main as it stands, run Actions → Release → Run workflow.
+
 ---
 
 Built with ❤️ and a lot of swearing by the Storyloco team
