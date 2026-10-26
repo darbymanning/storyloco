@@ -49,7 +49,14 @@ type Tools = {
 
 let layer: HTMLElement | undefined
 let tools: Tools
-const pointers = new Map<string, { el: HTMLElement; at: Cursor; seen: number }>()
+/**
+ * `drawn` is the position last drawn and `moved` when it last changed, so only their own moves
+ * glide, for as long as the glide takes, and a scroll here carries them with the page
+ */
+const pointers = new Map<
+	string,
+	{ el: HTMLElement; at: Cursor; seen: number; drawn?: Cursor; moved?: number }
+>()
 const boxes = new Map<string, HTMLElement>()
 /** Carets drawn by the editors in fields typed in together, by a key of their choosing */
 const carets = new Map<string, { el: HTMLElement; rect: () => DOMRect | null }>()
@@ -106,7 +113,13 @@ function draw() {
 		const quiet = pointer.at.chat ? 120_000 : 60_000
 		const at = !pointer.at.gone && Date.now() - pointer.seen < quiet && point(pointer.at)
 		pointer.el.style.opacity = at ? "1" : "0"
-		if (at) pointer.el.style.translate = `${at.x}px ${at.y}px`
+		if (!at) continue
+		if (pointer.drawn !== pointer.at) pointer.moved = Date.now()
+		pointer.drawn = pointer.at
+		// the .12s glide in STYLE, then none
+		const gliding = Date.now() - (pointer.moved ?? 0) < 150
+		pointer.el.style.transitionProperty = gliding ? "" : "opacity"
+		pointer.el.style.translate = `${at.x}px ${at.y}px`
 	}
 	const wanted = new Set<string>()
 	for (const person of people) {

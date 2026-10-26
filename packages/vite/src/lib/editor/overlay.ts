@@ -279,7 +279,7 @@ function linked_source(text: string, story: Linked): Source | undefined {
 	return match(text, each_blok(story.content), story.id)
 }
 
-/** Where this text comes from: its blok's field first, then a story the link around it goes to */
+/** Where this text comes from: its blok's field first, then a story the link around it goes to, then the page's own story */
 async function source_of(node: HTMLElement, text: string): Promise<Source | undefined> {
 	await load_schema()
 	const block = block_of(node)
@@ -287,7 +287,13 @@ async function source_of(node: HTMLElement, text: string): Promise<Source | unde
 	const own = blok && block && match(text, [blok], Number(meta(block).id))
 	if (own) return own
 	const story = await story_at(node.closest("a[href]"))
-	return story ? linked_source(text, story) : undefined
+	if (story) return linked_source(text, story)
+	// outside every block, a template showing the page's own fields, under names of its own
+	const page = editor.story
+	const root = !block && page?.uid ? page_blok(page.uid) : undefined
+	if (!page || !root) return
+	if (loose(page.name) === text) return { story: page.id, name: true, max: 255 }
+	return match(text, [root], page.id)
 }
 
 // --- how it all looks on the page
@@ -296,7 +302,7 @@ async function source_of(node: HTMLElement, text: string): Promise<Source | unde
  * In a layer, so a site restyles any of it without fighting specificity: `[data-field]` and
  * `[data-rich]` for editable text, `[data-storyloco-hover]` and `-selected` for blocks
  */
-const STYLE = `[data-field],[data-rich]{cursor:text;border-radius:2px;transition:opacity .2s;caret-color:var(--editor-accent,#05807f)}
+const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-radius:2px;transition:opacity .2s;caret-color:var(--editor-accent,#05807f)}
 [data-field]:focus{outline:2px solid var(--editor-accent,#05807f);outline-offset:4px}
 [data-edit=saving]{opacity:.55}
 [data-edit=error]{box-shadow:0 0 0 2px var(--editor-danger,#e5484d)}
@@ -549,11 +555,17 @@ function wire(node: HTMLElement, text: Text, source: Source) {
 		}
 	}
 
-	const input = () => sharing?.typed(node.textContent ?? "")
+	/* What the page showed, which can differ from the field, like a `{{phone}}` the site fills in */
+	let shown: string | null = null
+	const input = () => {
+		shown = null
+		sharing?.typed(node.textContent ?? "")
+	}
 	const moved = () => typing() && sharing?.moved()
 
 	const focus = () => {
 		bar.hide()
+		shown = text.data
 		node.replaceChildren(document.createTextNode(sharing?.value() ?? text.data))
 		share()
 		if ("uid" in source) {
@@ -564,7 +576,8 @@ function wire(node: HTMLElement, text: Text, source: Source) {
 
 	async function blur() {
 		const value = tidy(source.multiline ? node.innerText : (node.textContent ?? ""))
-		settle(value)
+		// left as it was: the page's own rendering of it, since nothing reloads to put that back
+		settle(shown ?? value)
 		reselect()
 		typing_in = null
 		live_select(selected ? { uid: selected.uid } : null)
@@ -1466,6 +1479,23 @@ async function check() {
 
 let installed = false
 
+/**
+ * What may go beside each block, for the bar's add menu: kept until the page changes, which is
+ * all that changes it, short of the schema
+ */
+type Menu = { full: boolean; components: Array<{ name: string; display_name: string }> }
+const menus = new Map<string, Promise<Menu>>()
+function menu_for(story: number, uid: string) {
+	const key = `${story}:${uid}`
+	let menu = menus.get(key)
+	if (!menu) {
+		menu = call<Menu>({ op: "blocks", story, uid })
+		menu.catch(() => menus.delete(key))
+		menus.set(key, menu)
+	}
+	return menu
+}
+
 /** Set the page up for editing, once, the first time a blok is marked */
 export function install() {
 	if (installed) return
@@ -1476,11 +1506,13 @@ export function install() {
 		props: {
 			act: async (change: Record<string, unknown>) => {
 				const reply = (await send(change)) as { uid?: string; undo?: unknown } | null
+				// a list's length is what says it's full
+				menus.clear()
 				if (!reply) return last_problem() ?? "Couldn’t save"
 				if (change.op === "remove") deleted(String(change.name ?? ""), change.story, reply.undo)
 				return reply
 			},
-			choices: (story: number, uid: string) => call({ op: "blocks", story, uid }),
+			choices: menu_for,
 			// the blocks in the same list, from the story: a site may wrap each block in an element of its own
 			siblings: async (story: number, uid: string) =>
 				(locate(await content_for(story), uid)?.list ?? []).map((blok) =>
