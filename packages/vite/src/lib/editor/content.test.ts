@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
+	is_heading,
+	is_video,
 	like_page,
 	copy_blok,
 	differences,
@@ -241,4 +243,13 @@ describe("same", () => {
 		expect(same(typed, stored)).toBe(true)
 		expect(same(typed, { ...stored, content: [] })).toBe(false)
 	})
+})
+
+test("storyloco's plugins by any of the names they've had", () => {
+	for (const field_type of ["uiloco-heading", "heading-field"])
+		expect(is_heading({ field_type })).toBe(true)
+	for (const field_type of ["uiloco-mux", "mux-field", "loco-mux", "video-mux"])
+		expect(is_video({ field_type })).toBe(true)
+	expect(is_heading({ field_type: "uiloco-mux" })).toBe(false)
+	expect(is_video(undefined)).toBe(false)
 })

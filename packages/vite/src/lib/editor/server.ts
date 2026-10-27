@@ -1,12 +1,15 @@
 import { redirect, type RequestEvent } from "@sveltejs/kit"
 import type { Handle } from "../kit.js"
 import { StoryblokClient } from "../storyblok.svelte.js"
+import { LIVE, editor_version } from "./version.js"
 import {
 	allowed,
 	copy_blok,
 	differences,
 	fresh_blok,
 	find_blok,
+	is_heading,
+	is_video,
 	locate,
 	set_asset,
 	set_text,
@@ -16,6 +19,8 @@ import {
 } from "./content.js"
 
 export { allowed }
+// the version, for a site that picks its own, without the redirects hook `storyloco/hooks` brings
+export { editor_version }
 
 /**
  * In-place editing on the site itself, for people signed in with their own Storyblok account.
@@ -50,8 +55,6 @@ const cookie_for = (space: string | null) => (space ? `${COOKIE}_${space}` : COO
 const GUEST = "sl_guest"
 const guest_cookie_for = (space: string | null) => (space ? `${GUEST}_${space}` : GUEST)
 const VERIFIER = "sl_verifier"
-/** The page as visitors see it, for comparing with the draft: kept in step with `hooks.ts` */
-const LIVE = "_storyloco_live"
 
 /** Vite's development flag, absent outside a Vite build, like under tests */
 const dev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
@@ -708,7 +711,8 @@ function public_schema(components: Array<Component>) {
 }
 
 /** Plugin fields the inspector understands; others stay as Storyblok's own editor left them */
-const PLUGINS = new Set(["uiloco-heading", "uiloco-seo"])
+const PLUGINS = (field: { field_type?: string | null }) =>
+	is_heading(field) || field.field_type === "uiloco-seo"
 
 const LINKS = new Set(["url", "story", "email", "asset"])
 
@@ -852,7 +856,7 @@ export async function normalise(
 			}
 		}
 		case "custom":
-			if (field.field_type === "uiloco-mux") {
+			if (is_video(field)) {
 				if (value === null) return null
 				if (!object(value) || !object(existing)) bad()
 				// a video's own settings; which video it is changes through `mux_set`
@@ -865,7 +869,7 @@ export async function normalise(
 				)
 				return { ...(existing as Node), ...settings }
 			}
-			if (!PLUGINS.has(field.field_type ?? "") || !object(value)) bad("is edited in Storyblok")
+			if (!PLUGINS(field) || !object(value)) bad("is edited in Storyblok")
 			for (const v of Object.values(value as Node))
 				if (v !== null && typeof v !== "string" && typeof v !== "number") bad()
 			return { ...(object(existing) ? existing : {}), ...(value as Node) }
@@ -899,7 +903,7 @@ export function input_of(field: Field | undefined, stored: unknown): unknown {
 		case "table":
 			return object(stored) ? stored : { fieldtype: "table", thead: [], tbody: [] }
 		case "custom":
-			return object(stored) ? stored : field.field_type === "uiloco-mux" ? null : {}
+			return object(stored) ? stored : is_video(field) ? null : {}
 		default:
 			return stored ?? ""
 	}
@@ -973,7 +977,7 @@ async function mux_secret(editor: Editor, component: unknown, field: unknown) {
 	if (typeof component !== "string" || typeof field !== "string")
 		throw new EditorError(400, "Unknown change")
 	const schema = (await components_of(editor)).find((c) => c.name === component)?.schema[field]
-	if (schema?.type !== "custom" || schema.field_type !== "uiloco-mux")
+	if (schema?.type !== "custom" || !is_video(schema))
 		throw new EditorError(400, "That isn’t a video field")
 	const secret = schema.options?.find((option) => option.name === "MOXY_MUX_SECRET_ID")?.value
 	if (!secret)
@@ -1628,9 +1632,7 @@ async function operate(
 		const schema = components.find((c) => c.name === blok.component)?.schema[field]
 		before = input_of(schema, structuredClone(blok[field]))
 		const texty =
-			schema &&
-			(["text", "textarea", "markdown"].includes(schema.type) ||
-				schema.field_type === "uiloco-heading")
+			schema && (["text", "textarea", "markdown"].includes(schema.type) || is_heading(schema))
 		if (!texty || !set_text(blok, field, value))
 			throw new EditorError(400, `${field} isn’t a text field`)
 		const longest = Number(schema.max_length)

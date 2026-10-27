@@ -321,7 +321,7 @@ A site with a Content Security Policy needs `wss://moxy.uilo.co` in its `connect
 multiplayer socket, and `'self'` in its `frame-ancestors`, for the phone and tablet preview.
 
 A site that picks its own content version rather than using `version` asks `editor_version(event)`
-first: draft for editors and guests, published for the live view. A site that caches pages at
+(from `storyloco/editor/server`) first: draft for editors and guests, published for the live view. A site that caches pages at
 its CDN (`s-maxage`) needs editors, and guests (`sl_guest…`), on a cache key of their own, or
 whoever signs in on the live site is handed the cached visitor page, with no edit bar. The CDN
 answers before the hook runs and won't vary on cookies, so it takes Routing Middleware: when a

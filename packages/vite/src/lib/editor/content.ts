@@ -407,3 +407,16 @@ export function fresh_blok(component: Component): Node {
 	}
 	return blok
 }
+
+/**
+ * storyloco's field plugins, by the names they've had: a space set up before a rename keeps the old
+ * one, holding the same thing
+ */
+const HEADINGS = new Set(["uiloco-heading", "heading-field"])
+const VIDEOS = new Set(["uiloco-mux", "mux-field", "loco-mux", "video-mux"])
+
+type Plugged = { field_type?: string | null } | null | undefined
+/** A heading plugin's field: its text, and the tag it shows as */
+export const is_heading = (field: Plugged) => HEADINGS.has(field?.field_type ?? "")
+/** A Mux video plugin's field */
+export const is_video = (field: Plugged) => VIDEOS.has(field?.field_type ?? "")

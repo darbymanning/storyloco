@@ -8,7 +8,7 @@
 	import { tick, untrack } from "svelte"
 	import type { Attachment } from "svelte/attachments"
 	import { call, editor, last_problem, send } from "./client.js"
-	import { rich_supported, same } from "./content.js"
+	import { is_heading, is_video, rich_supported, same } from "./content.js"
 	import type { Inserts, RichDoc, RichField } from "./richtext.js"
 	import type { Selection } from "./overlay.js"
 	import { enter, leave, quietly, select as live_select, shared } from "./live.js"
@@ -1671,11 +1671,11 @@
 			{@render Richtext(key, field, id)}
 		{:else if field.type === "bloks"}
 			{@render Bloks(key, field, id)}
-		{:else if field.field_type === "uiloco-heading"}
+		{:else if is_heading(field)}
 			{@render Heading(key, field, id)}
 		{:else if field.field_type === "uiloco-seo"}
 			{@render Seo(key, field, id)}
-		{:else if field.field_type === "uiloco-mux"}
+		{:else if is_video(field)}
 			{@render Video_(key, field, id)}
 		{:else if field.type === "table"}
 			{@render Table_(key, field, id)}
