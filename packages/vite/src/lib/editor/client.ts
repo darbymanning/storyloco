@@ -1,4 +1,5 @@
 import type { Attachment } from "svelte/attachments"
+import { tick } from "svelte"
 import { createSubscriber } from "svelte/reactivity"
 import type { ISbStoryData } from "@storyblok/svelte"
 import type { EditorUser } from "./server.js"
@@ -182,6 +183,23 @@ export function show_version(content: unknown) {
 		connected.show(like_page(content, connected.story.content))
 	return true
 }
+
+/**
+ * A page framed by Page history, on this site, is its window into the past: it shows the version
+ * it's sent, and says so once it's redrawn, whether it could show it in place or not
+ */
+if (typeof window !== "undefined" && window.self !== window.top)
+	addEventListener("message", async (event: MessageEvent) => {
+		const data = event.data as { storyloco?: string; id?: number; content?: unknown } | null
+		if (event.origin !== location.origin || data?.storyloco !== "show") return
+		const ok = show_version(data.content ?? null)
+		await tick()
+		await new Promise((done) => requestAnimationFrame(() => done(undefined)))
+		;(event.source as Window | null)?.postMessage(
+			{ storyloco: "shown", id: data.id, ok },
+			{ targetOrigin: location.origin }
+		)
+	})
 
 /** Called by `connect`; the returned cleanup forgets the story once its page goes */
 export function track(view: View) {
