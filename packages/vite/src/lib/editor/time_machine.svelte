@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
 	import { onMount, tick } from "svelte"
-	import { call, editor, on_navigate, send, set_editing, show_version } from "./client.js"
+	import { call, editor, on_navigate, send, set_editing } from "./client.js"
 	import { differences, type Difference } from "./content.js"
 
 	type Version = {
@@ -22,10 +22,24 @@
 	let versions = $state.raw<Array<Version> | null>(null)
 	let index = $state(0)
 	let problem = $state<string | null>(null)
+	/** A version the site's code couldn't show, like one saved before a template changed */
+	let unshowable = $state<number | null>(null)
 	let busy = $state(false)
 	/** Whether the page can show a version in place, which needs its story connected */
 	let in_place = $state(true)
 	let rail = $state<HTMLElement>()
+	let machine = $state<HTMLElement>()
+	/** The page as it was, in a frame of its own: the site itself, shrunk to fit the window */
+	let view = $state<HTMLIFrameElement>()
+	/** How small the window shows the page, so all of it shows rather than its edges cut off */
+	let fit = $state(1)
+	/** The room under the window, whatever's left once it's shrunk to keep the page's shape */
+	let bottom = $state(0)
+	/** How far below the vanishing point the window's top sits, in pixels */
+	let lift = 0
+	/** Whether the window is showing the page, ready for versions */
+	let ready = $state(false)
+	const src = location.href
 	/** Where the pointer is on the timeline, in versions, while it hovers or drags */
 	let pointer = $state<number | null>(null)
 	let dragging = $state(false)
@@ -55,9 +69,10 @@
 	const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches
 
 	let alive = true
-	/** The version the page is showing, which trails `index` while a transition runs */
+	/** The version the page is showing, which trails `index` while it travels */
 	let shown = 0
-	let transition: ViewTransition | null = null
+	let moving = false
+	let rest: ReturnType<typeof setTimeout> | undefined
 	let settle: ReturnType<typeof setTimeout> | undefined
 
 	onMount(() => {
@@ -66,34 +81,68 @@
 		// the page as visitors see it, without outlines and pins, while it travels
 		set_editing(false, false)
 		root.dataset.storylocoTime = ""
+		// in the top layer, so it stays lit and still while the page beneath dims for a swap
+		machine?.showPopover()
 		const story = editor.story
 		if (!story) problem = "This page has no story to look back through"
 		else
 			call<{ versions: Array<Version> }>({ op: "versions", story: story.id })
 				.then((reply) => {
 					versions = reply.versions
-					setTimeout(() => (settled = true), 1200)
+					setTimeout(() => (settled = true), 1800)
 				})
 				.catch((e: Error) => (problem = e.message))
 		tick().then(() => rail?.focus())
+		measure()
+		addEventListener("resize", measure)
+		addEventListener("message", answered)
+		// the page behind stays put; the wheel over the window scrolls the page in it
+		addEventListener("wheel", still_behind, { passive: false })
 		// not passive, so scrolling the timeline doesn't scroll the page too
 		rail?.addEventListener("wheel", wheel, { passive: false })
 		const stop = on_navigate(close)
 		return () => {
 			alive = false
 			clearTimeout(settle)
-			transition?.skipTransition()
+			clearTimeout(rest)
+			for (const layer of document.querySelectorAll(
+				"[data-storyloco=passing], [data-storyloco=passing-behind]"
+			))
+				layer.remove()
 			rail?.removeEventListener("wheel", wheel)
+			removeEventListener("resize", measure)
+			removeEventListener("message", answered)
+			removeEventListener("wheel", still_behind)
 			stop()
-			show_version(null)
 			delete root.dataset.storylocoTime
 			set_editing(was_editing, false)
 		}
 	})
 
+	const still_behind = (event: WheelEvent) => event.preventDefault()
+
+	/**
+	 * The window's size: the page's own, shrunk to fit under the stack, clear of the timeline beside
+	 * it, and keep its shape
+	 */
+	function measure() {
+		if (!machine) return
+		const css = getComputedStyle(machine)
+		const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+		const length = (name: string) => (parseFloat(css.getPropertyValue(name)) || 0) * rem
+		const top = length("--top")
+		lift = length("--rise")
+		fit = Math.min(
+			(innerHeight - top - length("--below")) / innerHeight,
+			(innerWidth - 2 * length("--room")) / innerWidth
+		)
+		bottom = innerHeight * (1 - fit) - top
+	}
+
 	/** To another version; quick moves, like a drag, get a lighter transition */
 	function go(next: number, quick = false) {
 		if (!versions || leaving || restored) return
+		unshowable = null
 		next = Math.max(0, Math.min(last, next))
 		if (next === index) return
 		heading = next > index ? -1 : 1
@@ -104,25 +153,341 @@
 		else travel(false)
 	}
 
-	/** Brings the page to `index`, one transition at a time, skipping versions passed meanwhile */
-	function travel(quick: boolean) {
-		if (!versions || transition || shown === index || !alive) return
+	/**
+	 * Brings the window to `index`, one move at a time, skipping versions passed meanwhile. Like
+	 * Time Machine: going back, the window in front flies out past the viewer as the one behind
+	 * comes forward from the stack; going forward, it sinks back as the next arrives from in front.
+	 * What leaves is a still copy of the window as it was. The page itself, beneath, never changes
+	 */
+	async function travel(quick: boolean) {
+		if (!versions || moving || shown === index || !alive || !ready || !view) return
+		moving = true
 		const back = index > shown
-		const swap = async () => {
-			if (!alive || !versions) return
-			shown = index
-			in_place = show_version(shown ? versions[shown].content : null)
-			await tick()
-			resting = shown
-		}
-		// a scrub swaps straight in: capturing the whole page for a transition on every step is what drags
-		if (quick || !in_place || still() || !document.startViewTransition) return void swap()
-		document.documentElement.dataset.storylocoTime = `${back ? "back" : "forward"}${quick ? " quick" : ""}`
-		transition = document.startViewTransition(swap)
-		transition.finished.finally(() => {
-			transition = null
-			travel(true)
+		const steps = Math.abs(index - shown)
+		// a scrub travels once it rests, not at every version it passes, which is more than can be
+		// painted that fast; leaving, the window opens straight back out onto the page instead
+		const motion = !leaving && !still() && in_place
+		const old = motion ? copy_of(back) : null
+		// the copy shows before the window changes under it, so nothing flashes between them
+		if (old) await frame()
+		if (old && !back) view.style.opacity = "0"
+		const anchor = top_block()
+		shown = index
+		in_place = await show(shown ? versions[shown].content : null)
+		hold(anchor)
+		// the card's details follow once a scrub rests, rather than blinking at every version it passes
+		clearTimeout(rest)
+		if (quick) rest = setTimeout(() => (resting = shown), 320)
+		else resting = shown
+		if (old) await pass(old, back, steps)
+		moving = false
+		travel(true)
+	}
+
+	const frame = () => new Promise((done) => requestAnimationFrame(() => done(undefined)))
+
+	/** Asks for the window's answers by number, as it gives them */
+	let asked = 0
+	const answers = new Map<number, (ok: boolean) => void>()
+	function answered(event: MessageEvent) {
+		const data = event.data as { storyloco?: string; id?: number; ok?: boolean } | null
+		if (event.origin !== location.origin || data?.storyloco !== "shown") return
+		answers.get(data.id ?? 0)?.(Boolean(data.ok))
+		answers.delete(data.id ?? 0)
+	}
+
+	/** A version in the window, once it's drawn there; false when the page can't show it in place */
+	function show(content: unknown, wait = 3000) {
+		const id = ++asked
+		return new Promise<boolean>((done) => {
+			answers.set(id, done)
+			view?.contentWindow?.postMessage({ storyloco: "show", id, content }, location.origin)
+			setTimeout(() => answers.delete(id) && done(false), wait)
 		})
+	}
+
+	/** The window open on the page: once its own editor answers, at the page's scroll, shrunk in */
+	async function opened() {
+		for (let i = 0; i < 40 && alive && !(await show(null, 250)); i++) await frame()
+		if (!alive || !view?.contentWindow) return
+		view.contentWindow.scrollTo({ top: scrollY, left: scrollX, behavior: "instant" })
+		const win = view.contentWindow
+		// typed in the window, the timeline still takes its keys
+		win.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault()
+				leave()
+			} else keys(event)
+		})
+		win.addEventListener("error", broke)
+		win.addEventListener("unhandledrejection", broke)
+		// it stays on this page: a link or a form would take it to another, whose story these versions aren't
+		const stay = (event: Event) => {
+			const at = event.target as Element | null
+			if (event.type === "submit" || at?.closest?.("a[href]")) event.preventDefault()
+		}
+		win.document.addEventListener("click", stay, true)
+		win.document.addEventListener("submit", stay, true)
+		chrome = null
+		ready = true
+	}
+
+	/** Showing an old version threw: back to now, rather than the window left broken, and say so */
+	function broke() {
+		if (!shown || !versions) return
+		const id = versions[shown].id
+		go(0, true)
+		unshowable = id
+	}
+
+	/** What shows behind the page where its own blocks leave it bare */
+	function backdrop(doc: Document) {
+		for (const el of [doc.body, doc.documentElement]) {
+			const color = getComputedStyle(el).backgroundColor
+			if (color && color !== "transparent" && color !== "rgba(0, 0, 0, 0)") return color
+		}
+		return "Canvas"
+	}
+
+	/**
+	 * The window as it shows now, still and inert: the page and whatever the site keeps fixed over
+	 * it, like its header, each where it is, shrunk as the window shows them. In front, it passes over
+	 * the frame and the void, past the window's edge as it flies; behind, it's under the window
+	 */
+	function copy_of(front: boolean) {
+		const doc = view?.contentDocument
+		const page = doc?.querySelector<HTMLElement>("[data-blok-c]")
+		if (!view || !doc || !page) return null
+		const { layer, moving, at } = layer_at(view, front)
+		moving.style.background = backdrop(doc)
+		for (const el of [page, ...chrome_over(doc, page)]) lay(moving, el, at)
+		return layer
+	}
+
+	/** A layer to pass in, over the window or under it, with a window-sized pane in it to move */
+	function layer_at(view: HTMLIFrameElement, front: boolean) {
+		const at = view.getBoundingClientRect()
+		const layer = document.createElement("div")
+		layer.dataset.storyloco = front ? "passing" : "passing-behind"
+		layer.inert = true
+		// the window's place, the page's own size, shrunk as the window has it
+		const place = document.createElement("div")
+		Object.assign(place.style, {
+			position: "absolute",
+			left: `${at.left}px`,
+			top: `${at.top}px`,
+			width: `${view.contentWindow?.innerWidth ?? innerWidth}px`,
+			height: `${view.contentWindow?.innerHeight ?? innerHeight}px`,
+			scale: String(fit),
+			transformOrigin: "0 0",
+		})
+		const moving = document.createElement("div")
+		Object.assign(moving.style, {
+			position: "absolute",
+			inset: "0",
+			overflow: "hidden",
+			borderRadius: `${16 / fit}px`,
+			transformOrigin: "50% 0",
+			willChange: "transform, opacity",
+		})
+		place.append(moving)
+		layer.append(place)
+		document.body.append(layer)
+		return { layer, moving, at }
+	}
+
+	/** One of the windows passed between, as a pane of glass: only where it is, not what it showed */
+	function pane(front: boolean) {
+		if (!view) return null
+		const { layer, moving } = layer_at(view, front)
+		Object.assign(moving.style, {
+			background:
+				"linear-gradient(rgb(223 230 255 / 0.3), rgb(223 230 255 / 0.12) 30%, rgb(223 230 255 / 0.08))",
+			boxShadow: `inset 0 0 0 ${1.5 / fit}px rgb(255 255 255 / 0.3), inset 0 ${1.5 / fit}px 0 rgb(255 255 255 / 0.55)`,
+		})
+		return layer
+	}
+
+	/** A copy of an element of the window's page, exactly where it shows in the window */
+	function lay(moving: HTMLElement, el: HTMLElement, at: DOMRect) {
+		const box = el.getBoundingClientRect()
+		const copy = document.importNode(el, true)
+		for (const inner of [copy, ...copy.querySelectorAll("[id], [data-blok-c]")]) {
+			inner.removeAttribute("id")
+			inner.removeAttribute("data-blok-c")
+		}
+		Object.assign(copy.style, {
+			position: "absolute",
+			top: `${box.top}px`,
+			left: `${box.left}px`,
+			width: `${box.width}px`,
+			margin: "0",
+		})
+		moving.append(copy)
+		// wherever the site's styles move a copy out of its parent, it lies exactly over the original
+		const got = copy.getBoundingClientRect()
+		copy.style.top = `${box.top - (got.top - at.top) / fit + box.top}px`
+		copy.style.left = `${box.left - (got.left - at.left) / fit + box.left}px`
+	}
+
+	/** What of the window's page is fixed or stuck: the site's, whichever version shows, so found once */
+	let chrome: Array<HTMLElement> | null = null
+
+	/** What the site keeps fixed or stuck in view over the page, like a header, outermost only */
+	function chrome_over(doc: Document, page: HTMLElement) {
+		chrome ??= [...doc.body.querySelectorAll<HTMLElement>("*")].filter(
+			(el) =>
+				!page.contains(el) &&
+				!el.closest("[data-storyloco]") &&
+				/^(fixed|sticky)$/.test(getComputedStyle(el).position)
+		)
+		const found: Array<HTMLElement> = []
+		const height = doc.defaultView?.innerHeight ?? innerHeight
+		for (const el of chrome) {
+			if (!el.isConnected || found.some((f) => f.contains(el))) continue
+			const box = el.getBoundingClientRect()
+			if (box.width && box.height && box.bottom > 0 && box.top < height) found.push(el)
+		}
+		return found
+	}
+
+	const EASE = "cubic-bezier(0.22, 1, 0.36, 1)"
+	/** How long a step along the track takes, the same as the stack behind, so they move as one */
+	const STEP = 650
+
+	/**
+	 * Where along the track a window is at `depth`, steps behind the window (or in front, below 0):
+	 * the stack's own perspective, shrinking toward the top of the window and rising as it goes
+	 */
+	function along(depth: number) {
+		// in front, it's soon past the viewer: any nearer and it would grow without end
+		const scale = 1 / (1 + Math.max(depth, -4) * 0.09)
+		return { scale, rise: lift * (scale - 1) }
+	}
+
+	const moving_of = (layer: HTMLElement) =>
+		layer.firstElementChild?.firstElementChild as HTMLElement
+
+	/** A copy of the window from one place on the track to another, fading as it goes */
+	function slide(
+		layer: HTMLElement,
+		from: number,
+		to: number,
+		fade: [number, number],
+		duration: number
+	) {
+		const [a, b] = [along(from), along(to)]
+		const moving = moving_of(layer)
+		// fading out, it holds on while it moves, or it's gone before it's seen to go anywhere
+		moving.animate(
+			{ opacity: fade },
+			{
+				duration,
+				easing: fade[1] < fade[0] ? "cubic-bezier(0.5, 0, 0.9, 0.6)" : EASE,
+				fill: "forwards",
+			}
+		)
+		// the copy is inside the window's shrinking, so its rise is in the page's own size
+		return moving
+			.animate(
+				[
+					{ scale: a.scale, translate: `0 ${a.rise / fit}px` },
+					{ scale: b.scale, translate: `0 ${b.rise / fit}px` },
+				],
+				// held where it ends, as what passes faster waits for the rest before it goes
+				{ duration, easing: EASE, fill: "forwards" }
+			)
+			.finished.catch(() => {})
+	}
+
+	/**
+	 * The window that was, and every one between it and the one travelled to, along the track
+	 * together: going back, they pass out by the viewer as the window comes forward from as deep as
+	 * it was; going forward, they sink into the stack as the next arrives from in front
+	 */
+	async function pass(old: HTMLElement, back: boolean, steps: number) {
+		// as deep as the stack shows, past which they'd be panes too small and faint to see
+		const deep = Math.min(steps, 6)
+		const duration = STEP + (deep - 1) * 70
+		const flights: Array<Promise<unknown>> = []
+		// the nearer the viewer, the higher: going back, all of them under the one that was
+		for (let n = 1; n < deep; n++) {
+			const k = back ? deep - n : n
+			const glass = pane(back)
+			if (!glass) continue
+			if (back) old.before(glass)
+			flights.push(
+				back
+					? slide(glass, k, k - steps, [0.9, 0], duration)
+					: slide(glass, 0, deep - k, [0, 0.9], duration)
+			)
+		}
+		// the window that was, and the next, at a step's pace whatever the distance, the nearest first:
+		// any longer and they hang about the viewer; any nearer and they're too big to paint in time
+		if (back) flights.push(slide(old, 0, -3, [1, 0], STEP))
+		else {
+			const next = copy_of(true)
+			flights.push(slide(old, 0, deep, [1, 0], duration))
+			if (next) flights.push(slide(next, -1, 0, [0, 1], STEP))
+		}
+		if (back) flights.push(come_forward(deep, duration))
+		await Promise.all(flights)
+		for (const layer of document.querySelectorAll(
+			"[data-storyloco=passing], [data-storyloco=passing-behind]"
+		))
+			layer.remove()
+		if (view) view.style.opacity = ""
+	}
+
+	/** Going back, the window itself comes forward along the track, the earlier version in it */
+	function come_forward(from: number, duration: number) {
+		if (!view) return Promise.resolve()
+		const { scale, rise } = along(from)
+		// the window shrinks from its corner, so it's moved to shrink toward its top's middle instead
+		const across = ((1 - scale) * innerWidth * fit) / 2
+		return view
+			.animate(
+				[
+					{ opacity: 0.4, scale: fit * scale, translate: `${across}px ${rise}px` },
+					{ opacity: 1, scale: fit, translate: "0 0" },
+				],
+				{ duration, easing: EASE }
+			)
+			.finished.catch(() => {})
+	}
+
+	/** The innermost block across the top of the window, and where it is, so a swap can keep it there */
+	function top_block() {
+		const doc = view?.contentDocument
+		const line = (doc?.defaultView?.innerHeight ?? 0) * 0.15
+		let found: { uid: string; top: number } | null = null
+		for (const el of doc?.querySelectorAll<HTMLElement>("[data-blok-c]") ?? []) {
+			const box = el.getBoundingClientRect()
+			if (box.top > line || box.bottom <= line) continue
+			const uid = uid_of(el)
+			if (uid && (!found || box.top >= found.top)) found = { uid, top: box.top }
+		}
+		return found
+	}
+
+	/** Back where it was, if the version shows it, rather than wherever a different length leaves it */
+	function hold(anchor: { uid: string; top: number } | null) {
+		const doc = view?.contentDocument
+		if (!anchor || !doc) return
+		for (const el of doc.querySelectorAll<HTMLElement>("[data-blok-c]"))
+			if (uid_of(el) === anchor.uid)
+				return void doc.defaultView?.scrollBy({
+					top: el.getBoundingClientRect().top - anchor.top,
+					behavior: "instant",
+				})
+	}
+
+	const uid_of = (el: HTMLElement) => {
+		try {
+			return (JSON.parse(el.dataset.blokC ?? "{}") as { uid?: string }).uid
+		} catch {
+			return undefined
+		}
 	}
 
 	/** The version under the pointer on the timeline, newest at the bottom, as a fraction */
@@ -164,7 +529,13 @@
 		go(index - steps, true)
 	}
 
+	/** Wherever the focus is, as the page behind can't be scrolled while it travels; not while typing */
 	function keys(event: KeyboardEvent) {
+		// typed in the window too, whose elements aren't this page's kind of Element
+		const target = (event.target as Element | null)?.closest ? (event.target as Element) : null
+		if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+		if (target?.closest("input, textarea, select, [contenteditable]:not([contenteditable=false])"))
+			return
 		const step: Record<string, number> = {
 			ArrowUp: 1,
 			ArrowLeft: 1,
@@ -183,13 +554,16 @@
 	/** Back to now, the page returning from the void before the machine closes */
 	function leave() {
 		if (leaving) return
+		leaving = true
 		if (index && !restored) {
 			heading = 1
 			index = 0
 			clearTimeout(settle)
-			travel(false)
+			travel(true)
 		}
-		leaving = true
+		// the page under the window is where the window is, so it opens back out onto the same place
+		const win = view?.contentWindow
+		if (win) scrollTo({ top: win.scrollY, left: win.scrollX, behavior: "instant" })
 		setTimeout(close, still() ? 0 : 560)
 	}
 
@@ -235,6 +609,26 @@
 	/** How far behind the page a version's ghost sits, as a perspective divisor */
 	const distance = (depth: number) => 1 + Math.max(0, Math.min(depth, 9)) * 0.09
 
+	/** The night behind the stack, the same each time: faint dust, and a few stars that twinkle */
+	const sky = (() => {
+		let seed = 11
+		const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+		const at = () => `${(random() * 100).toFixed(2)}vw ${(random() * 100).toFixed(2)}vh`
+		const dust = Array.from({ length: 320 }, () => {
+			const tone = random() < 0.25 ? "196 208 255" : random() < 0.12 ? "255 224 200" : "255 255 255"
+			const size = random() < 0.12 ? 0.5 : 0
+			return `${at()} 0 ${size}px rgb(${tone} / ${(0.2 + random() * 0.5).toFixed(2)})`
+		}).join(", ")
+		const stars = Array.from({ length: 34 }, () => ({
+			x: random() * 100,
+			y: random() * 100,
+			size: 1.25 + random() * 1.5,
+			time: 2.4 + random() * 4.2,
+			delay: -random() * 7,
+		}))
+		return { dust, stars }
+	})()
+
 	const KINDS: Record<string, { verb: string; mark: string }> = {
 		// from the page as it is now to the version: what restoring it would do
 		added: { verb: "Brings back", mark: "+" },
@@ -249,31 +643,72 @@
 		if (event.key === "Escape") {
 			event.preventDefault()
 			leave()
-		}
+		} else keys(event)
 	}}
 />
 
-<div class={["time", { settled, leaving, restored }]} data-storyloco="time">
-	<div class="frame" aria-hidden="true"></div>
+<!-- the window and the void around it, between the copies of the page as they pass: see `travel` -->
+<div
+	class={["time", "stage", { settled, leaving, restored, ready }]}
+	data-storyloco="time-stage"
+	style:--fit={fit}
+	style:--side="{((1 - fit) / 2) * 100}vw"
+	style:--bottom="{bottom}px"
+>
+	<iframe
+		bind:this={view}
+		class="window"
+		title="This page as it was"
+		{src}
+		tabindex="-1"
+		onload={opened}
+	></iframe>
+	{#if ready}
+		<div class="hole" aria-hidden="true"></div>
+		<div class="frame" aria-hidden="true"></div>
 
-	<div class="void" aria-hidden="true" style:--travel={index}>
-		{#each versions ?? [] as version, i (version.id)}
-			{@const depth = i - index}
-			<button
-				type="button"
-				tabindex="-1"
-				aria-label={stamp(i)}
-				class={["ghost", { published: version.status === "published" }]}
-				style:--z={distance(depth)}
-				style:--lit={Math.max(0, 1 - depth * 0.13)}
-				style:--order={Math.max(0, depth)}
-				style:opacity={depth >= 0 && depth <= 7 ? 1 : 0}
-				style:z-index={50 - depth}
-				onclick={() => go(i)}
-			></button>
-		{/each}
-	</div>
+		<div class="void" aria-hidden="true" style:--travel={index}>
+			<div class="sky">
+				<i class="dust" style:box-shadow={sky.dust}></i>
+				{#each sky.stars as star, n (n)}
+					<i
+						class="star"
+						style:left="{star.x}%"
+						style:top="{star.y}%"
+						style:--size="{star.size}px"
+						style:animation-duration="{star.time}s"
+						style:animation-delay="{star.delay}s"
+					></i>
+				{/each}
+				<i class="meteor"></i>
+			</div>
+			{#each versions ?? [] as version, i (version.id)}
+				{@const depth = i - index}
+				<button
+					type="button"
+					tabindex="-1"
+					aria-label={stamp(i)}
+					class={["ghost", { published: version.status === "published" }]}
+					style:--z={distance(depth)}
+					style:--lit={Math.max(0, 1 - depth * 0.13)}
+					style:--order={Math.max(0, depth)}
+					style:opacity={depth >= 0 && depth <= 7 ? 1 : 0}
+					style:z-index={50 - depth}
+					onclick={() => go(i)}
+				></button>
+			{/each}
+		</div>
+	{/if}
+</div>
 
+<!-- the timeline and its card, in the top layer, over everything -->
+<div
+	class={["time", { settled, leaving, restored, ready }]}
+	data-storyloco="time"
+	style:--side="{((1 - fit) / 2) * 100}vw"
+	popover="manual"
+	bind:this={machine}
+>
 	<div
 		bind:this={rail}
 		class={["rail", { dragging }]}
@@ -294,7 +729,6 @@
 		onpointerup={release}
 		onpointercancel={release}
 		onpointerleave={() => dragging || (pointer = null)}
-		onkeydown={keys}
 	>
 		{#each versions ?? [] as version, i (version.id)}
 			{@const near = swell(i)}
@@ -313,9 +747,9 @@
 		{#if versions}
 			{@const peek = pointer === null || dragging ? null : Math.round(pointer)}
 			{#if peek !== null && peek !== index}
-				<span class="peek" style:top="{place(peek)}%">{stamp(peek)}</span>
+				<span class="peek" style:--at={place(peek)}>{stamp(peek)}</span>
 			{/if}
-			<span class="thumb" style:top="{place(dragging && pointer !== null ? pointer : index)}%">
+			<span class="thumb" style:--at={place(dragging && pointer !== null ? pointer : index)}>
 				<span class="when">{stamp(index)}</span>
 			</span>
 		{/if}
@@ -352,6 +786,12 @@
 				<span>Page history</span>
 				<span>{index ? `${index} of ${last} saves back` : `${last} saves`}</span>
 			</p>
+			{#if unshowable !== null}
+				<p class="problem" role="status">
+					A save the page couldn’t show with its code as it is now, likely from before a block
+					changed. It can still be restored.
+				</p>
+			{/if}
 			<p class="title">
 				{index ? `${day_of(chosen.created_at)}, ${time_of(chosen.created_at)}` : "Now"}
 			</p>
@@ -418,6 +858,40 @@
 	}
 
 	.time {
+		/* the popover's own box gives way: what's in it places itself */
+		background: none;
+		block-size: auto;
+		border: 0;
+		inline-size: auto;
+		inset: 0;
+		margin: 0;
+		max-block-size: none;
+		max-inline-size: none;
+		overflow: visible;
+		padding: 0;
+		pointer-events: none;
+		position: fixed;
+
+		/* under the copies passing in front, which fly out past the window's edge */
+		/* no box of its own, so its parts stack between the copies passing in front and behind */
+		&.stage {
+			display: contents;
+		}
+
+		/* not the void: it's over the window too, cut out, and it'd take the wheel from the page in it */
+		&:not(.leaving) :is(.ghost, .rail, .card) {
+			pointer-events: auto;
+		}
+
+		/*
+		 * Layers of their own, so what changes at each step, the ticks and the playhead,
+		 * never repaints the rail or the void it sits on: painted once, they can't come up blank
+		 * while the page beneath is redrawn
+		 */
+		& :is(.frame, .void, .rail, .card, .tick, .thumb, .peek) {
+			will-change: transform;
+		}
+
 		color-scheme: dark;
 
 		--void: #050816;
@@ -429,12 +903,17 @@
 		--ease: cubic-bezier(0.22, 1, 0.36, 1);
 		--spring: cubic-bezier(0.34, 1.5, 0.55, 1);
 
-		/* the window onto the page, with room above it for the past to stack up */
-		--top: 3.5rem;
+		/* the window onto the page, with room above it for the past to stack up, and the sky around */
+		--top: 5rem;
 		--side: 0.875rem;
-		--bottom: 0.875rem;
+		--below: 2.5rem;
+		/* beside it, clear of the timeline */
+		--room: 7rem;
 		/* how far below the vanishing point the window's top edge sits */
-		--rise: 9rem;
+		--rise: 10rem;
+		/* opening: the page pulled back into the window, slow to start, then all the way */
+		--open: 1.05s;
+		--pull: cubic-bezier(0.6, 0, 0.12, 1.05);
 
 		color: var(--ink);
 		font: var(--editor-font, 500 0.8125rem/1.4 system-ui, sans-serif);
@@ -458,7 +937,6 @@
 		inset: var(--top) var(--side) var(--bottom);
 		pointer-events: none;
 		position: fixed;
-		view-transition-name: storyloco-time-frame;
 		z-index: 2147483000;
 
 		@starting-style {
@@ -469,8 +947,8 @@
 			inset: 0;
 		}
 		transition:
-			inset 0.6s var(--ease),
-			box-shadow 0.45s ease;
+			inset var(--open) var(--pull),
+			box-shadow 0.6s ease;
 
 		.leaving & {
 			box-shadow:
@@ -533,7 +1011,6 @@
 		);
 		inset: 0;
 		position: fixed;
-		view-transition-name: storyloco-time-void;
 		z-index: 2147483001;
 
 		@starting-style {
@@ -553,8 +1030,8 @@
 			opacity: 0;
 		}
 		transition:
-			clip-path 0.6s var(--ease),
-			opacity 0.4s ease;
+			clip-path var(--open) var(--pull),
+			opacity 0.6s ease;
 
 		.leaving & {
 			clip-path: polygon(
@@ -575,52 +1052,110 @@
 				clip-path 0.5s var(--ease),
 				opacity 0.4s ease 0.15s;
 		}
+	}
 
-		/* stars, in two layers that drift at different speeds as it travels */
-		&::before,
-		&::after {
-			background-position: 0 calc(var(--travel) * 6px);
-			content: "";
-			inset: 0;
-			pointer-events: none;
-			position: absolute;
-			transition: background-position 1.2s var(--ease);
+	/*
+	 * The night sky, drawn once, nothing in it repainted: it zooms out as the machine opens, and on
+	 * a little further in each step back, as though flying through it
+	 */
+	.sky {
+		background:
+			radial-gradient(42vw 30vh at 12% 30%, rgb(122 96 255 / 0.2), transparent 70%),
+			radial-gradient(
+				36vw 26vh at 90% 58%,
+				color-mix(in srgb, var(--accent) 24%, transparent),
+				transparent 70%
+			),
+			radial-gradient(30vw 16vh at 30% 6%, rgb(206 118 255 / 0.14), transparent 70%),
+			linear-gradient(
+				158deg,
+				transparent 28%,
+				rgb(160 172 255 / 0.08) 44%,
+				rgb(255 212 240 / 0.06) 51%,
+				transparent 64%
+			),
+			radial-gradient(95vw 30vh at 50% 112%, rgb(72 98 214 / 0.34), transparent 70%);
+		inset: 0;
+		pointer-events: none;
+		position: absolute;
+		scale: calc(1 + min(var(--travel), 24) * 0.005);
+		transition:
+			scale 2.2s var(--ease),
+			opacity 1.2s ease;
+		will-change: transform;
+
+		@starting-style {
+			opacity: 0;
+			scale: 1.45;
 		}
 
-		&::before {
-			background-image:
-				radial-gradient(1px 1px at 13% 27%, rgb(255 255 255 / 0.7), transparent),
-				radial-gradient(1px 1px at 61% 71%, rgb(255 255 255 / 0.6), transparent),
-				radial-gradient(1px 1px at 37% 53%, rgb(200 210 255 / 0.7), transparent),
-				radial-gradient(1px 1px at 83% 19%, rgb(255 255 255 / 0.5), transparent);
-			background-size:
-				157px 89px,
-				211px 113px,
-				97px 131px,
-				263px 71px;
-			opacity: 0.6;
+		.leaving & {
+			opacity: 0;
+			scale: 1.15;
+			transition:
+				scale 0.6s var(--ease),
+				opacity 0.4s ease;
 		}
+	}
 
-		&::after {
-			animation: twinkle 3.6s ease-in-out infinite alternate;
-			background-image:
-				radial-gradient(1.5px 1.5px at 29% 41%, #fff, transparent),
-				radial-gradient(1.5px 1.5px at 71% 63%, rgb(190 205 255), transparent),
-				radial-gradient(2px 2px at 47% 17%, rgb(255 255 255 / 0.9), transparent);
-			background-position: 0 calc(var(--travel) * 14px);
-			background-size:
-				331px 149px,
-				419px 127px,
-				587px 173px;
-		}
+	.dust {
+		block-size: 1px;
+		border-radius: 50%;
+		inline-size: 1px;
+		left: 0;
+		position: absolute;
+		top: 0;
+	}
+
+	.star {
+		animation: twinkle 4s ease-in-out infinite alternate;
+		background: #fff;
+		block-size: var(--size);
+		border-radius: 50%;
+		box-shadow: 0 0 calc(var(--size) * 3) calc(var(--size) * 0.4) rgb(190 205 255 / 0.5);
+		inline-size: var(--size);
+		position: absolute;
 	}
 
 	@keyframes twinkle {
 		from {
-			opacity: 0.45;
+			opacity: 0.15;
+			scale: 0.6;
 		}
 		to {
-			opacity: 0.95;
+			opacity: 0.9;
+			scale: 1;
+		}
+	}
+
+	/* now and then, one falls */
+	.meteor {
+		animation: meteor 17s linear 6s infinite;
+		background: linear-gradient(to left, transparent, rgb(255 255 255 / 0.75));
+		block-size: 1px;
+		inline-size: 6rem;
+		left: 72%;
+		opacity: 0;
+		position: absolute;
+		rotate: -18deg;
+		top: 9%;
+	}
+
+	@keyframes meteor {
+		0% {
+			opacity: 0;
+			translate: 0 0;
+		}
+		1% {
+			opacity: 0.7;
+		}
+		5% {
+			opacity: 0;
+			translate: -16rem 5.2rem;
+		}
+		100% {
+			opacity: 0;
+			translate: -16rem 5.2rem;
 		}
 	}
 
@@ -633,8 +1168,10 @@
 		box-shadow:
 			inset 0 1px 0 rgb(255 255 255 / calc(var(--lit) * 0.3)),
 			0 -0.5rem 1.5rem -0.5rem rgb(0 0 0 / 0.55);
+		/* only its top shows, above the window: the rest would be layer for nothing to see */
+		block-size: 10rem;
 		cursor: pointer;
-		inset: var(--top) var(--side) var(--bottom);
+		inset: var(--top) var(--side) auto;
 		margin: 0;
 		padding: 0;
 		position: absolute;
@@ -646,16 +1183,14 @@
 			scale: 1;
 			translate: 0 0;
 		}
+		/* moved and faded only, nothing repainted, so a step never waits on painting it */
 		transition:
 			translate 0.65s var(--ease),
 			scale 0.65s var(--ease),
-			background-color 0.5s ease,
-			box-shadow 0.5s ease,
-			opacity 0.35s ease,
-			filter 0.2s ease;
+			opacity 0.35s ease;
 
 		.time:not(.settled) & {
-			transition-delay: calc(0.1s + var(--order) * 55ms);
+			transition-delay: calc(0.5s + var(--order) * 75ms);
 		}
 
 		.leaving & {
@@ -676,7 +1211,9 @@
 	}
 
 	.rail {
-		block-size: 66vh;
+		--length: 66vh;
+
+		block-size: var(--length);
 		cursor: ns-resize;
 		inline-size: 4.5rem;
 		inset-block-start: calc(var(--top) + 12vh);
@@ -685,16 +1222,16 @@
 		position: fixed;
 		touch-action: none;
 		user-select: none;
-		view-transition-name: storyloco-time-rail;
 		z-index: 2147483002;
 
-		@starting-style {
+		/* once the page has pulled back into the window, not on it full size, as it loads */
+		.time:not(.ready) & {
 			opacity: 0;
 			translate: 1.5rem 0;
 		}
 		transition:
-			opacity 0.4s ease 0.15s,
-			translate 0.6s var(--ease) 0.15s;
+			opacity 0.5s ease 0.6s,
+			translate 0.8s var(--ease) 0.6s;
 
 		.leaving & {
 			opacity: 0;
@@ -727,19 +1264,32 @@
 	}
 
 	.tick {
-		background: rgb(255 255 255 / calc(0.3 + var(--near) * 0.5));
 		block-size: 2px;
-		border-radius: 2px;
-		inline-size: calc(0.625rem + var(--near) * 1.375rem);
+		inline-size: 2rem;
 		inset-inline-end: 1rem;
 		position: absolute;
-		transition:
-			inline-size 0.22s var(--ease),
-			background 0.22s ease;
 		translate: 0 -50%;
 
+		/* swelling by scale and fade, which only move what's painted, rather than resizing it */
+		&::before {
+			background: #fff;
+			border-radius: 2px;
+			content: "";
+			inset: 0;
+			opacity: calc(0.3 + var(--near) * 0.5);
+			position: absolute;
+			scale: calc((0.625 + var(--near) * 1.375) / 2) 1;
+			transform-origin: right;
+			transition:
+				scale 0.22s var(--ease),
+				opacity 0.22s ease;
+		}
+
 		&.published {
-			background: color-mix(in srgb, var(--glow) calc(60% + var(--near) * 40%), transparent);
+			&::before {
+				background: var(--glow);
+				opacity: calc(0.6 + var(--near) * 0.4);
+			}
 
 			/* a dot beside each published save */
 			&::after {
@@ -764,10 +1314,12 @@
 		inset-inline-end: 0.875rem;
 		pointer-events: none;
 		position: absolute;
-		transition: top 0.5s var(--spring);
+		top: 0;
+		transition: translate 0.5s var(--spring);
+		translate: 0 calc(var(--at) / 100 * var(--length));
 
 		.dragging & {
-			transition: top 0.06s linear;
+			transition: translate 0.06s linear;
 		}
 
 		&::before {
@@ -823,7 +1375,9 @@
 	.peek {
 		color: var(--ink);
 		inset-inline-end: calc(100% - 0.375rem);
-		transition: top 0.15s var(--ease);
+		top: 0;
+		transition: translate 0.15s var(--ease);
+		translate: 0 calc(var(--at) / 100 * var(--length) - 50%);
 
 		@starting-style {
 			opacity: 0;
@@ -845,16 +1399,15 @@
 		padding: 0.875rem 1.125rem 1rem;
 		position: fixed;
 		translate: -50% 0;
-		view-transition-name: storyloco-time-card;
 		z-index: 2147483002;
 
-		@starting-style {
+		.time:not(.ready) & {
 			opacity: 0;
 			translate: -50% 1.5rem;
 		}
 		transition:
-			opacity 0.35s ease 0.1s,
-			translate 0.6s var(--ease) 0.1s;
+			opacity 0.5s ease 0.7s,
+			translate 0.8s var(--ease) 0.7s;
 
 		.leaving & {
 			opacity: 0;
@@ -1090,7 +1643,8 @@
 		.time {
 			--top: 2.75rem;
 			--side: 0.5rem;
-			--bottom: 0.5rem;
+			--below: 0.5rem;
+			--room: 0.5rem;
 			--rise: 7rem;
 		}
 
@@ -1125,12 +1679,12 @@
 		.card,
 		.thumb,
 		.peek,
-		.void::before,
-		.void::after {
+		.sky {
 			transition-property: opacity, background-color, box-shadow;
 		}
 
-		.void::after,
+		.star,
+		.meteor,
 		.moment,
 		.change,
 		.done,
@@ -1144,92 +1698,69 @@
 	:global(html[data-storyloco-time] [data-storyloco="toast"]) {
 		display: none !important;
 	}
+	/*
+	 * The window: the page itself, framed, laid out at its own size and shrunk to fit. It opens
+	 * from the page as it is, and closes back onto it
+	 */
+	.window {
+		background: none;
+		block-size: 100vh;
+		border: 0;
+		border-radius: calc(1rem / var(--fit));
+		inline-size: 100vw;
+		inset-block-start: 0;
+		inset-inline-start: 0;
+		margin: 0;
+		opacity: 0;
+		padding: 0;
+		pointer-events: none;
+		position: fixed;
+		transform-origin: 0 0;
+		transition:
+			inset-block-start var(--open) var(--pull),
+			inset-inline-start var(--open) var(--pull),
+			scale var(--open) var(--pull);
+		z-index: 2147482200;
 
-	:global(html[data-storyloco-time]::view-transition) {
-		background: #050816;
-	}
+		.ready & {
+			inset-block-start: var(--top);
+			inset-inline-start: var(--side);
+			opacity: 1;
+			pointer-events: auto;
+			scale: var(--fit);
+		}
 
-	/* the machine itself stays live and still while the page travels behind it */
-	:global(html[data-storyloco-time]::view-transition-old(storyloco-time-frame)),
-	:global(html[data-storyloco-time]::view-transition-old(storyloco-time-void)),
-	:global(html[data-storyloco-time]::view-transition-old(storyloco-time-rail)),
-	:global(html[data-storyloco-time]::view-transition-old(storyloco-time-card)) {
-		display: none;
-	}
-	:global(html[data-storyloco-time]::view-transition-new(storyloco-time-frame)),
-	:global(html[data-storyloco-time]::view-transition-new(storyloco-time-void)),
-	:global(html[data-storyloco-time]::view-transition-new(storyloco-time-rail)),
-	:global(html[data-storyloco-time]::view-transition-new(storyloco-time-card)) {
-		animation: none;
-	}
-
-	:global(html[data-storyloco-time]::view-transition-old(root)),
-	:global(html[data-storyloco-time]::view-transition-new(root)) {
-		--editor-pass: 1.12;
-		--editor-sink: 0.88;
-		--editor-lift: -3.5rem;
-		animation-duration: 0.5s;
-		animation-fill-mode: both;
-		animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
-		mix-blend-mode: normal;
-		transform-origin: 50% 0;
-	}
-
-	/* dragging and scrolling: the same journey, lighter and quicker, so it keeps up */
-	:global(html[data-storyloco-time~="quick"]::view-transition-old(root)),
-	:global(html[data-storyloco-time~="quick"]::view-transition-new(root)) {
-		--editor-pass: 1.035;
-		--editor-sink: 0.965;
-		--editor-lift: -1rem;
-		animation-duration: 0.24s;
-	}
-
-	/* back in time: the page now flies past the viewer, the earlier one comes forward from the stack */
-	:global(html[data-storyloco-time~="back"]::view-transition-old(root)) {
-		animation-name: storyloco-time-pass-out;
-		z-index: 1;
-	}
-	:global(html[data-storyloco-time~="back"]::view-transition-new(root)) {
-		animation-name: storyloco-time-stack-in;
-	}
-	/* forward: the page sinks back into the stack, the later one arrives from in front */
-	:global(html[data-storyloco-time~="forward"]::view-transition-old(root)) {
-		animation-name: storyloco-time-stack-out;
-	}
-	:global(html[data-storyloco-time~="forward"]::view-transition-new(root)) {
-		animation-name: storyloco-time-pass-in;
-	}
-
-	/* opacity, scale and translate only: the compositor moves the snapshots, nothing repaints */
-	@keyframes -global-storyloco-time-pass-out {
-		to {
-			opacity: 0;
-			scale: var(--editor-pass);
-			translate: 0 1.5rem;
+		.ready.leaving & {
+			inset-block-start: 0;
+			inset-inline-start: 0;
+			scale: 1;
+			transition:
+				inset-block-start 0.5s var(--ease),
+				inset-inline-start 0.5s var(--ease),
+				scale 0.5s var(--ease);
 		}
 	}
 
-	@keyframes -global-storyloco-time-pass-in {
-		from {
-			opacity: 0;
-			scale: var(--editor-pass);
-			translate: 0 1.5rem;
-		}
+	/* the dark behind the window, seen as it comes forward from the stack */
+	.hole {
+		background: var(--void);
+		border-radius: 1rem;
+		inset: var(--top) var(--side) var(--bottom);
+		pointer-events: none;
+		position: fixed;
+		z-index: 2147482000;
 	}
 
-	@keyframes -global-storyloco-time-stack-out {
-		to {
-			opacity: 0;
-			scale: var(--editor-sink);
-			translate: 0 var(--editor-lift);
-		}
+	/* copies of the window passing, see `copy_of`: in front over the frame and the void, behind under the window */
+	:global([data-storyloco="passing"]),
+	:global([data-storyloco="passing-behind"]) {
+		inset: 0;
+		overflow: hidden;
+		pointer-events: none;
+		position: fixed;
+		z-index: 2147483100;
 	}
-
-	@keyframes -global-storyloco-time-stack-in {
-		from {
-			opacity: 0;
-			scale: var(--editor-sink);
-			translate: 0 var(--editor-lift);
-		}
+	:global([data-storyloco="passing-behind"]) {
+		z-index: 2147482100;
 	}
 </style>

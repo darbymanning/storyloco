@@ -1,4 +1,5 @@
 import type { Attachment } from "svelte/attachments"
+import { tick } from "svelte"
 import { createSubscriber } from "svelte/reactivity"
 import type { ISbStoryData } from "@storyblok/svelte"
 import type { EditorUser } from "./server.js"
@@ -182,6 +183,23 @@ export function show_version(content: unknown) {
 		connected.show(like_page(content, connected.story.content))
 	return true
 }
+
+/**
+ * A page framed by Page history, on this site, is its window into the past: it shows the version
+ * it's sent, and says so once it's redrawn, whether it could show it in place or not
+ */
+if (typeof window !== "undefined" && window.self !== window.top)
+	addEventListener("message", async (event: MessageEvent) => {
+		const data = event.data as { storyloco?: string; id?: number; content?: unknown } | null
+		if (event.origin !== location.origin || data?.storyloco !== "show") return
+		const ok = show_version(data.content ?? null)
+		await tick()
+		await new Promise((done) => requestAnimationFrame(() => done(undefined)))
+		;(event.source as Window | null)?.postMessage(
+			{ storyloco: "shown", id: data.id, ok },
+			{ targetOrigin: location.origin }
+		)
+	})
 
 /** Called by `connect`; the returned cleanup forgets the story once its page goes */
 export function track(view: View) {
@@ -516,6 +534,22 @@ export const history = {
 		watch()
 		return redos.at(-1)?.label ?? null
 	},
+}
+
+/**
+ * The page's story back as it is live, as a draft: one more change, so Undo brings the draft back.
+ * `far` when its live version is further back than the history goes; restore it from Page history
+ */
+export async function discard(): Promise<"done" | "far" | "failed"> {
+	const story = editor.story
+	if (!story) return "failed"
+	const { versions } = await call<{ versions: Array<{ id: number; status: string }> }>({
+		op: "versions",
+		story: story.id,
+	}).catch(() => ({ versions: [] }))
+	const live = versions.find((version) => version.status === "published")
+	if (!live) return "far"
+	return (await send({ op: "revert", story: story.id, version: live.id })) ? "done" : "failed"
 }
 
 /** Whether there's anything Publish would send live: the page's own story, or one edited from it */

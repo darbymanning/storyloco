@@ -6,7 +6,17 @@
 <script lang="ts">
 	import { tick } from "svelte"
 	import { goto } from "$app/navigation"
-	import { call, editor, set_editing, set_guest, signout, type SharedWith } from "./client.js"
+	import {
+		call,
+		discard,
+		editor,
+		set_editing,
+		set_guest,
+		signout,
+		undo,
+		unpublished,
+		type SharedWith,
+	} from "./client.js"
 	import Compare from "./compare.svelte"
 	import Face from "./face.svelte"
 	import TimeMachine from "./time_machine.svelte"
@@ -179,6 +189,7 @@
 			"M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18",
 		link: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
 		close: "M18 6 6 18M6 6l12 12",
+		discard: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5",
 		signout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
 		mail: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6",
 	}
@@ -186,6 +197,20 @@
 	const ACTIONS: Array<Omit<Item, "group">> = [
 		{ id: "new", title: "New page", icon: ICONS.new, run: () => open("new_page") },
 		{ id: "history", title: "Page history", icon: ICONS.history, run: () => open("history") },
+		{
+			id: "discard",
+			title: "Discard changes",
+			icon: ICONS.discard,
+			run: async () => {
+				close()
+				const done = await discard()
+				const { toast } = await import("./overlay.js")
+				if (done === "done") toast("Changes discarded", { label: "Undo", run: undo })
+				else if (done === "far")
+					toast("Its live version is too far back to find here; restore it from Page history")
+				else toast("Couldn’t discard the changes")
+			},
+		},
 		{
 			id: "compare",
 			title: "Compare with live",
@@ -215,7 +240,11 @@
 	const items = $derived.by(() => {
 		const words = query.trim().toLowerCase()
 		const matches = (title: string) => title.toLowerCase().includes(words)
-		const actions = ACTIONS.filter((a) => matches(a.title)).map((a) => ({ ...a, group: "Actions" }))
+		const actions = ACTIONS.filter(
+			// only with something to discard
+			(a) =>
+				matches(a.title) && (a.id !== "discard" || (editor.story?.published_at && unpublished()))
+		).map((a) => ({ ...a, group: "Actions" }))
 		const on_page = view === "palette" ? blocks() : []
 		const seen = new Set<string>()
 		const here = on_page

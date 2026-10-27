@@ -60,6 +60,7 @@ type Field = {
 	field_type?: string
 	display_name?: string | null
 	max_length?: number | string | null
+	pos?: number
 }
 type Component = {
 	name: string
@@ -79,16 +80,21 @@ type Source = ({ story: number; uid: string; field: string } | { story: number; 
 	max?: number
 }
 
-const meta = (node: Element) => {
-	try {
-		return JSON.parse((node as HTMLElement).dataset.blokC ?? "{}") as {
-			id?: string | number
-			uid?: string
-			name?: string
+type Meta = { id?: string | number; uid?: string; name?: string }
+/** Parsed once each: it's read for every block, over and over, as the page is looked through */
+const metas = new Map<string, Meta>()
+const meta = (node: Element): Meta => {
+	const raw = (node as HTMLElement).dataset.blokC ?? "{}"
+	let found = metas.get(raw)
+	if (!found) {
+		try {
+			found = JSON.parse(raw) as Meta
+		} catch {
+			found = {}
 		}
-	} catch {
-		return {}
+		metas.set(raw, found)
 	}
+	return found
 }
 
 const block_of = (el: Element | null) => el?.closest<HTMLElement>("[data-blok-c]") ?? null
@@ -118,10 +124,22 @@ function parent_of(target: Target) {
 	return above ? target_of(above) : undefined
 }
 
+/** Each block's element by its `_uid`, gathered once a frame rather than on every look-up */
+let by_uid: Map<string, HTMLElement> | null = null
 /** The element showing the blok with this `_uid`, once the page has caught up with a change */
 export function element_of(uid: string) {
-	for (const node of document.querySelectorAll<HTMLElement>("[data-blok-c]"))
-		if (meta(node).uid === uid) return node
+	let node = by_uid?.get(uid)
+	if (node?.isConnected) return node
+	if (!by_uid || node) {
+		by_uid = new Map()
+		for (const el of document.querySelectorAll<HTMLElement>("[data-blok-c]")) {
+			const at = meta(el).uid
+			if (at && !by_uid.has(at)) by_uid.set(at, el)
+		}
+		requestAnimationFrame(() => (by_uid = null))
+		node = by_uid.get(uid)
+	}
+	return node
 }
 
 export const find = (uid: string) => {
@@ -238,6 +256,27 @@ function story_at(link: Element | null): Promise<Linked | null> | undefined {
 	return story
 }
 
+/**
+ * The link of the item this text is in, when the text isn't in it, like a card whose only link is
+ * its button: the one link to another page in the nearest element around the text that has any,
+ * and none once that element holds links to several, as a list of cards does
+ */
+function item_link(node: Element, block: Element | null | undefined) {
+	for (let at = node.parentElement; at && at !== block; at = at.parentElement) {
+		const paths = new Set<string>()
+		let link: HTMLAnchorElement | undefined
+		for (const a of at.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+			const url = new URL(a.href, location.href)
+			if (url.origin !== location.origin || url.pathname === location.pathname) continue
+			paths.add(url.pathname)
+			link = a
+		}
+		if (paths.size > 1) return null
+		if (link) return link
+	}
+	return null
+}
+
 /** A story changed through this page; its linked copy is stale */
 function forget(story: number) {
 	for (const [path, promise] of linked)
@@ -268,6 +307,92 @@ function* own_bloks(value: unknown): Generator<Blok> {
 	for (const child of Object.values(value)) yield* own_bloks(child)
 }
 
+/** Marks a site puts on the one item of several that's showing, like the open tab */
+const ACTIVE =
+	'[aria-selected="true"], [aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-expanded="true"], .active, .selected, .current, .is-active'
+
+/**
+ * Of several bloks whose rich text is the same, with one of them showing, the one that is: the
+ * only one whose other text, like its title in a row of tabs, shows marked as the active one
+ */
+function active_of(owners: Array<Rich>, block: HTMLElement) {
+	if (owners.every(({ blok }) => blok === owners[0].blok)) return by_tab(owners, block)
+	const texts_of = (blok: Blok) =>
+		Object.entries(blok)
+			.filter(([key, value]) => !key.startsWith("_") && typeof value === "string")
+			.map(([, value]) => loose(value as string))
+			.filter((text) => text.length > 1)
+	// the element itself, or what it's in, a level or two up
+	const lit = (el: HTMLElement) => {
+		for (let at: HTMLElement | null = el, i = 0; at && i < 3; i++, at = at.parentElement)
+			if (at.matches(ACTIVE)) return true
+		return false
+	}
+	// each text's places, looked up once however many owners share it
+	const places = new Map<string, Array<HTMLElement>>()
+	const showing = (text: string) => {
+		let found = places.get(text)
+		if (!found)
+			places.set(
+				text,
+				(found = [...block.querySelectorAll<HTMLElement>("*")].filter(
+					(el) => loose(el.textContent ?? "") === text && !ours(el)
+				))
+			)
+		return found
+	}
+	const active = owners.filter(({ blok }) =>
+		texts_of(blok).some((text) => {
+			const twins = owners.filter((owner) => texts_of(owner.blok).includes(text))
+			if (twins.length === 1) return showing(text).some(lit)
+			// the same text in several, like placeholder questions: each is where it shows, in order
+			const outermost = showing(text).filter(
+				(el, i, all) => !all.some((o) => o !== el && o.contains(el))
+			)
+			const el = outermost[twins.findIndex((owner) => owner.blok === blok)]
+			return !!el && (lit(el) || !!el.querySelector(ACTIVE))
+		})
+	)
+	return active.length === 1 ? active[0] : undefined
+}
+
+/**
+ * Of one blok's fields with the same text, the one showing: where each of its fields with any text
+ * has a tab, in the schema's order, like a page's sections under a row of them, the one whose tab
+ * is active. A tab named for another of the fields, and they aren't in that order, so none
+ */
+function by_tab(owners: Array<Rich>, block: HTMLElement) {
+	const blok = owners[0].blok
+	const schema = components.get(String(blok.component))?.schema
+	if (!schema) return
+	const fields = rich_fields(blok)
+		.filter((rich) => rich.blok === blok && rich_compact(rich.value))
+		.sort((a, b) => (schema[a.field]?.pos ?? 0) - (schema[b.field]?.pos ?? 0))
+	const named = fields.map(({ field }) => loose(schema[field]?.display_name || field).toLowerCase())
+	for (const lit of block.querySelectorAll<HTMLElement>(ACTIVE)) {
+		// a tab, not a link marked current, like a breadcrumb's last
+		if (ours(lit) || block_of(lit) !== block || !lit.matches("button, [role=tab]")) continue
+		const tabs = [...(lit.parentElement?.children ?? [])]
+		if (tabs.length !== fields.length) continue
+		const labels = tabs.map((tab) => loose(tab.textContent ?? "").toLowerCase())
+		const misplaced = labels.some((label, i) =>
+			named.some((name, j) => j !== i && name.length > 3 && label.includes(name))
+		)
+		if (misplaced) return
+		const field = fields[tabs.indexOf(lit)].field
+		return owners.find((owner) => owner.field === field)
+	}
+}
+
+/** Which rich field an element shows, as the page is now: the only one, or the active of several the same */
+async function rich_now(node: HTMLElement, block: HTMLElement) {
+	const blok = await blok_for(block)
+	if (!blok) return
+	const text = (node.textContent ?? "").replace(/\s+/g, "")
+	const found = rich_fields(blok).filter(({ value }) => shows_rich(text, rich_compact(value)))
+	return found.length === 1 ? found[0] : found.length > 1 ? active_of(found, block) : undefined
+}
+
 /** A rich text field, and the blok it's in: the block's own, or one nested in it */
 type Rich = { blok: Blok; field: string }
 
@@ -278,6 +403,24 @@ const rich_fields = (blok: Blok) =>
 			.filter(([key, value]) => !key.startsWith("_") && is_rich(value) && rich_supported(value))
 			.map(([field, value]) => ({ blok: owner, field, value }))
 	)
+
+/** The bloks embedded in these richtext values, which show inside the text they're in */
+function embedded_in(values: Array<unknown>) {
+	type Node = { type?: string; attrs?: { body?: Array<{ _uid?: string }> }; content?: Array<Node> }
+	const uids = new Set<string>()
+	const walk = (node: Node | null) => {
+		if (!node || typeof node !== "object") return
+		if (node.type === "blok")
+			for (const { _uid } of node.attrs?.body ?? []) if (_uid) uids.add(_uid)
+		node.content?.forEach(walk)
+	}
+	values.forEach((value) => walk(value as Node))
+	return uids
+}
+
+/** Whether an element holds a blok that's not in the text, like the aside beside it */
+const holds_blok = (node: Element, embedded: Set<string>) =>
+	[...node.querySelectorAll("[data-blok-c]")].some((el) => !embedded.has(meta(el).uid ?? ""))
 
 /** Spaces aside, as text shows on the page however the site wraps it */
 const loose = (text: string) => text.replace(/\s+/g, " ").trim()
@@ -337,7 +480,12 @@ function match(text: string, candidates: Iterable<Blok>, story: number, shown?: 
 /** Where text inside a link to another story comes from: its name, or one of its fields */
 function linked_source(text: string, story: Linked): Source | undefined {
 	if (loose(story.name) === text) return { story: story.id, name: true, max: 255 }
-	return match(text, each_blok(story.content), story.id)
+	const found = matches(text, each_blok(story.content), story.id)
+	if (found.length < 2) return found[0]
+	// a link shows a story's summary, as a card does: its own field over one a section of its page
+	// shows, prefixed like `showcase_suptitle`, when both hold the same words
+	const own = found.filter((source) => "field" in source && !source.field.includes("_"))
+	return own.length === 1 ? own[0] : undefined
 }
 
 /** Where this text comes from: its blok's field first, then a story the link around it goes to, then the page's own story */
@@ -347,17 +495,40 @@ function linked_source(text: string, story: Linked): Source | undefined {
  * from, even when which of several identical bodies it is can't be told
  */
 function in_rich(shown: Node, owners: Array<Blok | undefined>) {
-	const compacts = owners.flatMap((owner) =>
-		owner ? rich_fields(owner).map(({ value }) => rich_compact(value)) : []
-	)
+	const compacts = owners.flatMap((owner) => (owner ? riches_of(owner) : []))
 	if (!compacts.length) return false
-	const own = (shown.textContent ?? "").replace(/\s+/g, "")
+	const own = compact_text(shown)
 	for (let at = shown.parentElement; at && !at.hasAttribute("data-blok-c"); at = at.parentElement) {
-		const text = (at.textContent ?? "").replace(/\s+/g, "")
-		if (text !== own && compacts.some((compact) => compact && shows_rich(text, compact)))
-			return true
+		const text = compact_text(at)
+		if (text !== own && compacts.some((compact) => shows_rich(text, compact))) return true
 	}
 	return false
+}
+
+/*
+ * A whole page's text is looked through for every piece of it as a block is first hovered, so
+ * what that asks again and again is kept: a blok's rich text for a moment, as its content only
+ * changes with a save, and each element's text, spaces aside, for the frame
+ */
+const rich_cache = new WeakMap<object, { at: number; compacts: Array<string> }>()
+function riches_of(blok: Blok) {
+	const kept = rich_cache.get(blok)
+	if (kept && performance.now() - kept.at < 1000) return kept.compacts
+	const compacts = rich_fields(blok)
+		.map(({ value }) => rich_compact(value))
+		.filter(Boolean)
+	rich_cache.set(blok, { at: performance.now(), compacts })
+	return compacts
+}
+
+let texts = new WeakMap<Node, string>()
+let texts_frame = 0
+function compact_text(node: Node) {
+	if (!texts_frame)
+		texts_frame = requestAnimationFrame(() => ((texts = new WeakMap()), (texts_frame = 0)))
+	let text = texts.get(node)
+	if (text === undefined) texts.set(node, (text = (node.textContent ?? "").replace(/\s+/g, "")))
+	return text
 }
 
 async function source_of(
@@ -377,8 +548,12 @@ async function source_of(
 		(match(text, [blok], Number(meta(block).id), shown) ??
 			match(text, inner_bloks(blok), Number(meta(block).id), shown))
 	if (own) return own
-	const story = await story_at(node.closest("a[href]"))
-	if (story) return linked_source(text, story)
+	const around = node.closest("a[href]")
+	const story = await story_at(around ?? item_link(node, block))
+	// text in a link is that story's; the one link near it may only be beside it, like a link in the
+	// side of the page it titles
+	const linked = story && linked_source(text, story)
+	if (linked || (story && around)) return linked || undefined
 	// outside every block, or in the page's own: a template showing the page's fields under names
 	// of its own, or the page's name, like its title
 	const at_root = !block || (page?.uid !== undefined && meta(block).uid === page.uid)
@@ -673,8 +848,18 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 		if (finish || event.key === "Escape") {
 			event.preventDefault()
 			node.blur()
+			return
+		}
+		// in a button, a space presses it rather than typing: typed here instead
+		if (event.key === " " && node.closest("button")) {
+			event.preventDefault()
+			document.execCommand("insertText", false, " ")
 		}
 	}
+
+	/* and the press a space makes as it's let go, in a button */
+	const keyup = (event: KeyboardEvent) =>
+		event.key === " " && node.closest("button") && event.preventDefault()
 
 	function before(event: InputEvent) {
 		const length = (node.textContent ?? "").length
@@ -722,6 +907,7 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 	node.contentEditable = "plaintext-only"
 	node.dataset.field = "name" in source ? "name" : source.field
 	node.addEventListener("keydown", keydown)
+	node.addEventListener("keyup", keyup)
 	node.addEventListener("beforeinput", before)
 	node.addEventListener("input", input)
 	node.addEventListener("focus", focus)
@@ -736,6 +922,7 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 
 	wired.set(node, () => {
 		node.removeEventListener("keydown", keydown)
+		node.removeEventListener("keyup", keyup)
 		node.removeEventListener("beforeinput", before)
 		node.removeEventListener("input", input)
 		node.removeEventListener("focus", focus)
@@ -868,6 +1055,7 @@ async function mark_riches(block: HTMLElement) {
 	const fields = blok ? rich_fields(blok) : []
 	if (!fields.length) return
 	const wanted = fields.map(({ value, ...rich }) => [rich_compact(value), rich] as const)
+	const embedded = embedded_in(fields.map(({ value }) => value))
 	// the outermost element showing each text, in order, so the same text in several fields pairs
 	// up with where it shows, as `match` does
 	const shown = new Map<string, Array<HTMLElement>>()
@@ -875,7 +1063,7 @@ async function mark_riches(block: HTMLElement) {
 	for (const el of block.querySelectorAll<HTMLElement>("*")) {
 		if (inside?.contains(el) || block_of(el) !== block) continue
 		const text = (el.textContent ?? "").replace(/\s+/g, "")
-		if (!text || el.querySelector("[data-blok-c]")) continue
+		if (!text || holds_blok(el, embedded)) continue
 		const compact = wanted.find(([want]) => shows_rich(text, want))?.[0]
 		if (compact === undefined) continue
 		shown.set(compact, [...(shown.get(compact) ?? []), el])
@@ -883,6 +1071,13 @@ async function mark_riches(block: HTMLElement) {
 	}
 	for (const [compact, els] of shown) {
 		const owners = wanted.filter(([want]) => want === compact).map(([, rich]) => rich)
+		// one shown of several the same, like a tab's body: the one whose tab is the active one
+		const one = els.length === 1 && owners.length > 1 ? active_of(owners, block) : undefined
+		if (one) {
+			riches.set(els[0], one)
+			els[0].dataset.rich = one.field
+			continue
+		}
 		if (owners.length !== els.length) continue
 		els.forEach((el, i) => {
 			riches.set(el, owners[i])
@@ -1064,8 +1259,8 @@ const riches = new WeakMap<Element, Rich>()
 
 /**
  * The element showing one of its blok's richtext fields: the nearest one around `el` whose
- * text, spaces aside, is the field's. Embedded bloks or anything else in the way and it doesn't
- * match, so only what can be edited whole is offered.
+ * text, spaces aside, is the field's. Bloks of its own in the way, not ones embedded in the text,
+ * or anything else, and it doesn't match, so only what can be edited whole is offered.
  */
 async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 	const block = block_of(el)
@@ -1073,13 +1268,17 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 	if (!block || !blok) return
 	const fields = rich_fields(blok)
 	if (!fields.length) return
+	const embedded = embedded_in(fields.map(({ value }) => value))
 	for (let node: Element | null = el; node && node !== block; node = node.parentElement) {
 		if (riches.has(node)) return node as HTMLElement
-		if (node.querySelector("[data-blok-c]")) return
+		if (holds_blok(node, embedded)) return
 		const text = (node.textContent ?? "").replace(/\s+/g, "")
 		if (!text) continue
 		const found = fields.filter(({ value }) => shows_rich(text, rich_compact(value)))
-		if (found.length === 1) {
+		// one of several the same, like a tab's body: the one whose tab is active
+		const pick =
+			found.length === 1 ? found[0] : found.length > 1 ? active_of(found, block) : undefined
+		if (pick) {
 			// the outermost wrapper showing just this text, so the editor takes the site's richtext container
 			let outer = node
 			while (
@@ -1088,7 +1287,7 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 				(outer.parentElement.textContent ?? "").replace(/\s+/g, "") === text
 			)
 				outer = outer.parentElement
-			const { blok: owner, field } = found[0]
+			const { blok: owner, field } = pick
 			riches.set(outer, { blok: owner, field })
 			;(outer as HTMLElement).dataset.rich = field
 			return outer as HTMLElement
@@ -1103,8 +1302,12 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	// otherwise get past this to open two editors on the one field
 	if (editing_rich) return
 	editing_rich = () => {}
-	const { blok, field } = riches.get(node) ?? {}
 	const block = block_of(node)
+	// which of several identical bodies, like tabs', is the one showing can change as they switch,
+	// and one element can show each in turn: what it was found showing, only while it still does
+	const was = riches.get(node)
+	const still = was && shows_rich(compact_text(node), rich_compact(was.blok[was.field]))
+	const { blok, field } = (block && (await rich_now(node, block))) ?? (still ? was : {})
 	if (!field || !block || !blok?._uid) return void (editing_rich = null)
 	const source = { story: Number(meta(block).id), uid: blok._uid, field }
 	bar.hide()
@@ -1118,7 +1321,7 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 		if (!loaded) toast("Couldn’t open the text editor; try again")
 		return
 	}
-	const { edit_in_place, shared_doc } = loaded
+	const { edit_in_place, holds, shared_doc } = loaded
 	const schema = (await load_schema().catch(() => null))?.get(blok.component ?? "")?.schema[field]
 	const inserts = await rich_inserts(schema).catch(() => undefined)
 	// the first one in starts it from what's saved, not what the page last showed
@@ -1133,6 +1336,13 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 		return
 	}
 	const doc = saved ?? (blok[field] as Record<string, unknown>)
+	// what's in the room already, or else what's saved, only if the editor can hold all of it
+	const held = room.doc.getXmlFragment("rich").length ? shared_doc(room) : doc
+	if (!holds(held)) {
+		editing_rich = null
+		leave_room(room)
+		return void toast("This text has something in it the editor can’t take, so it’s left as it is")
+	}
 
 	// saves while it's open leave the page's data be; it catches up once, when the editing's done
 	let open = true
@@ -1433,7 +1643,10 @@ function over(event: PointerEvent) {
 
 function click(event: MouseEvent) {
 	if (!active) return
-	const el = event.target as Element
+	// a slider that captured the pointer to drag gets the click itself, not what was under it
+	const under = document.elementFromPoint(event.clientX, event.clientY)
+	const target = event.target as Element
+	const el = under && under !== target && target.contains(under) ? under : target
 	if (ours(el)) return
 	const block = block_of(el)
 	const link = el.closest("a[href]")
@@ -1449,8 +1662,11 @@ function click(event: MouseEvent) {
 	if (button && block.contains(button) && editing_label) {
 		claimed.delete(button)
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-		event.preventDefault()
-		event.stopPropagation()
+		// a closed disclosure, like a question over its answer, opens too, so what it hides can be edited
+		if (button.getAttribute("aria-expanded") !== "false") {
+			event.preventDefault()
+			event.stopPropagation()
+		}
 	}
 	const rich = el.closest<HTMLElement>("[data-rich]")
 	if (rich && riches.has(rich)) {

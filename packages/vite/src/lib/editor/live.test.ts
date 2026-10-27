@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import * as Y from "yjs"
-import { anchor, apply_edit, leader_of, rebase, type_into, type Person } from "./live.js"
+import {
+	anchor,
+	apply_edit,
+	enter,
+	leader_of,
+	leave,
+	quietly,
+	rebase,
+	type_into,
+	type Person,
+} from "./live.js"
 
 /** Two people's copies of one field, each passing its changes to the other */
 function pair(start: string) {
@@ -90,5 +100,54 @@ describe("who saves a field", () => {
 		expect(leader_of(everyone, "1:a:title")).toBe("first")
 		expect(leader_of(everyone, "1:a:body")).toBe("early")
 		expect(leader_of(everyone, "1:b:title")).toBeNull()
+	})
+})
+
+describe("saving a field", () => {
+	const wait = (ms: number) => new Promise((done) => setTimeout(done, ms))
+
+	test("not while its document is empty and nobody here typed, as before the saved text is in", async () => {
+		const room = enter("1:a:title")
+		const saves: Array<unknown> = []
+		const text = room.doc.getText("text")
+		room.saved = "Industry 01"
+		room.value = () => text.toString()
+		room.save = async (value) => (saves.push(value), true)
+		// a change to the room that isn't typing, like someone else joining, has it look to save
+		quietly(room, () => room.doc.getMap("other").set("x", 1))
+		await wait(900)
+		expect(saves).toEqual([])
+		await leave(room)
+		expect(saves).toEqual([])
+	})
+
+	test("nor a rich text one, with nothing but an empty paragraph in it", async () => {
+		const room = enter("1:a:body")
+		const saves: Array<unknown> = []
+		room.saved = {
+			type: "doc",
+			content: [{ type: "paragraph", content: [{ type: "text", text: "Hi" }] }],
+		}
+		room.value = () => ({ type: "doc", content: [{ type: "paragraph" }] })
+		room.save = async (value) => (saves.push(value), true)
+		quietly(room, () => room.doc.getMap("other").set("x", 1))
+		await wait(900)
+		expect(saves).toEqual([])
+		await leave(room)
+		expect(saves).toEqual([])
+	})
+
+	test("but when someone here cleared it", async () => {
+		const room = enter("1:a:subtitle")
+		const saves: Array<unknown> = []
+		const text = room.doc.getText("text")
+		quietly(room, () => text.insert(0, "Industry 01"))
+		room.saved = "Industry 01"
+		room.value = () => text.toString()
+		room.save = async (value) => (saves.push(value), true)
+		text.delete(0, text.length)
+		await wait(900)
+		expect(saves).toEqual([""])
+		await leave(room)
 	})
 })

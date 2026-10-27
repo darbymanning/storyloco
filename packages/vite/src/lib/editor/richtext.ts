@@ -1,4 +1,4 @@
-import { Editor, Mark, Node, mergeAttributes, type JSONContent } from "@tiptap/core"
+import { Editor, Mark, Node, getSchema, mergeAttributes, type JSONContent } from "@tiptap/core"
 import Blockquote from "@tiptap/extension-blockquote"
 import Bold from "@tiptap/extension-bold"
 import Code from "@tiptap/extension-code"
@@ -227,8 +227,13 @@ function extensions(shows: Shows = { colour: false }) {
 			},
 		}).configure(like("li")),
 		Table.extend({
-			renderHTML(props) {
-				const table = this.parent!(props)
+			// as a page draws it, without the column widths Storyblok keeps, which a site doesn't draw
+			renderHTML({ HTMLAttributes }) {
+				const table = [
+					"table",
+					mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
+					["tbody", 0],
+				] as const
 				const wrap = shows.looks?.table
 				return wrap ? [wrap.tag, { class: wrap.class }, table] : table
 			},
@@ -251,7 +256,8 @@ function extensions(shows: Shows = { colour: false }) {
 				copyright: null,
 				meta_data: null,
 			}),
-		}),
+			// in a paragraph, as Storyblok keeps it, rather than a block of its own
+		}).configure({ inline: true }),
 		Bold.extend({
 			renderHTML({ HTMLAttributes }) {
 				return looking("bold", "strong", this.options.HTMLAttributes, HTMLAttributes)
@@ -1178,6 +1184,20 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 
 export type RichDoc = JSONContent
 
+let schema: ReturnType<typeof getSchema> | undefined
+/**
+ * Whether the editor can hold this text as it is. What it can't, it drops as it takes the text from
+ * a room, and saving that would lose it
+ */
+export function holds(doc: RichDoc) {
+	try {
+		;(schema ??= getSchema(extensions())).nodeFromJSON(doc).check()
+		return true
+	} catch {
+		return false
+	}
+}
+
 /** Where a richtext field typed in together keeps its text in the room's document */
 const FIELD = "rich"
 
@@ -1296,6 +1316,78 @@ export function rich_editor({
 }
 
 /**
+ * The text as the page shows it: spaces run together, and none at a line's start or end. The page
+ * hides those, but the editor keeps every space, so the text would move as it opened
+ */
+export function as_shown(doc: RichDoc): RichDoc {
+	if (!doc.content || doc.type === "code_block") return doc
+	const content = doc.content.map(as_shown)
+	if (!content.some((node) => node.type === "text")) return { ...doc, content }
+	const line: Array<JSONContent> = []
+	// at a line's start, a space doesn't show; nor does one after another
+	let spaced = true
+	const trim_end = () => {
+		const at = line.findLastIndex((node) => node.type === "text")
+		if (at < 0 || line.slice(at + 1).some((node) => node.type !== "hard_break")) return
+		const text = line[at].text!.replace(/ $/, "")
+		if (text) line[at] = { ...line[at], text }
+		else line.splice(at, 1)
+	}
+	for (const node of content) {
+		if (node.type === "hard_break") {
+			trim_end()
+			spaced = true
+		} else if (node.type === "text") {
+			let text = (node.text ?? "").replace(/[ \t\n\r\f]+/g, " ")
+			if (spaced) text = text.replace(/^ /, "")
+			if (!text) continue
+			spaced = text.endsWith(" ")
+			line.push(node.text === text ? node : { ...node, text })
+			continue
+		} else spaced = false
+		line.push(node)
+	}
+	trim_end()
+	return { ...doc, content: line }
+}
+
+const HEADER = [
+	"color",
+	"font-weight",
+	"font-size",
+	"font-family",
+	"text-align",
+	"vertical-align",
+	"text-transform",
+	"letter-spacing",
+	"border-top",
+	"border-bottom",
+	"border-left",
+	"border-right",
+	"padding",
+]
+
+/** How a page draws a header cell, as a rule for the editor's first row of cells */
+function header_look(cell: HTMLElement) {
+	const style = getComputedStyle(cell)
+	// its own background, or the row's, or the header's it sits in
+	const clear = (colour: string) => colour === "transparent" || colour === "rgba(0, 0, 0, 0)"
+	let background = style.backgroundColor
+	for (
+		let at = cell.parentElement;
+		clear(background) && at && at.tagName !== "TABLE";
+		at = at.parentElement
+	)
+		background = getComputedStyle(at).backgroundColor
+	const looks = [
+		...HEADER.map((name) => `${name}:${style.getPropertyValue(name)}`),
+		`background-color:${background}`,
+	]
+	// over the site's own rules for a body's first cell, a row's heading, which the first row isn't
+	return `[data-storyloco=rich] table tr:first-child>:is(th,td){${looks.join(" !important;")} !important}`
+}
+
+/**
  * Edit the richtext an element on the page shows, in its place: the element steps aside for an
  * editor with the same classes, so the site's styles still apply, and comes back when focus
  * leaves, or Escape. `save` gets the document only if it changed.
@@ -1320,6 +1412,7 @@ export function edit_in_place(
 		together?: { room: Room; seed: boolean }
 	}
 ) {
+	doc = as_shown(doc)
 	// the wrappers the text sits in, copied without their content, so the site's styles hold at every level
 	const TEXT = /^(P|H[1-6]|UL|OL|LI|BLOCKQUOTE|SPAN|A|STRONG|EM)$/
 	const BLOCKS = "p,h1,h2,h3,h4,h5,h6,ul,ol,blockquote"
@@ -1391,6 +1484,12 @@ export function edit_in_place(
 			return `[data-storyloco=rich] img[src="${src.replace(/["\\]/g, "\\$&")}"]{inline-size:${width}px;aspect-ratio:${width}/${height};block-size:auto}`
 		})
 		.join("\n")
+	// a header row the page draws in a `thead`, which the editor's table can't have: its look, on the
+	// editor's first row
+	const head = source.querySelector<HTMLElement>("thead :is(th, td)")
+	// every table's, so a table without one doesn't take another's
+	const headed = source.querySelectorAll("table").length === source.querySelectorAll("thead").length
+	if (head && headed) sized.textContent += `\n${header_look(head)}`
 	host.prepend(sized)
 	area.style.setProperty("--editor-first", first)
 	area.style.setProperty("--editor-last", last)
