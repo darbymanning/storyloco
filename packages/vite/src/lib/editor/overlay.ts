@@ -22,6 +22,7 @@ import {
 	allowed,
 	find_blok,
 	fresh_blok,
+	is_heading,
 	is_rich,
 	locate,
 	rich_compact,
@@ -229,9 +230,7 @@ const TEXT = new Set(["text", "textarea", "markdown"])
 /** The field, when it shows as plain text on the page, by the blok's schema */
 function text_field(blok: Blok, key: string) {
 	const field = components.get(blok.component ?? "")?.schema[key]
-	return field && (TEXT.has(field.type) || field.field_type === "uiloco-heading")
-		? field
-		: undefined
+	return field && (TEXT.has(field.type) || is_heading(field)) ? field : undefined
 }
 
 // --- stories the page links to, like cards listing the latest articles
