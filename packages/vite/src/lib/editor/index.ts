@@ -4,6 +4,7 @@ export {
 	signout,
 	publish,
 	set_editing,
+	unless_editing,
 	in_place,
 	type EditorUser,
 	type Status,
