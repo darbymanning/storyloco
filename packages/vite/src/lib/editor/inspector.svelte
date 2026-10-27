@@ -136,7 +136,12 @@
 			const fields = (f.keys ?? [])
 				.map((key) => [key, component.schema[key]] as [string, Field])
 				.filter(([key, field]) => field && shown(key, field))
-			if (fields.length) out.push({ name: f.display_name || "More", fields })
+			if (!fields.length) continue
+			// a tab named like another, say "Content", is the same group rather than a second
+			const name = f.display_name || "More"
+			const same = out.find((group) => group.name === name)
+			if (same) same.fields.push(...fields)
+			else out.push({ name, fields })
 		}
 		return out
 	})
@@ -674,7 +679,7 @@
 			const doc = untrack(() => $state.snapshot(values[key])) ?? { type: "doc", content: [] }
 			const target = untrack(() => selection)
 			if (!target) return
-			import("./richtext.js").then(async ({ rich_editor, shared_doc }) => {
+			import("./richtext.js").then(async ({ holds, rich_editor, shared_doc }) => {
 				if (gone) return
 				const room = enter(`${target.story}:${target.uid}:${key}`)
 				const first = await room.ready
@@ -686,6 +691,14 @@
 					: undefined
 				const extras = await inserts(field).catch(() => undefined)
 				if (gone) return void leave(room)
+				// what's in the room already, or else what's saved, only if the editor can hold all of it
+				const fragment = room.doc.getXmlFragment("rich")
+				if (!holds((fragment.length ? shared_doc(room) : (saved ?? doc)) as RichDoc)) {
+					leave(room)
+					node.textContent =
+						"This text has something in it the editor can’t take, so it’s left as it is"
+					return
+				}
 				room.value = () => shared_doc(room)
 				room.save = (value, shared) => save_shared(target, key, value, shared)
 				together.add(key)

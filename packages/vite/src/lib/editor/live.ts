@@ -366,6 +366,16 @@ function join(room: Room) {
 	room.asking = setTimeout(() => join(room), 4000)
 }
 
+type Doc = { type?: string; content?: Array<Doc> }
+/** Holding something, as text is, or an image, rather than only paragraphs with nothing in them */
+const filled = (node: Doc): boolean =>
+	(node.type !== "doc" && node.type !== "paragraph") || !!node.content?.some(filled)
+
+/** No text at all: an empty string, or a rich document of nothing but empty paragraphs */
+const blank = (value: unknown) =>
+	value === "" ||
+	(!!value && typeof value === "object" && (value as Doc).type === "doc" && !filled(value as Doc))
+
 /** Save soon, if this browser saves the room's field and it changed */
 function later(room: Room) {
 	clearTimeout(room.timer)
@@ -382,6 +392,9 @@ async function flush(room: Room, leaving = false) {
 	if (!leads(room) && !(leaving && room.typed)) return
 	const value = room.value()
 	if (room.saved !== undefined && same(value, room.saved)) return
+	// emptied without anyone here typing is a document still being filled, not a field cleared:
+	// whoever clears one saves it as they leave
+	if (blank(value) && !room.typed) return
 	room.saving = room
 		.save(value, shared(room))
 		// a save that failed leaves the last good one, so the next tries again

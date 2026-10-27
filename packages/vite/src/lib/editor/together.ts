@@ -37,8 +37,6 @@ export function share_text(
 ) {
 	const room: Room = enter(key)
 	const text = room.doc.getText("text")
-	room.value = () => tidy(text.toString())
-	room.save = (value, shared) => save(value as string, shared)
 
 	// where this caret is, as a place in the text rather than a number, so others' typing moves it along
 	let mine: Y.RelativePosition | null = null
@@ -68,6 +66,9 @@ export function share_text(
 			// someone may have joined meanwhile and filled it already
 			if (!text.length) quietly(room, () => text.insert(0, start))
 		}
+		// only now is there a value to save: before the saved text is in, an empty one would blank the field
+		room.value = () => tidy(text.toString())
+		room.save = (value, shared) => save(value as string, shared)
 		if (early !== null) apply_edit(text, rebase(initial, early, text.toString()), own)
 		if (text.toString() !== (early ?? initial)) show()
 		text.observe(heard)
