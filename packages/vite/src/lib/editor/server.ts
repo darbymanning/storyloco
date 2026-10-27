@@ -338,6 +338,8 @@ const local = (path: string | null | undefined) =>
 	path?.startsWith("/") && !path.startsWith("//") ? path : "/"
 
 const cookie = { path: "/", httpOnly: true, secure: true, sameSite: "lax" } as const
+/** A sign-in that lands in edit mode, as ⌘⇧E does: from `/admin`, or `?edit` on any page */
+const EDIT_ON = "sl_edit_on"
 
 /** SvelteKit 3 only redirects to another origin when told it's meant to; SvelteKit 2 ignores the option */
 const to_moxy = redirect as (status: 303, location: URL, options: { external: true }) => never
@@ -1658,6 +1660,8 @@ const script = (value: {
 	space: string | null
 	draft: boolean
 	guest: { name: string | null; role: Guest["role"]; named: boolean; by: string | null } | null
+	/** Turn edit mode on, as the sign-in that brought them here asked */
+	edit?: boolean
 }) =>
 	`<script type="application/json" id="storyloco-editor">${JSON.stringify(value).replace(/</g, "\\u003c")}</script>`
 
@@ -1715,9 +1719,17 @@ export function create_editor({
 			const back = new URL(event.url)
 			back.searchParams.delete("edit")
 			const path = back.pathname + back.search
+			event.cookies.set(EDIT_ON, "1", { ...cookie, maxAge: 600 })
 			if (editor) redirect(303, path)
 			redirect(303, `${PREFIX}/signin?return=${encodeURIComponent(path)}`)
 		}
+		// edit mode on as the page lands, once, after a sign-in that asked for it
+		const edit =
+			!!editor &&
+			event.request.method === "GET" &&
+			!!event.request.headers.get("accept")?.includes("text/html") &&
+			!!event.cookies.get(EDIT_ON)
+		if (edit) event.cookies.delete(EDIT_ON, { path: "/" })
 		const response = await resolve(event, {
 			// after `resolve`, so a later hook has set the version: previews get the bar too, signed in or not
 			transformPageChunk: async ({ html }) => {
@@ -1734,10 +1746,24 @@ export function create_editor({
 				}
 				return html.replace(
 					"</head>",
-					`${script({ user: editor?.user ?? null, space: known, draft, guest: shared || null })}</head>`
+					`${script({ user: editor?.user ?? null, space: known, draft, guest: shared || null, edit })}</head>`
 				)
 			},
 		})
+		// `/admin`, where the site has no page of its own, is the home page in edit mode, signed in first
+		if (
+			response.status === 404 &&
+			event.request.method === "GET" &&
+			/^\/admin\/?$/.test(event.url.pathname)
+		)
+			return new Response(null, {
+				status: 303,
+				headers: {
+					location: editor ? "/" : `${PREFIX}/signin?return=%2F`,
+					"set-cookie": event.cookies.serialize(EDIT_ON, "1", { ...cookie, maxAge: 600 }),
+					"cache-control": "no-store",
+				},
+			})
 		// an editor's or guest's page is theirs, drafts and all: kept out of caches, whatever key
 		// the site's middleware moved them onto, and out of search engines
 		if (guest || editor)

@@ -22,6 +22,8 @@ type Injected = {
 	space: string | null
 	draft: boolean
 	guest?: SharedWith | null
+	/** Edit mode on as the page lands, as the sign-in that brought them here asked */
+	edit?: boolean
 }
 
 let injected: Injected = { user: null, space: null, draft: false, guest: null }
@@ -38,6 +40,7 @@ const watch = createSubscriber((update) => {
 		queueMicrotask(() => {
 			const tag = document.getElementById("storyloco-editor")
 			if (tag) injected = JSON.parse(tag.textContent || "{}")
+			if (injected.edit) set_editing(true)
 			update()
 		})
 	}
