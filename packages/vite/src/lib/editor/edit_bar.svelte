@@ -23,6 +23,7 @@
 	import Face from "./face.svelte"
 	import { afterNavigate, goto } from "$app/navigation"
 	import {
+		being_edited,
 		editor,
 		follow,
 		history,
@@ -121,6 +122,12 @@
 	let bar = $state<HTMLElement>()
 
 	const shown = $derived(!framed && (editor.draft || Boolean(editor.user)))
+
+	// for the site's CSS, as `unless_editing` is for its effects: what an animation would reveal rests
+	// in view while the page is being edited
+	$effect(() => {
+		document.documentElement.toggleAttribute("data-storyloco-editing", being_edited())
+	})
 	const story = $derived(editor.story)
 
 	// --- where it sits

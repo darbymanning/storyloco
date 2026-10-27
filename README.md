@@ -378,6 +378,26 @@ Visitors never see any of it. On the live site, press **⌘⇧E** (Ctrl+Shift+E)
 any address to sign in; once signed in, the badge shows on every page, and ⌘⇧E or **E** turns
 edit mode on and off. In development the badge is always there.
 
+An effect that takes over an element's content, like splitting a heading into words to animate
+them, leaves nothing of the site's own to type in, and nothing for Page history to show a version
+in. Wrap its attachment in `unless_editing`, from `storyloco/editor`, and it rests while the page is
+being edited, and in Page history's window, its cleanup putting the content back; it runs again
+once editing's done. `<html data-storyloco-editing>` is set at the same times, for CSS that keeps
+something hidden until an animation reveals it:
+
+```svelte
+<h1 {@attach unless_editing((node) => {
+	const split = new SplitText(node, { type: "words" })
+	return () => split.revert()
+})}>{title}</h1>
+
+<style>
+	:global(html:not([data-storyloco-editing])) h1 {
+		opacity: 0;
+	}
+</style>
+```
+
 Links inside content don't navigate in edit mode; hold ⌘ or Ctrl to follow one. Match the
 editor to a site with `--editor-bg`, `-ink`, `-muted`, `-line`, `-shadow`, `-font`,
 `--editor-accent` (and `-accent-ink`), `--editor-good`, `--editor-danger`, and `--editor-pill`

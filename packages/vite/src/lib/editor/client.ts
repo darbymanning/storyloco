@@ -334,6 +334,38 @@ export const editor = {
 	},
 }
 
+/** Page history's window: this site, framed by itself to show a version as it was */
+const in_history = (() => {
+	if (typeof window === "undefined" || window.self === window.top) return false
+	try {
+		return window.parent.location.origin === location.origin
+	} catch {
+		// framed by another site, like Storyblok's own editor
+		return false
+	}
+})()
+
+/** Whether the page is being edited, or shown as it was in Page history's window */
+export const being_edited = () => editor.editing || in_history
+
+/**
+ * An attachment that only runs while the page isn't being edited: one whose effect takes over the
+ * element's content, like splitting its text into words to animate them, rests in edit mode and in
+ * Page history's window, its cleanup undoing it, so the content is the site's own again, to edit in
+ * place and to show each version in. It runs again once editing's done.
+ *
+ * @example
+ * ```svelte
+ * <h1 {@attach unless_editing((node) => {
+ * 	const split = new SplitText(node, { type: "words" })
+ * 	return () => split.revert()
+ * })}>{title}</h1>
+ * ```
+ */
+export function unless_editing<T extends Element>(attachment: Attachment<T>): Attachment<T> {
+	return (node) => (being_edited() ? undefined : attachment(node))
+}
+
 /** Turn edit mode on or off, remembering it in this browser unless it's only for a moment */
 export function set_editing(on: boolean, remember = true) {
 	editing = on
