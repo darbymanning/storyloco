@@ -1342,7 +1342,7 @@ export function as_shown(doc: RichDoc): RichDoc {
 			if (spaced) text = text.replace(/^ /, "")
 			if (!text) continue
 			spaced = text.endsWith(" ")
-			node.text === text ? line.push(node) : line.push({ ...node, text })
+			line.push(node.text === text ? node : { ...node, text })
 			continue
 		} else spaced = false
 		line.push(node)
