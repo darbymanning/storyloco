@@ -1076,6 +1076,11 @@
 		grid-template-columns: 0fr;
 		transition: grid-template-columns 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 
+		/* folding, the clip below starts from 40rem out, so the track keeps the buttons in */
+		&:not(.open *) {
+			overflow-x: clip;
+		}
+
 		.open & {
 			grid-template-columns: 1fr;
 		}
