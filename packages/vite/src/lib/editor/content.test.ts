@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
 	is_heading,
+	is_link,
+	is_text,
 	is_video,
 	like_page,
 	copy_blok,
@@ -250,6 +252,17 @@ test("storyloco's plugins by any of the names they've had", () => {
 		expect(is_heading({ field_type })).toBe(true)
 	for (const field_type of ["uiloco-mux", "mux-field", "loco-mux", "video-mux"])
 		expect(is_video({ field_type })).toBe(true)
+	for (const field_type of ["uiloco-link", "loco-link", "link-field"])
+		expect(is_link({ field_type })).toBe(true)
 	expect(is_heading({ field_type: "uiloco-mux" })).toBe(false)
 	expect(is_video(undefined)).toBe(false)
+})
+
+test("text fields: plain text, and a heading's or a link's text", () => {
+	for (const type of ["text", "textarea", "markdown"]) expect(is_text({ type })).toBe(true)
+	expect(is_text({ type: "custom", field_type: "uiloco-link" })).toBe(true)
+	expect(is_text({ type: "custom", field_type: "uiloco-heading" })).toBe(true)
+	expect(is_text({ type: "custom", field_type: "uiloco-mux" })).toBe(false)
+	expect(is_text({ type: "richtext" })).toBe(false)
+	expect(is_text(undefined)).toBe(false)
 })

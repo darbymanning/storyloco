@@ -9,6 +9,7 @@ import {
 	fresh_blok,
 	find_blok,
 	is_heading,
+	is_text,
 	is_video,
 	locate,
 	set_asset,
@@ -1635,9 +1636,7 @@ async function operate(
 		// only what the schema says is text, so a typo'd or crafted field can't clobber anything else
 		const schema = components.find((c) => c.name === blok.component)?.schema[field]
 		before = input_of(schema, structuredClone(blok[field]))
-		const texty =
-			schema && (["text", "textarea", "markdown"].includes(schema.type) || is_heading(schema))
-		if (!texty || !set_text(blok, field, value))
+		if (!schema || !is_text(schema) || !set_text(blok, field, value))
 			throw new EditorError(400, `${field} isn’t a text field`)
 		const longest = Number(schema.max_length)
 		if (longest && value.length > longest)
