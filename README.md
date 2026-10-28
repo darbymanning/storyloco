@@ -189,8 +189,10 @@ export const client = new StoryblokClient({
 </section>
 ```
 
-`attrs` makes the block editable in the visual editor and gives it a stable `id` — the
-block's `anchor` field when it has one, so sections can be linked to, otherwise its `_uid`.
+`attrs` makes the block editable in the visual editor, and in place, and gives it the block's
+`anchor` field as its `id` when it has one, so sections can be linked to. Spread it anywhere the
+block shows, as many times as it does, like a menu item in both a header and a mobile drawer, or
+a shared layout story's fields across a header and a footer.
 
 Prefer it to `use:editable`. Being an attachment rather than an action it spreads, so the
 element keeps its own attributes, and you can wrap it to add project-specific ones in one
@@ -385,6 +387,10 @@ caret showing, and saves to the same story take turns, so no one's change is los
 Visitors never see any of it. On the live site, press **⌘⇧E** (Ctrl+Shift+E), or go to `/admin`
 (where the site has no page of its own) to sign in, landing in edit mode; once signed in, the badge shows on every page, and ⌘⇧E or **E** turns
 edit mode on and off. In development the badge is always there.
+
+In edit mode, a click that puts a link's or a button's text in place to type in doesn't reach the
+site's own click handler, and while it's being typed in, the pointer leaving doesn't reach whatever
+holds it. So a hover menu's items are typed in without the menu closing, with no code of the site's.
 
 An effect that takes over an element's content, like splitting a heading into words to animate
 them, leaves nothing of the site's own to type in, and nothing for Page history to show a version

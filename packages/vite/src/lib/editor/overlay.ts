@@ -1005,6 +1005,18 @@ async function edit_loose(event: PointerEvent) {
 /** Buttons whose text a press is about to edit, so their click doesn't press them too */
 const claimed = new WeakSet<Element>()
 
+/** The text being typed in, in place */
+const typing = () =>
+	document.activeElement?.closest<HTMLElement>(
+		"[data-field][contenteditable], [data-storyloco=rich]"
+	) ?? null
+
+/** The pointer wandering off doesn't close what holds the text being typed in, like a hover menu */
+function stay(event: Event) {
+	const field = active && typing()
+	if (field && event.target instanceof Node && event.target.contains(field)) event.stopPropagation()
+}
+
 /** A press's look for loose text to type in, which its click waits for before selecting */
 let loosening: Promise<void> | null = null
 
@@ -1650,15 +1662,25 @@ function click(event: MouseEvent) {
 	const block = block_of(el)
 	const link = el.closest("a[href]")
 	if (!block) return
+	// its text, or text its padding put in place to type in, rather than the control itself
+	const typing_in = (control: Element) => {
+		const field = typing()
+		return (
+			!!el.closest("[data-field], [data-rich]") ||
+			claimed.has(control) ||
+			(!!field && control.contains(field))
+		)
+	}
 	// in edit mode a link inside content picks what it shows; held keys still follow it
 	if (link && block.contains(link)) {
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 		event.preventDefault()
+		// nor does the site's own click run on text being typed in, like closing the menu it's in
+		if (typing_in(link)) event.stopPropagation()
 	}
 	// so does a button's text, which is edited rather than pressed, like a tab's label
 	const button = el.closest("button")
-	const editing_label = el.closest("[data-field], [data-rich]") || (button && claimed.has(button))
-	if (button && block.contains(button) && editing_label) {
+	if (button && block.contains(button) && typing_in(button)) {
 		claimed.delete(button)
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 		// a closed disclosure, like a question over its answer, opens too, so what it hides can be edited
@@ -2067,6 +2089,8 @@ export function install() {
 	document.addEventListener("pointerdown", over)
 	document.addEventListener("click", click, true)
 	document.addEventListener("keydown", keydown)
+	addEventListener("pointerleave", stay, true)
+	addEventListener("mouseleave", stay, true)
 	// a blok embedded in richtext, clicked in the text: its own fields, as the block it belongs to's story
 	document.addEventListener("storyloco:embed", (event) => {
 		const { uid } = (event as CustomEvent<{ uid: string }>).detail
