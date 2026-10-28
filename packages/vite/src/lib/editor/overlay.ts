@@ -723,13 +723,18 @@ const OURS = `[data-storyloco=image]{position:fixed;z-index:2147483000;animation
 [data-storyloco=image][hidden],[data-storyloco=image] [hidden]{display:none!important}
 button.storyloco-image{display:grid;place-items:center;inline-size:2rem;block-size:2rem;padding:0;border:0;border-radius:.5rem;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2)}
 button.storyloco-image:focus-visible{outline:2px solid #fff;outline-offset:-4px}
+button.storyloco-image svg{grid-area:1/1;transition:opacity .2s ease,rotate .2s ease,scale .2s ease}
+button.storyloco-image .x,button.storyloco-image[aria-expanded=true] svg:not(.x){opacity:0;rotate:-90deg;scale:.5}
+button.storyloco-image[aria-expanded=true] svg:not(.x){rotate:90deg}
+button.storyloco-image[aria-expanded=true] .x{opacity:1;rotate:0deg;scale:1}
 [data-storyloco=image] [role=menu]{position:absolute;inset:calc(100% + .375rem) 0 auto auto;display:grid;min-inline-size:9rem;padding:.25rem;border-radius:.625rem;background:var(--editor-bg,#fff);color:var(--editor-ink,#1b243f);box-shadow:0 0 0 1px var(--editor-line,rgb(27 36 63/.12)),0 8px 24px rgb(0 0 0/.18);animation:storyloco-in .12s ease-out}
 [data-storyloco=image] [role=menuitem]{all:unset;cursor:pointer;padding:.4375rem .625rem;border-radius:.375rem;font:500 .8125rem/1.25 system-ui,sans-serif;white-space:nowrap}
 [data-storyloco=image] [role=menuitem]:is(:hover,:focus-visible){background:color-mix(in srgb,currentColor 8%,transparent)}
 [data-storyloco=image] [data-do=remove]{color:var(--editor-danger,#e5484d)}
 [data-storyloco=drop]{position:fixed;z-index:2147482995;pointer-events:none;display:grid;place-items:center;box-sizing:border-box;padding:.75rem;border-radius:6px;background:color-mix(in srgb,var(--editor-accent,#05807f) 35%,rgb(0 0 0/.3));backdrop-filter:blur(2px);outline:2px dashed var(--editor-accent-ink,#fff);outline-offset:-8px;animation:storyloco-in .12s ease-out}
 [data-storyloco=drop][hidden]{display:none}
-[data-storyloco=drop] span{display:flex;align-items:center;gap:.5rem;padding:.5rem .875rem;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .875rem/1.25 system-ui,sans-serif;box-shadow:0 4px 16px rgb(0 0 0/.25)}
+[data-storyloco=drop] em{font-style:normal}
+[data-storyloco=drop] span{display:flex;align-items:center;gap:.5rem;padding:.5rem .875rem;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;letter-spacing:normal;box-shadow:0 4px 16px rgb(0 0 0/.25)}
 [data-storyloco=drop][data-uploading] span{animation:storyloco-pulse .8s ease-in-out infinite alternate}
 @keyframes storyloco-pulse{to{opacity:.55}}
 [data-storyloco=field-ring]{position:fixed;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
@@ -1323,11 +1328,15 @@ async function spot_of(img: HTMLImageElement): Promise<Spot | undefined> {
 let image_tools: HTMLDivElement | undefined
 let offered: HTMLImageElement | undefined
 
+function show_menu(open: boolean) {
+	image_tools!.querySelector("[role=menu]")!.toggleAttribute("hidden", !open)
+	image_tools!.querySelector("button")!.ariaExpanded = String(open)
+}
+
 function withdraw() {
 	if (image_tools) {
 		image_tools.hidden = true
-		image_tools.querySelector("[role=menu]")!.toggleAttribute("hidden", true)
-		image_tools.querySelector("button")!.ariaExpanded = "false"
+		show_menu(false)
 	}
 	if (offered) delete offered.dataset.image
 	offered = undefined
@@ -1375,7 +1384,7 @@ function offer(img: HTMLImageElement, spot: Spot) {
 	if (!image_tools) {
 		image_tools = document.createElement("div")
 		image_tools.dataset.storyloco = "image"
-		image_tools.innerHTML = `<button type="button" class="storyloco-image" aria-label="Image" aria-haspopup="menu" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg></button><div role="menu" hidden><button type="button" role="menuitem" data-do="replace">Replace image</button><button type="button" role="menuitem" data-do="remove">Remove image</button></div>`
+		image_tools.innerHTML = `<button type="button" class="storyloco-image" aria-label="Image" aria-haspopup="menu" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg><svg class="x" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button><div role="menu" hidden><button type="button" role="menuitem" data-do="replace">Replace image</button><button type="button" role="menuitem" data-do="remove">Remove image</button></div>`
 		const [trigger, menu] = [
 			image_tools.firstElementChild as HTMLButtonElement,
 			image_tools.lastElementChild!,
@@ -1384,10 +1393,15 @@ function offer(img: HTMLImageElement, spot: Spot) {
 			e.preventDefault()
 			e.stopPropagation()
 			const open = menu.hasAttribute("hidden")
-			menu.toggleAttribute("hidden", !open)
-			trigger.ariaExpanded = String(open)
+			show_menu(open)
 			if (open) (menu.firstElementChild as HTMLElement).focus()
 		})
+		// a click anywhere else closes the menu, leaving the button
+		document.addEventListener(
+			"pointerdown",
+			(e) => !image_tools!.contains(e.target as Node) && show_menu(false),
+			true
+		)
 		image_tools.addEventListener("keydown", (e) => e.key === "Escape" && withdraw())
 		image_tools.addEventListener("pointerleave", (e) => e.relatedTarget !== offered && withdraw())
 		addEventListener("scroll", withdraw, { passive: true })
@@ -1449,7 +1463,7 @@ function show_hint(img: HTMLImageElement, uploading = false) {
 	if (!hint) {
 		hint = document.createElement("div")
 		hint.dataset.storyloco = "drop"
-		hint.innerHTML = `<span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M4 20h16"/></svg><b></b></span>`
+		hint.innerHTML = `<span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M4 20h16"/></svg><em></em></span>`
 		document.body.append(hint)
 	}
 	const box = img.getBoundingClientRect()
@@ -1459,7 +1473,7 @@ function show_hint(img: HTMLImageElement, uploading = false) {
 		width: `${box.width}px`,
 		height: `${box.height}px`,
 	})
-	hint.querySelector("b")!.textContent = uploading ? "Uploading…" : "Drop to replace"
+	hint.querySelector("em")!.textContent = uploading ? "Uploading…" : "Drop to replace"
 	hint.toggleAttribute("data-uploading", uploading)
 	hint.hidden = false
 }

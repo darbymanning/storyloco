@@ -49,20 +49,10 @@
 	let search = $state("")
 	let tree = $state<Array<Folder>>([])
 	let folder = $state<number | null>(null)
-	const inside = $derived(
-		tree.filter(({ parent }) => parent === folder).sort((a, b) => a.name.localeCompare(b.name))
-	)
-	/** The folders down to this one, for the way back up */
-	const trail = $derived.by(() => {
-		const steps: Array<Folder> = []
-		let at = tree.find(({ id }) => id === folder)
-		while (at) {
-			steps.unshift(at)
-			const { parent } = at
-			at = tree.find(({ id }) => id === parent)
-		}
-		return steps
-	})
+	/** The folders shown open in the tree */
+	let opened = $state<Array<number>>([])
+	const children_of = (parent: number | null) =>
+		tree.filter((f) => f.parent === parent).sort((a, b) => a.name.localeCompare(b.name))
 	let assets = $state<Array<Asset>>([])
 	let page = $state(1)
 	let more = $state(false)
@@ -133,7 +123,12 @@
 
 	function browse(to: number | null) {
 		folder = to
+		if (to !== null && !opened.includes(to)) opened.push(to)
 		load()
+	}
+
+	function toggle(id: number) {
+		opened = opened.includes(id) ? opened.filter((open) => open !== id) : [...opened, id]
 	}
 
 	let typing: ReturnType<typeof setTimeout> | undefined
@@ -200,6 +195,63 @@
 	}
 </script>
 
+{#snippet Branch(parent: number | null)}
+	<ul>
+		{#each children_of(parent) as child (child.id)}
+			{@const nested = children_of(child.id).length > 0}
+			{@const expanded = opened.includes(child.id)}
+			<li>
+				<div class="row">
+					{#if nested}
+						<button
+							class="twisty"
+							type="button"
+							aria-label="{expanded ? 'Close' : 'Open'} {child.name}"
+							aria-expanded={expanded}
+							onclick={() => toggle(child.id)}
+						>
+							<svg
+								width="12"
+								height="12"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg
+							>
+						</button>
+					{/if}
+					<button
+						class="folder"
+						type="button"
+						aria-current={folder === child.id ? "true" : undefined}
+						onclick={() => browse(child.id)}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.75"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+							><path
+								d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+							/></svg
+						>
+						<span>{child.name}</span>
+					</button>
+				</div>
+				{#if nested && expanded}{@render Branch(child.id)}{/if}
+			</li>
+		{/each}
+	</ul>
+{/snippet}
+
 <dialog
 	{@attach open}
 	class="picker"
@@ -231,105 +283,63 @@
 			</button>
 		</header>
 
-		<div class="body">
-			<section class="chosen">
-				{#if chosen.filename && !IMAGE.test(chosen.filename)}
-					<p class="document">{chosen.filename.split("/").pop()}</p>
-				{:else if chosen.filename}
-					<button
-						class="preview"
-						type="button"
-						aria-label="Set the focus point"
-						title="Click where the image should stay in view when it’s cropped"
-						onclick={place}
-					>
-						<img src={thumb(chosen.filename, 800)} alt="" />
-						{#if marker}
-							<span class="focus" style:left="{marker.x}%" style:top="{marker.y}%"></span>
-						{/if}
-					</button>
-				{/if}
-				<p class="hint" hidden={!IMAGE.test(chosen.filename)}>
-					{#if focus}
-						Crops keep the point you clicked in view.
-						<button class="link" type="button" onclick={() => (focus = "")}>Clear it</button>
-					{:else}
-						Click the image to choose what stays in view when it’s cropped.
-					{/if}
-				</p>
-
-				<label>
-					<span>Alt text</span>
-					<textarea
-						rows="3"
-						bind:value={alt}
-						placeholder="What the image shows, for people who can’t see it"></textarea>
-				</label>
-				{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
-					<p class="hint">
-						<button class="link" type="button" disabled={suggesting} onclick={suggest_alt}>
-							{suggesting ? "Looking at the image…" : alt ? "Suggest another" : "Suggest alt text"}
+		<div class={["body", { "with-tree": tree.length > 0 }]}>
+			{#if tree.length}
+				<nav class="tree" aria-label="Folders">
+					<div class="row">
+						<button
+							class="folder"
+							type="button"
+							aria-current={folder === null ? "true" : undefined}
+							onclick={() => browse(null)}
+						>
+							<svg
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+								><rect x="3" y="3" width="18" height="18" rx="2" /><circle
+									cx="9"
+									cy="9"
+									r="2"
+								/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg
+							>
+							<span>All images</span>
 						</button>
-						· check it says what matters here
-					</p>
-				{/if}
-			</section>
+					</div>
+					{@render Branch(null)}
+				</nav>
+			{/if}
 
 			<section class="library">
-				<div class="head">
-					<div class="tools">
+				<div class="tools">
+					<input
+						type="search"
+						placeholder="Search the library"
+						aria-label="Search the library"
+						bind:value={search}
+						oninput={searched}
+					/>
+					<label class="button">
 						<input
-							type="search"
-							placeholder="Search the library"
-							aria-label="Search the library"
-							bind:value={search}
-							oninput={searched}
+							type="file"
+							accept={images ? "image/*" : undefined}
+							multiple
+							onchange={(e) => {
+								add(e.currentTarget.files)
+								e.currentTarget.value = ""
+							}}
 						/>
-						<label class="button">
-							<input
-								type="file"
-								accept={images ? "image/*" : undefined}
-								multiple
-								onchange={(e) => {
-									add(e.currentTarget.files)
-									e.currentTarget.value = ""
-								}}
-							/>
-							{uploading ? "Uploading…" : "Upload"}
-						</label>
-					</div>
-					{#if folder}
-						<nav class="trail" aria-label="Folder">
-							<button class="crumb" type="button" onclick={() => browse(null)}>All images</button>
-							{#each trail as step (step.id)}
-								<span class="sep" aria-hidden="true">/</span>
-								{#if step.id === folder}
-									<span class="crumb" aria-current="location">{step.name}</span>
-								{:else}
-									<button class="crumb" type="button" onclick={() => browse(step.id)}
-										>{step.name}</button
-									>
-								{/if}
-							{/each}
-						</nav>
-					{/if}
+						{uploading ? "Uploading…" : "Upload"}
+					</label>
 				</div>
 
 				<ul class="grid" aria-busy={loading}>
-					{#if !search}
-						{#each inside as child (child.id)}
-							<li>
-								<button class="folder" type="button" onclick={() => browse(child.id)}>
-									<svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">
-										<path
-											d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
-										/>
-									</svg>
-									<span>{child.name}</span>
-								</button>
-							</li>
-						{/each}
-					{/if}
 					{#each assets as asset (asset.id)}
 						<li>
 							<button
@@ -365,6 +375,55 @@
 						disabled={loading}
 						onclick={() => load(page + 1)}>More</button
 					>
+				{/if}
+			</section>
+
+			<section class="chosen">
+				{#if chosen.filename && !IMAGE.test(chosen.filename)}
+					<p class="document">{chosen.filename.split("/").pop()}</p>
+				{:else if chosen.filename}
+					<button
+						class="preview"
+						type="button"
+						aria-label="Set the focus point"
+						title="Click where the image should stay in view when it’s cropped"
+						onclick={place}
+					>
+						<img src={thumb(chosen.filename, 800)} alt="" />
+						{#if marker}
+							<span class="focus" style:left="{marker.x}%" style:top="{marker.y}%"></span>
+						{/if}
+					</button>
+				{/if}
+				{#if chosen.filename}
+					<p class="meta">
+						<span class="name">{chosen.filename.split("/").pop()}</span>
+						{#if size}<span>{size.width} × {size.height}</span>{/if}
+					</p>
+				{/if}
+				<p class="hint" hidden={!IMAGE.test(chosen.filename)}>
+					{#if focus}
+						Crops keep the point you clicked in view.
+						<button class="link" type="button" onclick={() => (focus = "")}>Clear it</button>
+					{:else}
+						Click the image to choose what stays in view when it’s cropped.
+					{/if}
+				</p>
+
+				<label>
+					<span>Alt text</span>
+					<textarea
+						rows="3"
+						bind:value={alt}
+						placeholder="What the image shows, for people who can’t see it"></textarea>
+				</label>
+				{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
+					<p class="hint">
+						<button class="link" type="button" disabled={suggesting} onclick={suggest_alt}>
+							{suggesting ? "Looking at the image…" : alt ? "Suggest another" : "Suggest alt text"}
+						</button>
+						· check it says what matters here
+					</p>
 				{/if}
 			</section>
 		</div>
@@ -410,7 +469,7 @@
 		font: var(--font);
 		/* A set height, so searching doesn't make the dialog jump */
 		block-size: min(44rem, 100dvh - 2rem);
-		inline-size: min(60rem, 100vw - 2rem);
+		inline-size: min(74rem, 100vw - 2rem);
 		padding: 0;
 
 		&::backdrop {
@@ -461,19 +520,134 @@
 
 	.body {
 		display: grid;
-		gap: 1.25rem;
-		grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr) minmax(0, 19rem);
 		min-block-size: 0;
-		padding: 1.25rem;
 
-		@media (width < 40rem) {
-			grid-template-columns: minmax(0, 1fr);
-			overflow: auto;
+		&.with-tree {
+			grid-template-columns: minmax(0, 13rem) minmax(0, 1fr) minmax(0, 19rem);
+		}
+
+		@media (width < 48rem) {
+			&,
+			&.with-tree {
+				grid-template-columns: minmax(0, 1fr);
+				overflow: auto;
+			}
+		}
+	}
+
+	/* The space's folders, as Storyblok's own asset manager shows them */
+	.tree {
+		border-inline-end: 1px solid var(--line);
+		overflow: auto;
+		padding: 0.75rem 0.5rem;
+
+		& ul {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+
+		& ul ul {
+			padding-inline-start: 0.875rem;
+		}
+
+		& li::before {
+			content: none;
+		}
+
+		@media (width < 48rem) {
+			border-block-end: 1px solid var(--line);
+			border-inline-end: 0;
+			max-block-size: 10rem;
+		}
+	}
+
+	.row {
+		align-items: center;
+		display: grid;
+		grid-template-columns: 1.25rem minmax(0, 1fr);
+	}
+
+	.twisty {
+		background: none;
+		border: 0;
+		color: var(--muted);
+		cursor: pointer;
+		display: grid;
+		padding: 0.25rem;
+		place-items: center;
+
+		& svg {
+			transition: rotate 0.15s ease;
+		}
+
+		&[aria-expanded="true"] svg {
+			rotate: 90deg;
+		}
+	}
+
+	.folder {
+		align-items: center;
+		background: none;
+		border: 0;
+		border-radius: 0.375rem;
+		color: inherit;
+		cursor: pointer;
+		display: flex;
+		font: inherit;
+		gap: 0.5rem;
+		grid-column: 2;
+		padding: 0.375rem 0.5rem;
+		text-align: start;
+
+		& svg {
+			color: var(--muted);
+			flex: none;
+		}
+
+		& span {
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		&:hover {
+			background: color-mix(in srgb, var(--ink) 6%, transparent);
+		}
+
+		&[aria-current] {
+			background: color-mix(in srgb, var(--accent) 16%, transparent);
+
+			& svg {
+				color: var(--accent);
+			}
+		}
+	}
+
+	.meta {
+		color: var(--muted);
+		display: flex;
+		font-size: 0.75rem;
+		gap: 0.5rem;
+		justify-content: space-between;
+		margin: 0;
+
+		& .name {
+			color: var(--ink);
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 	}
 
 	.chosen {
+		border-inline-start: 1px solid var(--line);
 		display: grid;
+		/* the file name truncates rather than widening it */
+		grid-template-columns: minmax(0, 1fr);
+		overflow: auto;
+		padding: 1.25rem;
 		gap: 0.75rem;
 		align-content: start;
 
@@ -560,48 +734,11 @@
 	}
 
 	.library {
-		border-radius: 0.75rem;
+		padding: 1.25rem;
 		display: grid;
 		gap: 0.75rem;
 		grid-template-rows: auto minmax(0, 1fr);
 		min-block-size: 0;
-	}
-
-	.head {
-		display: grid;
-		gap: 0.625rem;
-	}
-
-	.trail {
-		align-items: center;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-	}
-
-	.crumb {
-		background: none;
-		border: 0;
-		color: var(--muted);
-		font: inherit;
-		padding: 0.125rem 0.25rem;
-
-		&:is(button) {
-			cursor: pointer;
-
-			&:hover {
-				color: var(--ink);
-			}
-		}
-
-		&[aria-current] {
-			color: var(--ink);
-			font-weight: 600;
-		}
-	}
-
-	.sep {
-		color: var(--muted);
 	}
 
 	.tools {
@@ -647,30 +784,6 @@
 
 			&.selected {
 				outline-color: var(--accent);
-			}
-
-			&.folder {
-				align-content: center;
-				background: color-mix(in srgb, var(--ink) 6%, transparent);
-				color: inherit;
-				display: grid;
-				font: inherit;
-				gap: 0.375rem;
-				justify-items: center;
-				padding: 0.5rem;
-				text-align: center;
-
-				& svg {
-					fill: none;
-					stroke: var(--muted);
-					stroke-linecap: round;
-					stroke-linejoin: round;
-					stroke-width: 1.5;
-				}
-
-				& span {
-					overflow-wrap: anywhere;
-				}
 			}
 		}
 
