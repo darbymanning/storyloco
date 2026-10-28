@@ -350,9 +350,14 @@ async function stand_in(node: HTMLElement, source: { story: number; uid: string 
 		up = up.parentElement
 	)
 		el = up
-	el.dataset.blokC = JSON.stringify({ id: source.story, uid: source.uid, name: blok.component })
+	mark(el, source.story, blok)
+}
+
+/** An element standing in for a blok the site didn't mark */
+function mark(el: HTMLElement, story: number, blok: Blok) {
+	el.dataset.blokC = JSON.stringify({ id: story, uid: blok._uid, name: blok.component })
 	inferred.add(el)
-	if (by_uid && !by_uid.has(source.uid)) by_uid.set(source.uid, el)
+	if (by_uid && !by_uid.has(blok._uid!)) by_uid.set(blok._uid!, el)
 	if (active) prepare(true)
 }
 
@@ -1260,8 +1265,16 @@ function image_field(img: HTMLImageElement, candidates: Iterable<Blok>, story: n
 async function spot_of(img: HTMLImageElement): Promise<Spot | undefined> {
 	const block = block_of(img)
 	const blok = await blok_for(block)
-	const own = blok && block && image_field(img, [blok], Number(meta(block).id))
+	const id = block ? Number(meta(block).id) : 0
+	const own = blok && block && image_field(img, [blok], id)
 	if (own) return own
+	// a nested blok's image, like a logo in a marked footer's list of them: the image stands in for it
+	const nested = blok && block && image_field(img, inner_bloks(blok), id)
+	if (nested) {
+		const inner = find_blok(blok!, nested.uid) as Blok | undefined
+		if (inner && img.isConnected && block_of(img) === block) mark(img, id, inner)
+		return nested
+	}
 	const story = await story_at(img.closest("a[href]"))
 	return story ? image_field(img, each_blok(story.content), story.id) : undefined
 }
