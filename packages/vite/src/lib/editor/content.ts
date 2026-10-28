@@ -414,9 +414,19 @@ export function fresh_blok(component: Component): Node {
  */
 const HEADINGS = new Set(["uiloco-heading", "heading-field"])
 const VIDEOS = new Set(["uiloco-mux", "mux-field", "loco-mux", "video-mux"])
+const LINKS = new Set(["uiloco-link", "loco-link", "link-field"])
 
 type Plugged = { field_type?: string | null } | null | undefined
 /** A heading plugin's field: its text, and the tag it shows as */
 export const is_heading = (field: Plugged) => HEADINGS.has(field?.field_type ?? "")
 /** A Mux video plugin's field */
 export const is_video = (field: Plugged) => VIDEOS.has(field?.field_type ?? "")
+/** A link plugin's field, whose text is the link's label */
+export const is_link = (field: Plugged) => LINKS.has(field?.field_type ?? "")
+
+/** A field that shows as plain text on the page, so it can be typed in where it shows */
+export const is_text = (field: (Plugged & { type?: string }) | null | undefined) =>
+	!!field &&
+	(["text", "textarea", "markdown"].includes(field.type ?? "") ||
+		is_heading(field) ||
+		is_link(field))

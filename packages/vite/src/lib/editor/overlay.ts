@@ -22,7 +22,7 @@ import {
 	allowed,
 	find_blok,
 	fresh_blok,
-	is_heading,
+	is_text,
 	is_rich,
 	locate,
 	rich_compact,
@@ -225,12 +225,10 @@ export const label_of = (name: string) => {
 	return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-const TEXT = new Set(["text", "textarea", "markdown"])
-
 /** The field, when it shows as plain text on the page, by the blok's schema */
 function text_field(blok: Blok, key: string) {
 	const field = components.get(blok.component ?? "")?.schema[key]
-	return field && (TEXT.has(field.type) || is_heading(field)) ? field : undefined
+	return is_text(field) ? field : undefined
 }
 
 // --- stories the page links to, like cards listing the latest articles
@@ -638,7 +636,8 @@ function place_tag() {
 /** An element's one child that matters, ignoring the comments and empty text a framework anchors its updates with */
 function only_child(el: Node) {
 	const nodes = [...el.childNodes].filter(
-		(node) => node.nodeType !== Node.COMMENT_NODE && !(node instanceof Text && !node.data)
+		// like the space a component leaves between its text and an icon it isn't showing
+		(node) => node.nodeType !== Node.COMMENT_NODE && !(node instanceof Text && !node.data.trim())
 	)
 	return nodes.length === 1 ? nodes[0] : undefined
 }
