@@ -731,7 +731,9 @@ button.storyloco-image[aria-expanded=true] .x{opacity:1;rotate:0deg;scale:1}
 [data-storyloco=image] [role=menuitem]{all:unset;cursor:pointer;padding:.4375rem .625rem;border-radius:.375rem;font:500 .8125rem/1.25 system-ui,sans-serif;white-space:nowrap}
 [data-storyloco=image] [role=menuitem]:is(:hover,:focus-visible){background:color-mix(in srgb,currentColor 8%,transparent)}
 [data-storyloco=image] [data-do=remove]{color:var(--editor-danger,#e5484d)}
-[data-storyloco=drop]{position:fixed;z-index:2147482995;pointer-events:none;display:grid;place-items:center;box-sizing:border-box;padding:.75rem;border-radius:6px;background:color-mix(in srgb,var(--editor-accent,#05807f) 35%,rgb(0 0 0/.3));backdrop-filter:blur(2px);outline:2px dashed var(--editor-accent-ink,#fff);outline-offset:-8px;animation:storyloco-in .12s ease-out}
+[data-storyloco=drop]{position:fixed;z-index:2147482995;pointer-events:none;display:grid;place-items:center;box-sizing:border-box;padding:.75rem;border-radius:6px;background:color-mix(in srgb,var(--editor-accent,#05807f) 35%,rgb(0 0 0/.3));backdrop-filter:blur(2px);animation:storyloco-in .12s ease-out}
+[data-storyloco=drop] .edge{position:absolute;inset:8px;inline-size:calc(100% - 16px);block-size:calc(100% - 16px);overflow:visible;fill:none;stroke:var(--editor-accent-ink,#fff);stroke-width:1.5;stroke-dasharray:6 7;stroke-linecap:round;opacity:.85;animation:storyloco-march .9s linear infinite}
+@keyframes storyloco-march{to{stroke-dashoffset:-13}}
 [data-storyloco=drop][hidden]{display:none}
 [data-storyloco=drop] em{font-style:normal}
 [data-storyloco=drop] span{display:flex;align-items:center;gap:.5rem;padding:.5rem .875rem;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;letter-spacing:normal;box-shadow:0 4px 16px rgb(0 0 0/.25)}
@@ -1463,7 +1465,7 @@ function show_hint(img: HTMLImageElement, uploading = false) {
 	if (!hint) {
 		hint = document.createElement("div")
 		hint.dataset.storyloco = "drop"
-		hint.innerHTML = `<span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M4 20h16"/></svg><em></em></span>`
+		hint.innerHTML = `<svg class="edge" aria-hidden="true"><rect width="100%" height="100%" rx="6"/></svg><span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M4 20h16"/></svg><em></em></span>`
 		document.body.append(hint)
 	}
 	const box = img.getBoundingClientRect()
