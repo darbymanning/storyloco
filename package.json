@@ -29,6 +29,7 @@
 		"packages/theme/types.ts",
 		"packages/shared/dist",
 		"packages/vite/dist",
+		"packages/vite/dist-editor",
 		"packages/vite/src/lib/currency.ts",
 		"!packages/vite/dist/**/*.test.*",
 		"packages/input/types.ts",
@@ -96,6 +97,10 @@
 		"./editor/server": {
 			"types": "./packages/vite/dist/editor/server.d.ts",
 			"import": "./packages/vite/dist/editor/server.js"
+		},
+		"./editor/ops": {
+			"types": "./packages/vite/dist/editor/ops.d.ts",
+			"import": "./packages/vite/dist/editor/ops.js"
 		},
 		"./time": {
 			"types": "./packages/time/types.ts",

@@ -24,36 +24,41 @@ type Injected = {
 	guest?: SharedWith | null
 	/** Edit mode on as the page lands, as the sign-in that brought them here asked */
 	edit?: boolean
+	/** Where to load the editor app from; this package's own copy when there's none */
+	app?: string | null
 }
 
-let injected: Injected = { user: null, space: null, draft: false, guest: null }
-let read = false
-let changed = () => {}
+/**
+ * What the editor app may ask of the site, beyond the state below: SvelteKit's navigation and
+ * page, which only the site's own bundle can reach. `EditBar` provides it
+ */
+export type Kit = {
+	goto(url: string, options?: { replaceState?: boolean; noScroll?: boolean }): Promise<void>
+	/** The page's data again: `refreshAll` on SvelteKit 3, `invalidateAll` on 2 */
+	refresh(): Promise<void>
+	replace_state(url: string | URL, state: unknown): void
+	page(): { url: URL; state: unknown }
+}
 
-// One subscriber for everything below. The server can't see the hook's script tag, so the first
-// render is signed out everywhere and the rest arrives just after hydration; reading it before
-// then would make the two disagree
-const watch = createSubscriber((update) => {
-	changed = update
-	if (!read && typeof document !== "undefined") {
-		read = true
-		queueMicrotask(() => {
-			const tag = document.getElementById("storyloco-editor")
-			if (tag) injected = JSON.parse(tag.textContent || "{}")
-			if (injected.edit) set_editing(true)
-			update()
-		})
-	}
-	return () => (changed = () => {})
-})
+/** The editor app, loaded from moxy or from this package */
+export type App = {
+	/** The bridge it was built against, which must be this page's */
+	bridge: number
+	mount(
+		target: HTMLElement,
+		props: { accent?: string; accent_ink?: string }
+	): { set(props: { accent?: string; accent_ink?: string }): void; destroy(): void }
+	install(): void
+	welcome(): void
+}
+
+/**
+ * The shape of what's shared below. A change to a field the site's copy reads or writes, or to
+ * `Kit` and `App`, is a new bridge; anything the app alone uses can change freely
+ */
+export const BRIDGE = 1
 
 type View = { readonly story: ISbStoryData | null; show?(content: unknown): void }
-
-/** The story the page connected with `client.connect()`, for its status and links */
-let connected: View | null = null
-
-/** The page's story when nothing connected one, worked out from the blocks on the page */
-let detected: ISbStoryData | null = null
 
 /** Someone editing the site, as the multiplayer room sees them */
 export type Person = {
@@ -73,18 +78,6 @@ export type Person = {
 	rooms: Array<string>
 }
 
-let presence: { me: { id: string; color: string } | null; people: Array<Person> } = {
-	me: null,
-	people: [],
-}
-
-/** Set by the multiplayer connection, loaded only for editors */
-export function set_presence(next: typeof presence) {
-	presence = next
-	if (following && !next.people.some((p) => p.id === following)) following = null
-	changed()
-}
-
 /** A comment that concerns this person: they were mentioned in it, or it's a reply in their thread */
 export type Notice = {
 	id: string
@@ -99,12 +92,116 @@ export type Notice = {
 	read_at: number | null
 }
 
-let inbox: { notices: Array<Notice>; unread: number } = { notices: [], unread: 0 }
+type Change = Record<string, unknown>
+type Done = { change: Change; label: string; at?: number }
+type Blok = { _uid?: string }
+
+/**
+ * Everything the editor keeps for the page, on the page rather than in this module: the site's
+ * bundle and the editor app, loaded from elsewhere, each have a copy of this module, and both see
+ * and change the one state. Each copy fills in what an older one didn't know about
+ */
+type State = {
+	bridge: number
+	injected: Injected
+	read: boolean
+	/** each Svelte runtime's way to say what it shows has changed */
+	subscribers: Set<() => void>
+	/** the story the page connected with `client.connect()`, for its status and links */
+	connected: View | null
+	/** the page's story when nothing connected one, worked out from the blocks on the page */
+	detected: ISbStoryData | null
+	presence: { me: { id: string; color: string } | null; people: Array<Person> }
+	inbox: { notices: Array<Notice>; unread: number }
+	/** whose view this page follows: the page they're on, and where they've scrolled to */
+	following: string | null
+	follow_listeners: Set<() => void>
+	navigations: Set<() => void>
+	pending: number
+	problem: string | null
+	editing: boolean
+	toggled: Set<(on: boolean) => void>
+	matches_live: Map<number, { updated_at: string | undefined; same: boolean }>
+	saved_listeners: Set<() => void>
+	sent_listeners: Set<(change: Change) => void>
+	undos: Array<Done>
+	redos: Array<Done>
+	touched: Set<number>
+	bloks: WeakMap<Element, Blok>
+	kit: Kit | null
+	app: Promise<App> | null
+	history_heard: boolean
+}
+
+const EDITING = "storyloco-editing"
+
+const S = ((globalThis as { __storyloco?: Partial<State> }).__storyloco ??= {}) as State
+S.bridge ??= BRIDGE
+S.injected ??= { user: null, space: null, draft: false, guest: null }
+S.read ??= false
+S.subscribers ??= new Set()
+S.connected ??= null
+S.detected ??= null
+S.presence ??= { me: null, people: [] }
+S.inbox ??= { notices: [], unread: 0 }
+S.following ??= null
+S.follow_listeners ??= new Set()
+S.navigations ??= new Set()
+S.pending ??= 0
+S.problem ??= null
+if (S.editing === undefined) {
+	/** Edit mode: on, the page's content can be selected and changed; off, it behaves as a visitor sees it */
+	S.editing = true
+	try {
+		S.editing = typeof localStorage === "undefined" || localStorage.getItem(EDITING) !== "off"
+	} catch {
+		// storage blocked: start in edit mode
+	}
+}
+S.toggled ??= new Set()
+S.matches_live ??= new Map()
+S.saved_listeners ??= new Set()
+S.sent_listeners ??= new Set()
+S.undos ??= []
+S.redos ??= []
+S.touched ??= new Set()
+S.bloks ??= new WeakMap()
+S.kit ??= null
+S.app ??= null
+S.history_heard ??= false
+
+const changed = () => {
+	for (const update of S.subscribers) update()
+}
+
+// One subscriber per Svelte runtime for everything below. The server can't see the hook's script
+// tag, so the first render is signed out everywhere and the rest arrives just after hydration;
+// reading it before then would make the two disagree
+const watch = createSubscriber((update) => {
+	S.subscribers.add(update)
+	if (!S.read && typeof document !== "undefined") {
+		S.read = true
+		queueMicrotask(() => {
+			const tag = document.getElementById("storyloco-editor")
+			if (tag) S.injected = JSON.parse(tag.textContent || "{}")
+			if (S.injected.edit) set_editing(true)
+			changed()
+		})
+	}
+	return () => S.subscribers.delete(update)
+})
+
+/** Set by the multiplayer connection, loaded only for editors */
+export function set_presence(next: State["presence"]) {
+	S.presence = next
+	if (S.following && !next.people.some((p) => p.id === S.following)) S.following = null
+	changed()
+}
 
 /** Fetch this person's notifications again, say after one arrives; an inbox that can't be read stays as it was */
 export async function load_inbox() {
-	if (!injected.user) return
-	inbox = await call<typeof inbox>({ op: "comments", do: "inbox" }).catch(() => inbox)
+	if (!S.injected.user) return
+	S.inbox = await call<State["inbox"]>({ op: "comments", do: "inbox" }).catch(() => S.inbox)
 	changed()
 }
 
@@ -116,13 +213,14 @@ export async function read_notices(which: { ids?: Array<string>; thread?: string
 		which.all || n.thread === which.thread || which.ids?.includes(n.id)
 			? { ...n, read_at: n.read_at ?? now }
 			: n
-	const notices = inbox.notices.map(read)
-	inbox = {
+	const notices = S.inbox.notices.map(read)
+	S.inbox = {
 		notices,
 		unread: Math.max(
 			0,
-			inbox.unread -
-				(inbox.notices.filter((n) => !n.read_at).length - notices.filter((n) => !n.read_at).length)
+			S.inbox.unread -
+				(S.inbox.notices.filter((n) => !n.read_at).length -
+					notices.filter((n) => !n.read_at).length)
 		),
 	}
 	changed()
@@ -130,46 +228,50 @@ export async function read_notices(which: { ids?: Array<string>; thread?: string
 	await load_inbox()
 }
 
-/** Whose view this page follows: the page they're on, and where they've scrolled to */
-let following: string | null = null
-
-const follow_listeners = new Set<() => void>()
-
 /** Follow someone's view, or stop with null */
 export function follow(id: string | null) {
-	if (following === id) return
-	following = id
+	if (S.following === id) return
+	S.following = id
 	changed()
-	for (const listener of follow_listeners) listener()
+	for (const listener of S.follow_listeners) listener()
 }
 
 /** Run `listener` whenever following starts or stops */
 export function on_follow(listener: () => void) {
-	follow_listeners.add(listener)
-	return () => follow_listeners.delete(listener)
+	S.follow_listeners.add(listener)
+	return () => S.follow_listeners.delete(listener)
 }
 
 /** Whether a page connected its story, so the overlay knows to work it out itself */
-export const connected_story = () => connected?.story ?? null
-
-const navigations = new Set<() => void>()
+export const connected_story = () => S.connected?.story ?? null
 
 /** Run `listener` after each client-side navigation, which the edit bar reports */
 export function on_navigate(listener: () => void) {
-	navigations.add(listener)
-	return () => navigations.delete(listener)
+	S.navigations.add(listener)
+	return () => S.navigations.delete(listener)
 }
 
-/** Called by the edit bar, which as a component can hear SvelteKit's navigations */
+/** Called by `EditBar`, which as a component of the site's can hear SvelteKit's navigations */
 export function navigated() {
 	// an undo shouldn't change a page that isn't showing
-	undos.length = redos.length = 0
-	for (const listener of navigations) listener()
+	S.undos.length = S.redos.length = 0
+	for (const listener of S.navigations) listener()
+}
+
+/** Set by `EditBar`: SvelteKit, for the editor app, which can't import the site's */
+export function set_kit(kit: Kit) {
+	S.kit = kit
+}
+
+/** SvelteKit's navigation and page, through the site's `EditBar` */
+export function kit(): Kit {
+	if (!S.kit) throw new Error("storyloco/editor: put <EditBar /> in the root layout")
+	return S.kit
 }
 
 /** Set the story the overlay worked out, for the edit bar's status and Publish */
 export function detected_story(story: ISbStoryData | null) {
-	detected = story
+	S.detected = story
 	changed()
 	if (story) check_live(story.id)
 }
@@ -179,6 +281,7 @@ export function detected_story(story: ISbStoryData | null) {
  * `null`; false when the page didn't connect its story, so can't show one
  */
 export function show_version(content: unknown) {
+	const connected = S.connected
 	if (!connected?.show) return false
 	// the story itself, not a version already showing, says what the page has resolved
 	connected.show(null)
@@ -189,9 +292,11 @@ export function show_version(content: unknown) {
 
 /**
  * A page framed by Page history, on this site, is its window into the past: it shows the version
- * it's sent, and says so once it's redrawn, whether it could show it in place or not
+ * it's sent, and says so once it's redrawn, whether it could show it in place or not. Heard once,
+ * by whichever copy of this module loads first
  */
-if (typeof window !== "undefined" && window.self !== window.top)
+if (typeof window !== "undefined" && window.self !== window.top && !S.history_heard) {
+	S.history_heard = true
 	addEventListener("message", async (event: MessageEvent) => {
 		const data = event.data as { storyloco?: string; id?: number; content?: unknown } | null
 		if (event.origin !== location.origin || data?.storyloco !== "show") return
@@ -203,28 +308,17 @@ if (typeof window !== "undefined" && window.self !== window.top)
 			{ targetOrigin: location.origin }
 		)
 	})
+}
 
 /** Called by `connect`; the returned cleanup forgets the story once its page goes */
 export function track(view: View) {
-	connected = view
+	S.connected = view
 	changed()
 	return () => {
-		if (connected !== view) return
-		connected = null
+		if (S.connected !== view) return
+		S.connected = null
 		changed()
 	}
-}
-
-let pending = 0
-let problem: string | null = null
-
-const EDITING = "storyloco-editing"
-/** Edit mode: on, the page's content can be selected and changed; off, it behaves as a visitor sees it */
-let editing = true
-try {
-	editing = typeof localStorage === "undefined" || localStorage.getItem(EDITING) !== "off"
-} catch {
-	// storage blocked: start in edit mode
 }
 
 /** Unpublished changes once a save is more than a second after the last publish, which stamps both */
@@ -235,28 +329,26 @@ export type Status = "draft" | "changed" | "published" | "checking"
  * Whether a story's draft has the same content as what's live, as last checked, for the save it
  * was checked at: a save after publishing that changed nothing, or was undone, isn't a change
  */
-const matches_live = new Map<number, { updated_at: string | undefined; same: boolean }>()
-
 function status_of({ id, published_at, updated_at }: ISbStoryData): Status {
 	if (!published_at) return "draft"
 	const saved_since = updated_at && Date.parse(updated_at) - Date.parse(published_at) > 1000
 	if (!saved_since) return "published"
-	const checked = matches_live.get(id)
+	const checked = S.matches_live.get(id)
 	if (checked?.updated_at !== updated_at) return "checking"
 	return checked.same ? "published" : "changed"
 }
 
 /** Compare a story's draft with what's live, so its status says whether there's anything to publish */
 export async function check_live(id: number) {
-	const updated_at = (connected?.story ?? detected)?.updated_at
+	const updated_at = (S.connected?.story ?? S.detected)?.updated_at
 	const reply = await call<{ stories: Array<Pending> }>({ op: "changes", stories: [id] }).catch(
 		() => null
 	)
 	const story = reply?.stories.find((s) => s.id === id)
 	// couldn't tell: the timestamps are all there is, so a real change is never hidden
 	const same = !!story?.published_at && story.changes?.length === 0
-	matches_live.set(id, { updated_at, same })
-	if (same) touched.delete(id)
+	S.matches_live.set(id, { updated_at, same })
+	if (same) S.touched.delete(id)
 	changed()
 }
 
@@ -264,27 +356,27 @@ export const editor = {
 	/** Who's signed in to edit, from the `editor` hook; null for everyone else and on the server */
 	get user(): EditorUser | null {
 		watch()
-		return injected.user
+		return S.injected.user
 	},
 	/** Someone the draft is shared with, who isn't signed in to edit */
 	get guest(): SharedWith | null {
 		watch()
-		return injected.guest ?? null
+		return S.injected.guest ?? null
 	},
 	/** Whether the page shows drafts: a preview, or someone signed in */
 	get draft(): boolean {
 		watch()
-		return injected.draft
+		return S.injected.draft
 	},
 	/** The site's Storyblok space, on previews */
 	get space(): string | null {
 		watch()
-		return injected.space
+		return S.injected.space
 	},
 	/** The page's story, with its publish status */
 	get story() {
 		watch()
-		const story = connected?.story ?? detected
+		const story = S.connected?.story ?? S.detected
 		if (!story) return null
 		const { id, uuid, name, published_at, updated_at } = story
 		return {
@@ -300,27 +392,28 @@ export const editor = {
 	/** Edits still on their way to Storyblok */
 	get saving(): boolean {
 		watch()
-		return pending > 0
+		return S.pending > 0
 	},
 	/** Why the last change didn't save, until the next one does */
 	get problem(): string | null {
 		watch()
-		return problem
+		return S.problem
 	},
 	/** This person's notifications, newest first, and how many they haven't seen */
 	get inbox() {
 		watch()
-		return inbox
+		return S.inbox
 	},
 	/** Who this page is following, by their place in the room */
 	get following() {
 		watch()
-		return following
+		return S.following
 	},
 	/** Everyone else editing this page right now, and this person as the others see them */
 	get here(): { color: string | null; me: Person | null; people: Array<Person> } {
 		watch()
 		const page = typeof location === "undefined" ? null : location.pathname
+		const { presence, following } = S
 		return {
 			color: presence.me?.color ?? null,
 			me: presence.people.find((p) => p.id === presence.me?.id) ?? null,
@@ -333,7 +426,7 @@ export const editor = {
 	/** Whether edit mode is on; `set_editing` turns it off and on */
 	get editing(): boolean {
 		watch()
-		return editing && !!injected.user
+		return S.editing && !!S.injected.user
 	},
 }
 
@@ -371,22 +464,20 @@ export function unless_editing<T extends Element>(attachment: Attachment<T>): At
 
 /** Turn edit mode on or off, remembering it in this browser unless it's only for a moment */
 export function set_editing(on: boolean, remember = true) {
-	editing = on
+	S.editing = on
 	try {
 		if (remember) localStorage.setItem(EDITING, on ? "on" : "off")
 	} catch {
 		// storage blocked: it lasts until the page reloads
 	}
 	changed()
-	for (const listener of toggled) listener(on)
+	for (const listener of S.toggled) listener(on)
 }
-
-const toggled = new Set<(on: boolean) => void>()
 
 /** Run `listener` whenever edit mode turns on or off; returns the way to stop */
 export function on_editing(listener: (on: boolean) => void) {
-	toggled.add(listener)
-	return () => toggled.delete(listener)
+	S.toggled.add(listener)
+	return () => S.toggled.delete(listener)
 }
 
 const here = () => location.pathname + location.search
@@ -405,7 +496,7 @@ export async function signout() {
 
 /** A guest who's just said who they are, for the page to carry on as them */
 export function set_guest(guest: SharedWith) {
-	injected = { ...injected, guest }
+	S.injected = { ...S.injected, guest }
 	changed()
 }
 
@@ -433,16 +524,11 @@ export async function call<T>(change: Record<string, unknown>): Promise<T> {
 	return res.json()
 }
 
-const saved_listeners = new Set<() => void>()
-
 /** Run `listener` after each change lands and the page has its new data */
 export function on_saved(listener: () => void) {
-	saved_listeners.add(listener)
-	return () => saved_listeners.delete(listener)
+	S.saved_listeners.add(listener)
+	return () => S.saved_listeners.delete(listener)
 }
-
-type Change = Record<string, unknown>
-type Done = { change: Change; label: string; at?: number }
 
 /**
  * Typing saves at each pause, so one edit is several saves. Another to the same fields of the same
@@ -461,10 +547,6 @@ function same_edit(last: Done | undefined, back: Change) {
 	return keys(was) === keys(back)
 }
 
-/** What each change undoes, newest last; each undo's own reverse goes on `redos` */
-const undos: Array<Done> = []
-const redos: Array<Done> = []
-
 const LABELS: Record<string, string> = {
 	set: "edit",
 	fields: "edit",
@@ -479,25 +561,16 @@ const LABELS: Record<string, string> = {
 	duplicate: "duplicate",
 }
 
-/** Stories changed from this page since they were last published, so Publish shows for a shared one too */
-const touched = new Set<number>()
-
 /** The page's data again, as after a save, for a change made somewhere else */
 export async function refresh() {
-	// only the browser ever saves, so the server and tests never load this
-	// refreshAll on SvelteKit 3, which deprecates invalidateAll; it keeps page.state too
-	const navigation = await import("$app/navigation")
-	const all = navigation as unknown as Record<string, () => Promise<void>>
-	await (all.refreshAll ?? all.invalidateAll)()
-	for (const listener of saved_listeners) listener()
+	await kit().refresh()
+	for (const listener of S.saved_listeners) listener()
 }
-
-const sent_listeners = new Set<(change: Change) => void>()
 
 /** Run `listener` with each change once it has saved, before the page reloads its data */
 export function on_sent(listener: (change: Change) => void) {
-	sent_listeners.add(listener)
-	return () => sent_listeners.delete(listener)
+	S.sent_listeners.add(listener)
+	return () => S.sent_listeners.delete(listener)
 }
 
 /**
@@ -510,11 +583,12 @@ export async function send(
 	/** `false` while the change is being typed where it shows: the page already shows it, and reloading everything for each pause is what drags */
 	{ again = true }: { again?: boolean } = {}
 ) {
-	pending++
+	const { undos, redos } = S
+	S.pending++
 	changed()
 	try {
 		const reply = await call<Record<string, unknown>>(change)
-		problem = null
+		S.problem = null
 		const back = reply.undo as Change | undefined
 		const label = LABELS[String(change.op)]
 		if (back && label && as !== "shared") {
@@ -528,25 +602,25 @@ export async function send(
 				if (as === "change") redos.length = 0
 			}
 		}
-		if (label && typeof change.story === "number") touched.add(change.story)
-		for (const listener of sent_listeners) listener(change)
+		if (label && typeof change.story === "number") S.touched.add(change.story)
+		for (const listener of S.sent_listeners) listener(change)
 		if (again) await refresh()
 		return reply
 	} catch (e) {
-		problem = (e as Error).message
+		S.problem = (e as Error).message
 		return null
 	} finally {
-		pending--
+		S.pending--
 		changed()
 	}
 }
 
 /** Why the last change didn't save, for the overlay's own messages */
-export const last_problem = () => problem
+export const last_problem = () => S.problem
 
 /** Undo the last change made from this page; what it undid, or null with nothing to undo or if it failed */
 export async function undo() {
-	const done = undos.pop()
+	const done = S.undos.pop()
 	if (!done) return null
 	changed()
 	return (await send(done.change, "undo")) ? done.label : null
@@ -554,7 +628,7 @@ export async function undo() {
 
 /** Make the last undone change again */
 export async function redo() {
-	const done = redos.pop()
+	const done = S.redos.pop()
 	if (!done) return null
 	changed()
 	return (await send(done.change, "redo")) ? done.label : null
@@ -563,11 +637,11 @@ export async function redo() {
 export const history = {
 	get undo() {
 		watch()
-		return undos.at(-1)?.label ?? null
+		return S.undos.at(-1)?.label ?? null
 	},
 	get redo() {
 		watch()
-		return redos.at(-1)?.label ?? null
+		return S.redos.at(-1)?.label ?? null
 	},
 }
 
@@ -590,7 +664,7 @@ export async function discard(): Promise<"done" | "far" | "failed"> {
 /** Whether there's anything Publish would send live: the page's own story, or one edited from it */
 export const unpublished = () =>
 	(editor.story && (editor.story.status === "draft" || editor.story.status === "changed")) ||
-	touched.size > 0
+	S.touched.size > 0
 
 /** A story's unpublished changes, block by block; null when there's no live copy to compare */
 export type Pending = {
@@ -605,7 +679,7 @@ export type Pending = {
 export async function review() {
 	const ids = new Set<number>()
 	if (editor.story) ids.add(editor.story.id)
-	for (const id of touched) ids.add(id)
+	for (const id of S.touched) ids.add(id)
 	for (const node of document.querySelectorAll<HTMLElement>("[data-blok-c]")) {
 		try {
 			const id = Number(JSON.parse(node.dataset.blokC ?? "{}").id)
@@ -618,7 +692,7 @@ export async function review() {
 		op: "changes",
 		stories: [...ids].slice(0, 20),
 	})
-	for (const id of touched) if (!stories.some((s) => s.id === id)) touched.delete(id)
+	for (const id of S.touched) if (!stories.some((s) => s.id === id)) S.touched.delete(id)
 	changed()
 	return stories
 }
@@ -628,23 +702,40 @@ export async function publish(ids?: Array<number>) {
 	const stories = ids ?? (editor.story ? [editor.story.id] : [])
 	let ok = stories.length > 0
 	for (const story of stories) {
-		if (await send({ op: "publish", story })) touched.delete(story)
+		if (await send({ op: "publish", story })) S.touched.delete(story)
 		else ok = false
 	}
 	changed()
 	return ok
 }
 
-type Blok = { _uid?: string }
-
 /** Each blok's content by the element `attrs` spread onto, for the overlay to read */
-export const bloks = new WeakMap<Element, Blok>()
+export const bloks = S.bloks
 
 /** A blok in the page's connected story, resolved relations included, by its `_uid` */
 export function page_blok(uid: string): Blok | undefined {
-	return connected?.story
-		? (find_blok(connected.story.content, uid) as Blok | undefined)
-		: undefined
+	const story = S.connected?.story
+	return story ? (find_blok(story.content, uid) as Blok | undefined) : undefined
+}
+
+/**
+ * The editor app: from where the `editor` hook says, normally moxy, so a change to the editor
+ * reaches every site without a release of theirs; this package's own copy when there's nowhere
+ * else, when that can't load, or when it was built for another bridge. Loaded once for the page
+ */
+export function app(): Promise<App> {
+	return (S.app ??= (async () => {
+		const url = S.injected.app
+		if (url)
+			try {
+				const remote = (await import(/* @vite-ignore */ url)) as App
+				if (remote.bridge === BRIDGE) return remote
+				console.warn(`storyloco/editor: ${url} was built for another bridge; using this site's own`)
+			} catch (e) {
+				console.warn(`storyloco/editor: couldn't load ${url}; using this site's own`, e)
+			}
+		return (await import("./app.svelte.js")) as App
+	})())
 }
 
 /**
@@ -657,10 +748,10 @@ export function in_place(blok: Blok): Attachment<HTMLElement> | undefined {
 
 	return (node) => {
 		if (window.self !== window.top || !node.dataset.blokC) return
-		bloks.set(node, blok)
-		import("./overlay.js").then(({ install }) => install())
+		S.bloks.set(node, blok)
+		app().then((editor) => editor.install())
 		return () => {
-			if (bloks.get(node) === blok) bloks.delete(node)
+			if (S.bloks.get(node) === blok) S.bloks.delete(node)
 		}
 	}
 }

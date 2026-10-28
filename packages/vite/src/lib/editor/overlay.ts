@@ -194,9 +194,11 @@ function content_for(story: number) {
  */
 async function blok_for(node: HTMLElement | null): Promise<Blok | undefined> {
 	if (!node) return
-	// a stand-in's blok is read from its block's content as it is now, so a save can't leave it behind
-	if (inferred.has(node)) {
-		const around = await blok_for(block_of(node.parentElement))
+	// a stand-in's blok is read from its block's content as it is now, so a save can't leave it behind;
+	// the page's own, with no block around it, is the page's story, as below
+	const holder = inferred.has(node) ? block_of(node.parentElement) : null
+	if (holder) {
+		const around = await blok_for(holder)
 		const { uid } = meta(node)
 		return around && uid ? (find_blok(around, uid) as Blok | undefined) : undefined
 	}
@@ -351,6 +353,25 @@ async function stand_in(node: HTMLElement, source: { story: number; uid: string 
 	)
 		el = up
 	mark(el, source.story, blok)
+}
+
+/** Every stand-in unmarked, as the page changes under them */
+function forget_stand_ins() {
+	for (const node of inferred) {
+		delete node.dataset.blokC
+		if (node.hasAttribute("data-storyloco-tab")) {
+			node.removeAttribute("tabindex")
+			delete node.dataset.storylocoTab
+		}
+		if (node.hasAttribute("data-storyloco-label")) {
+			node.removeAttribute("aria-label")
+			delete node.dataset.storylocoLabel
+		}
+	}
+	inferred.clear()
+	by_uid = null
+	swept = new WeakSet()
+	regions = new WeakMap()
 }
 
 /** An element standing in for a blok the site didn't mark */
@@ -2129,8 +2150,25 @@ function arm(on: boolean) {
  * Without `connect()`, the page's story is the one most of its blocks come from, which
  * outnumbers a layout's header and footer; fetched for its status, and again after each save
  */
+/**
+ * The page's own story, when the site didn't mark its root with `attrs`: the page's `<main>` stands
+ * in for it, so its own fields, rich text included, edit in place as a marked root's do
+ */
+function stand_in_page() {
+	const page = editor.story
+	if (!page?.uid || element_of(page.uid)) return
+	const main = [...document.querySelectorAll<HTMLElement>("main")]
+		.filter((el) => !block_of(el))
+		.at(-1)
+	const root = (page_blok(page.uid) as Blok | undefined) ?? { _uid: page.uid }
+	if (main) mark(main, page.id, root)
+}
+
 async function detect() {
-	if (connected_story()) return detected_story(null)
+	if (connected_story()) {
+		detected_story(null)
+		return stand_in_page()
+	}
 	const counts = new Map<number, number>()
 	for (const node of document.querySelectorAll("[data-blok-c]")) {
 		const id = Number(meta(node).id)
@@ -2143,6 +2181,7 @@ async function detect() {
 		story,
 	}).catch(() => null)
 	detected_story(found?.story ?? null)
+	stand_in_page()
 	// the others' lists of who's on this page say which story it is
 	here()
 }
@@ -2255,13 +2294,14 @@ export function install() {
 	on_saved(live_check)
 	on_navigate(live_check)
 	on_navigate(() => {
+		// what stood in for the last page's bloks, like a layout's <main> for its story, is found again for this one's
+		forget_stand_ins()
 		detect()
 		if (active) prepare(true)
 		// a block selected on the last page isn't on this one
 		if (selected && !element_of(selected.uid)) select(null)
 		// nor is text from it that was ready to edit, which lets go of its field
 		for (const [node, unwire] of wired) if (!node.isConnected) unwire()
-		for (const node of inferred) if (!node.isConnected) inferred.delete(node)
 	})
 	on_people(follow)
 	setInterval(check, 30_000)
