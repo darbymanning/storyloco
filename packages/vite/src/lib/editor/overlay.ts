@@ -41,6 +41,7 @@ import {
 	stop as go_offline,
 } from "./live.js"
 import { anchor_at } from "./anchor.js"
+import type { Asset as Stored } from "./server.js"
 import type { Inserts, RichField } from "./richtext.js"
 import { show as show_presence } from "./presence.js"
 import { share_text, type Surface } from "./together.js"
@@ -718,12 +719,17 @@ const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-r
 [data-blok-c]:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:-2px}`
 
 /* Outside the layer, so a site's reset can't unpin our own bits */
-const OURS = `button.storyloco-replace{position:fixed;z-index:2147483000;display:grid;place-items:center;inline-size:2rem;block-size:2rem;padding:0;border:0;border-radius:.5rem;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2);animation:storyloco-in .16s ease-out}
-button.storyloco-replace::after{content:attr(aria-label);position:absolute;inset:calc(100% + .5rem) 0 auto auto;padding:.375rem .5rem;border-radius:.5rem;background:var(--editor-ink,#1b243f);color:var(--editor-bg,#fff);font:500 .75rem/1.25 system-ui,sans-serif;white-space:nowrap;pointer-events:none;opacity:0;translate:0 -.25rem;transition:opacity .15s,translate .15s}
-button.storyloco-replace:is(:hover,:focus-visible)::after{opacity:1;translate:0 0}
-button.storyloco-replace[hidden]{display:none}
+const OURS = `[data-storyloco=image]{position:fixed;z-index:2147483000;animation:storyloco-in .16s ease-out}
+[data-storyloco=image][hidden],[data-storyloco=image] [hidden]{display:none!important}
+button.storyloco-image{display:grid;place-items:center;inline-size:2rem;block-size:2rem;padding:0;border:0;border-radius:.5rem;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2)}
+button.storyloco-image:focus-visible{outline:2px solid #fff;outline-offset:-4px}
+[data-storyloco=image] [role=menu]{position:absolute;inset:calc(100% + .375rem) 0 auto auto;display:grid;min-inline-size:9rem;padding:.25rem;border-radius:.625rem;background:var(--editor-bg,#fff);color:var(--editor-ink,#1b243f);box-shadow:0 0 0 1px var(--editor-line,rgb(27 36 63/.12)),0 8px 24px rgb(0 0 0/.18);animation:storyloco-in .12s ease-out}
+[data-storyloco=image] [role=menuitem]{all:unset;cursor:pointer;padding:.4375rem .625rem;border-radius:.375rem;font:500 .8125rem/1.25 system-ui,sans-serif;white-space:nowrap}
+[data-storyloco=image] [role=menuitem]:is(:hover,:focus-visible){background:color-mix(in srgb,currentColor 8%,transparent)}
+[data-storyloco=image] [data-do=remove]{color:var(--editor-danger,#e5484d)}
+img[data-storyloco-drop]{outline:3px solid var(--editor-accent,#05807f)!important;outline-offset:-3px;filter:brightness(.9)}
+img[data-storyloco-uploading]{opacity:.5;transition:opacity .2s}
 [data-storyloco=field-ring]{position:fixed;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
-button.storyloco-replace:focus-visible{outline:2px solid #fff;outline-offset:-4px}
 [data-storyloco=tag]{position:fixed;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
 [data-storyloco=tag][hidden]{display:block;opacity:0}
 @keyframes storyloco-in{from{opacity:0;translate:0 -2px}}
@@ -1250,7 +1256,15 @@ type Asset = {
 	focus?: string | null
 	id?: number | null
 }
-type Spot = { story: number; uid: string; field: string; index?: number; asset: Asset }
+type Spot = {
+	story: number
+	uid: string
+	field: string
+	index?: number
+	asset: Asset
+	/** a multiasset field's images, for taking this one out */
+	list?: Array<Asset>
+}
 
 /** An image URL's path without the image service's resizing, so a rendition matches its field */
 const asset_path = (src: string) => {
@@ -1279,6 +1293,7 @@ function image_field(img: HTMLImageElement, candidates: Iterable<Blok>, story: n
 						field,
 						index: Array.isArray(value) ? i : undefined,
 						asset,
+						list: Array.isArray(value) ? (value as Array<Asset>) : undefined,
 					})
 			})
 		}
@@ -1302,27 +1317,78 @@ async function spot_of(img: HTMLImageElement): Promise<Spot | undefined> {
 	return story ? image_field(img, each_blok(story.content), story.id) : undefined
 }
 
-let replace: HTMLButtonElement | undefined
+let image_tools: HTMLDivElement | undefined
 let offered: HTMLImageElement | undefined
 
 function withdraw() {
-	if (replace) replace.hidden = true
+	if (image_tools) {
+		image_tools.hidden = true
+		image_tools.querySelector("[role=menu]")!.toggleAttribute("hidden", true)
+		image_tools.querySelector("button")!.ariaExpanded = "false"
+	}
 	if (offered) delete offered.dataset.image
 	offered = undefined
 }
 
-/** A Replace button over the image, which stays while the pointer moves between the two */
+/** A file added to the library, from the picker or dropped on an image */
+async function put(file: File, folder?: number) {
+	const bitmap = file.type.startsWith("image/")
+		? await createImageBitmap(file).catch(() => null)
+		: null
+	const signed = await call<{ asset: number; post_url: string; fields: Record<string, string> }>({
+		op: "upload",
+		filename: file.name,
+		size: bitmap ? `${bitmap.width}x${bitmap.height}` : undefined,
+		folder,
+	})
+	const form = new FormData()
+	for (const [key, value] of Object.entries(signed.fields)) form.append(key, value)
+	form.append("file", file)
+	// Storyblok's bucket doesn't answer other sites, so the reply is opaque; finishing checks it landed
+	await fetch(signed.post_url, { method: "POST", body: form, mode: "no-cors" })
+	return (await call<{ asset: Stored }>({ op: "uploaded", asset: signed.asset })).asset
+}
+
+async function set_image(spot: Spot, choice: Omit<Choice, "filename">) {
+	const { story, uid, field, index } = spot
+	if (!(await send({ op: "image", story, uid, field, index, ...choice }))) return last_problem()
+	forget(story)
+	return null
+}
+
+/** An image field emptied, or the one image taken out of a list of them */
+async function remove_image({ story, uid, field, index, list }: Spot) {
+	const value = list
+		? list
+				.filter((asset, i) => i !== index && asset.id)
+				.map(({ id, alt, focus }) => ({ id, alt: alt ?? "", focus: focus ?? "" }))
+		: null
+	if (await send({ op: "fields", story, uid, values: { [field]: value } })) forget(story)
+	else toast(last_problem() ?? "Couldn’t remove that image")
+}
+
+/** The image's menu over its corner, which stays while the pointer moves between the two */
 function offer(img: HTMLImageElement, spot: Spot) {
-	if (!replace) {
-		replace = document.createElement("button")
-		replace.type = "button"
-		replace.className = "storyloco-replace"
-		replace.dataset.storyloco = "replace"
-		replace.ariaLabel = "Replace image"
-		replace.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>`
-		replace.addEventListener("pointerleave", (e) => e.relatedTarget !== offered && withdraw())
+	if (!image_tools) {
+		image_tools = document.createElement("div")
+		image_tools.dataset.storyloco = "image"
+		image_tools.innerHTML = `<button type="button" class="storyloco-image" aria-label="Image" aria-haspopup="menu" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg></button><div role="menu" hidden><button type="button" role="menuitem" data-do="replace">Replace image</button><button type="button" role="menuitem" data-do="remove">Remove image</button></div>`
+		const [trigger, menu] = [
+			image_tools.firstElementChild as HTMLButtonElement,
+			image_tools.lastElementChild!,
+		]
+		trigger.addEventListener("click", (e) => {
+			e.preventDefault()
+			e.stopPropagation()
+			const open = menu.hasAttribute("hidden")
+			menu.toggleAttribute("hidden", !open)
+			trigger.ariaExpanded = String(open)
+			if (open) (menu.firstElementChild as HTMLElement).focus()
+		})
+		image_tools.addEventListener("keydown", (e) => e.key === "Escape" && withdraw())
+		image_tools.addEventListener("pointerleave", (e) => e.relatedTarget !== offered && withdraw())
 		addEventListener("scroll", withdraw, { passive: true })
-		document.body.append(replace)
+		document.body.append(image_tools)
 	}
 	if (offered !== img) {
 		withdraw()
@@ -1330,33 +1396,88 @@ function offer(img: HTMLImageElement, spot: Spot) {
 		img.dataset.image = ""
 		img.addEventListener(
 			"pointerleave",
-			(e) => e.relatedTarget !== replace && offered === img && withdraw(),
+			(e) => !image_tools!.contains(e.relatedTarget as Node) && offered === img && withdraw(),
 			{ once: true }
 		)
 	}
 	const box = img.getBoundingClientRect()
-	replace.style.top = `${Math.max(box.top, 0) + 8}px`
-	replace.style.right = `${Math.max(innerWidth - box.right, 0) + 8}px`
-	replace.onclick = (e) => {
+	image_tools.style.top = `${Math.max(box.top, 0) + 8}px`
+	image_tools.style.right = `${Math.max(innerWidth - box.right, 0) + 8}px`
+	const menu = image_tools.lastElementChild as HTMLElement
+	menu.querySelector<HTMLButtonElement>("[data-do=remove]")!.hidden = !spot.asset.id
+	menu.onclick = (e) => {
+		const chosen = (e.target as HTMLElement).closest<HTMLElement>("[data-do]")?.dataset.do
+		if (!chosen) return
 		e.preventDefault()
 		e.stopPropagation()
 		withdraw()
-		open_picker({
-			current: spot.asset,
-			save: async (choice) =>
-				(await send({
-					op: "image",
-					story: spot.story,
-					uid: spot.uid,
-					field: spot.field,
-					index: spot.index,
-					...choice,
-				}))
-					? (forget(spot.story), null)
-					: last_problem(),
-		})
+		if (chosen === "remove") remove_image(spot)
+		else
+			open_picker({
+				current: spot.asset,
+				save: ({ asset, alt, focus }) => set_image(spot, { asset, alt, focus }),
+			})
 	}
-	replace.hidden = false
+	image_tools.hidden = false
+}
+
+/* A file dragged over an image while editing: the image takes it, uploaded to the library */
+
+let target: HTMLImageElement | undefined
+// looked up once per drag, as dragover fires many times a second
+const drop_spots = new Map<HTMLImageElement, Promise<Spot | undefined>>()
+const drop_spot = (img: HTMLImageElement) => {
+	let spot = drop_spots.get(img)
+	if (!spot) drop_spots.set(img, (spot = spot_of(img)))
+	return spot
+}
+
+function image_under(event: DragEvent) {
+	if (!active || !event.dataTransfer?.types.includes("Files")) return
+	return document
+		.elementsFromPoint(event.clientX, event.clientY)
+		.find((el): el is HTMLImageElement => el instanceof HTMLImageElement && !ours(el))
+}
+
+function drag_over(event: DragEvent) {
+	const img = image_under(event)
+	if (img !== target) {
+		if (target) delete target.dataset.storylocoDrop
+		target = img
+		// only an image that's a field lights up to take it
+		if (img)
+			drop_spot(img).then((spot) => spot && target === img && (img.dataset.storylocoDrop = ""))
+	}
+	if (!img) return
+	event.preventDefault()
+	event.dataTransfer!.dropEffect = "copy"
+}
+
+function drag_end() {
+	if (target) delete target.dataset.storylocoDrop
+	target = undefined
+	drop_spots.clear()
+}
+
+async function dropped(event: DragEvent) {
+	const img = image_under(event)
+	const found = img && drop_spot(img)
+	drag_end()
+	if (!img) return
+	event.preventDefault()
+	const file = [...(event.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"))
+	const spot = file && (await found)
+	if (!spot) return
+	img.dataset.storylocoUploading = ""
+	try {
+		const asset = await put(file)
+		const failed = await set_image(spot, { asset: asset.id, alt: asset.alt, focus: "" })
+		if (failed) toast(failed)
+	} catch (e) {
+		toast(`${file.name} didn’t upload: ${(e as Error).message}`)
+	} finally {
+		delete img.dataset.storylocoUploading
+	}
 }
 
 type Choice = { asset: number; alt: string; focus: string; filename: string }
@@ -1383,9 +1504,7 @@ export async function open_picker({
 			list: (search: string, page: number, folder?: number) =>
 				call({ op: "assets", search, page, folder }),
 			folders: () => call({ op: "folders" }),
-			upload: (filename: string, size?: string, folder?: number) =>
-				call({ op: "upload", filename, size, folder }),
-			uploaded: (asset: number) => call({ op: "uploaded", asset }),
+			put,
 			suggest: (url: string) =>
 				call<{ alt: string }>({ op: "ai", do: "alt", url }).then(({ alt }) => alt),
 			save,
@@ -2261,6 +2380,9 @@ export function install() {
 	}) as unknown as typeof bar
 	document.addEventListener("pointerover", over)
 	document.addEventListener("pointerdown", over)
+	document.addEventListener("dragover", drag_over)
+	document.addEventListener("dragleave", (e) => !e.relatedTarget && drag_end())
+	document.addEventListener("drop", dropped)
 	document.addEventListener("click", click, true)
 	document.addEventListener("keydown", keydown)
 	addEventListener("pointerleave", stay, true)

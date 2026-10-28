@@ -16,8 +16,7 @@
 		images = true,
 		list,
 		folders,
-		upload,
-		uploaded,
+		put,
 		save,
 		close,
 		suggest,
@@ -28,12 +27,8 @@
 		list: (search: string, page: number, folder?: number) => Promise<{ assets: Array<Asset> }>
 		/** The library's folders, to browse and upload into */
 		folders?: () => Promise<{ folders: Array<Folder> }>
-		upload: (
-			filename: string,
-			size?: string,
-			folder?: number
-		) => Promise<{ asset: number; post_url: string; fields: Record<string, string> }>
-		uploaded: (asset: number) => Promise<{ asset: Asset }>
+		/** A file added to the library, in this folder */
+		put: (file: File, folder?: number) => Promise<Asset>
 		save: (choice: Choice) => Promise<string | null>
 		close: () => void
 		/** Alt text written for the image, by AI */
@@ -171,20 +166,7 @@
 			uploading++
 			problem = null
 			try {
-				const bitmap = file.type.startsWith("image/")
-					? await createImageBitmap(file).catch(() => null)
-					: null
-				const signed = await upload(
-					file.name,
-					bitmap ? `${bitmap.width}x${bitmap.height}` : undefined,
-					folder ?? undefined
-				)
-				const form = new FormData()
-				for (const [key, value] of Object.entries(signed.fields)) form.append(key, value)
-				form.append("file", file)
-				// Storyblok's bucket doesn't answer other sites, so the reply is opaque; finishing checks it landed
-				await fetch(signed.post_url, { method: "POST", body: form, mode: "no-cors" })
-				const { asset } = await uploaded(signed.asset)
+				const asset = await put(file, folder ?? undefined)
 				assets = [asset, ...assets.filter(({ id }) => id !== asset.id)]
 				choose(asset)
 			} catch (e) {
@@ -316,36 +298,38 @@
 							{uploading ? "Uploading…" : "Upload"}
 						</label>
 					</div>
-					{#if tree.length}
-						<nav class="folders" aria-label="Folders">
-							{#if folder}
-								<button class="crumb" type="button" onclick={() => browse(null)}>All</button>
-								{#each trail as step (step.id)}
-									<span class="sep" aria-hidden="true">/</span>
-									{#if step.id === folder}
-										<span class="crumb" aria-current="location">{step.name}</span>
-									{:else}
-										<button class="crumb" type="button" onclick={() => browse(step.id)}
-											>{step.name}</button
-										>
-									{/if}
-								{/each}
-							{/if}
-							{#each inside as child (child.id)}
-								<button class="chip" type="button" onclick={() => browse(child.id)}>
-									<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-										<path
-											d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
-										/>
-									</svg>
-									{child.name}
-								</button>
+					{#if folder}
+						<nav class="trail" aria-label="Folder">
+							<button class="crumb" type="button" onclick={() => browse(null)}>All images</button>
+							{#each trail as step (step.id)}
+								<span class="sep" aria-hidden="true">/</span>
+								{#if step.id === folder}
+									<span class="crumb" aria-current="location">{step.name}</span>
+								{:else}
+									<button class="crumb" type="button" onclick={() => browse(step.id)}
+										>{step.name}</button
+									>
+								{/if}
 							{/each}
 						</nav>
 					{/if}
 				</div>
 
 				<ul class="grid" aria-busy={loading}>
+					{#if !search}
+						{#each inside as child (child.id)}
+							<li>
+								<button class="folder" type="button" onclick={() => browse(child.id)}>
+									<svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">
+										<path
+											d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+										/>
+									</svg>
+									<span>{child.name}</span>
+								</button>
+							</li>
+						{/each}
+					{/if}
 					{#each assets as asset (asset.id)}
 						<li>
 							<button
@@ -500,7 +484,7 @@
 	}
 
 	.preview {
-		background: repeating-conic-gradient(rgb(0 0 0 / 0.05) 0 25%, transparent 0 50%) 0 0 / 16px 16px;
+		background: repeating-conic-gradient(#e4e4e7 0 25%, #fff 0 50%) 0 0 / 16px 16px;
 		border: 0;
 		border-radius: 0.5rem;
 		cursor: crosshair;
@@ -588,11 +572,11 @@
 		gap: 0.625rem;
 	}
 
-	.folders {
+	.trail {
 		align-items: center;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.375rem;
+		gap: 0.25rem;
 	}
 
 	.crumb {
@@ -618,31 +602,6 @@
 
 	.sep {
 		color: var(--muted);
-	}
-
-	.chip {
-		align-items: center;
-		background: transparent;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		color: inherit;
-		cursor: pointer;
-		display: flex;
-		font: inherit;
-		gap: 0.375rem;
-		padding: 0.25rem 0.625rem;
-
-		&:hover {
-			background: color-mix(in srgb, var(--ink) 6%, transparent);
-		}
-
-		& svg {
-			fill: none;
-			stroke: currentColor;
-			stroke-linecap: round;
-			stroke-linejoin: round;
-			stroke-width: 2;
-		}
 	}
 
 	.tools {
@@ -671,8 +630,8 @@
 
 		& button {
 			aspect-ratio: 1;
-			background: repeating-conic-gradient(rgb(0 0 0 / 0.05) 0 25%, transparent 0 50%) 0 0 / 12px
-				12px;
+			/* light whatever the editor's scheme, so a dark logo on nothing still shows */
+			background: repeating-conic-gradient(#e4e4e7 0 25%, #fff 0 50%) 0 0 / 12px 12px;
 			border: 0;
 			border-radius: 0.5rem;
 			cursor: pointer;
@@ -688,6 +647,30 @@
 
 			&.selected {
 				outline-color: var(--accent);
+			}
+
+			&.folder {
+				align-content: center;
+				background: color-mix(in srgb, var(--ink) 6%, transparent);
+				color: inherit;
+				display: grid;
+				font: inherit;
+				gap: 0.375rem;
+				justify-items: center;
+				padding: 0.5rem;
+				text-align: center;
+
+				& svg {
+					fill: none;
+					stroke: var(--muted);
+					stroke-linecap: round;
+					stroke-linejoin: round;
+					stroke-width: 1.5;
+				}
+
+				& span {
+					overflow-wrap: anywhere;
+				}
 			}
 		}
 
