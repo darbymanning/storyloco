@@ -318,11 +318,11 @@ interface Locals {
 ```
 
 `/admin` is the way in by default. A site with a page there, or that wants another, sets its own
-with `create_editor({ entry })`: a path, taken only where the site has no page, or a `?param` that
+with `editor({ entry })`: a path, taken only where the site has no page, or a `?param` that
 signs in to edit whichever page it's on, or a list of them.
 
 ```typescript
-export const handle = sequence(create_editor({ entry: ['/cms', '?edit'] }), version)
+export const handle = sequence(editor({ entry: ['/cms', '?edit'] }), version)
 ```
 
 A site with a Content Security Policy needs `wss://moxy.uilo.co` in its `connect-src`, for the

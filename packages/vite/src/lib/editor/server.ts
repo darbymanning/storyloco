@@ -338,7 +338,7 @@ const local = (path: string | null | undefined) =>
 	path?.startsWith("/") && !path.startsWith("//") ? path : "/"
 
 const cookie = { path: "/", httpOnly: true, secure: true, sameSite: "lax" } as const
-/** A sign-in that lands in edit mode, as ⌘⇧E does, from one of `create_editor`'s `entry` ways in */
+/** A sign-in that lands in edit mode, as ⌘⇧E does, from one of `editor`'s `entry` ways in */
 const EDIT_ON = "sl_edit_on"
 /** `admin`, `/admin/` and `/admin` alike */
 const trim = (path: string) => "/" + path.replace(/^\/+|\/+$/g, "")
@@ -1667,17 +1667,15 @@ const script = (value: {
 }) =>
 	`<script type="application/json" id="storyloco-editor">${JSON.stringify(value).replace(/</g, "\\u003c")}</script>`
 
-/** `editor`, pointed at another moxy or space; `STORYLOCO_MOXY` does the same without code */
-export function create_editor({
-	moxy,
-	space: configured,
-	entry = "/admin",
-}: {
+interface EditorOptions {
+	/** Another moxy; `STORYLOCO_MOXY` does the same without code */
 	moxy?: string
 	space?: string
 	/** Ways in to edit mode: a path, taken only where the site has no page of its own, or a `?param` on any page */
 	entry?: string | Array<string>
-} = {}): Handle {
+}
+
+function create({ moxy, space: configured, entry = "/admin" }: EditorOptions = {}): Handle {
 	const ways = [entry].flat()
 	const params = ways.filter((way) => way.startsWith("?")).map((way) => way.slice(1).split("=")[0])
 	const paths = ways.filter((way) => !way.startsWith("?")).map(trim)
@@ -1789,4 +1787,11 @@ export function create_editor({
 	}
 }
 
-export const editor = create_editor()
+const plain = create()
+
+/** The hook as it is, `sequence(editor, …)`, or set up, `sequence(editor({ entry: "/cms" }), …)` */
+export function editor(input: Parameters<Handle>[0]): ReturnType<Handle>
+export function editor(options?: EditorOptions): Handle
+export function editor(input?: Parameters<Handle>[0] | EditorOptions) {
+	return input && "event" in input ? plain(input) : create(input)
+}

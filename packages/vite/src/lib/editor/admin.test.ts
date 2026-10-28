@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
-import { create_editor } from "./server.js"
+import { editor } from "./server.js"
 
-const handle = create_editor({ moxy: "https://moxy.test", space: "1" })
+const handle = editor({ moxy: "https://moxy.test", space: "1" })
 
 /** A visitor's GET, which the site answers with `status` */
 async function visit(path: string, status: number, through = handle) {
@@ -45,7 +45,7 @@ test("a site's own /admin is left alone", async () => {
 
 test("?edit is the site's own, unless it's asked for", async () => {
 	expect((await visit("/about?edit", 200)).status).toBe(200)
-	const both = create_editor({ moxy: "https://moxy.test", space: "1", entry: ["/admin", "?edit"] })
+	const both = editor({ moxy: "https://moxy.test", space: "1", entry: ["/admin", "?edit"] })
 	const response = await visit("/about?edit&x=1", 200, both)
 	expect(response.status).toBe(303)
 	expect(response.headers.get("location")).toBe("/__storyloco/signin?return=%2Fabout%3Fx%3D1")
@@ -53,7 +53,7 @@ test("?edit is the site's own, unless it's asked for", async () => {
 })
 
 test("another path in, and /admin left to the site", async () => {
-	const own = create_editor({ moxy: "https://moxy.test", space: "1", entry: ["cms/", "?go=1"] })
+	const own = editor({ moxy: "https://moxy.test", space: "1", entry: ["cms/", "?go=1"] })
 	expect((await visit("/cms", 404, own)).headers.get("location")).toBe(
 		"/__storyloco/signin?return=%2F"
 	)
