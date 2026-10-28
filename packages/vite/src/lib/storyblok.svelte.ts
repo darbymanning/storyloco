@@ -431,7 +431,8 @@ export function attrs<T extends BlokFields>(blok: T & { _uid?: string; _editable
 		},
 		// in-place editing for someone signed in through the `editor` hook; nothing otherwise
 		[attach()]: in_place(blok),
-		id: blok.anchor || blok._uid,
+		// only a chosen anchor: a blok can show more than once, like a menu item in a header and a drawer
+		id: blok.anchor || undefined,
 	}
 }
 
