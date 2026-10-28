@@ -127,6 +127,16 @@
 		load()
 	}
 
+	/** A folder's whole name, when the tree has had to cut it short */
+	let tip = $state<{ text: string; x: number; y: number } | null>(null)
+	function name_tip(event: Event) {
+		const button = event.currentTarget as HTMLElement
+		const name = button.querySelector("span")!
+		if (name.scrollWidth <= name.clientWidth) return
+		const box = button.getBoundingClientRect()
+		tip = { text: name.textContent ?? "", x: box.right + 8, y: box.top + box.height / 2 }
+	}
+
 	function toggle(id: number) {
 		opened = opened.includes(id) ? opened.filter((open) => open !== id) : [...opened, id]
 	}
@@ -228,6 +238,10 @@
 						type="button"
 						aria-current={folder === child.id ? "true" : undefined}
 						onclick={() => browse(child.id)}
+						onpointerenter={name_tip}
+						onpointerleave={() => (tip = null)}
+						onfocus={name_tip}
+						onblur={() => (tip = null)}
 					>
 						<svg
 							width="16"
@@ -285,7 +299,7 @@
 
 		<div class={["body", { "with-tree": tree.length > 0 }]}>
 			{#if tree.length}
-				<nav class="tree" aria-label="Folders">
+				<nav class="tree" aria-label="Folders" onscroll={() => (tip = null)}>
 					<div class="row">
 						<button
 							class="folder"
@@ -439,6 +453,9 @@
 			>
 		</footer>
 	</div>
+	{#if tip}
+		<span class="tip" role="tooltip" style:left="{tip.x}px" style:top="{tip.y}px">{tip.text}</span>
+	{/if}
 </dialog>
 
 <style>
@@ -524,7 +541,7 @@
 		min-block-size: 0;
 
 		&.with-tree {
-			grid-template-columns: minmax(0, 13rem) minmax(0, 1fr) minmax(0, 19rem);
+			grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) minmax(0, 19rem);
 		}
 
 		@media (width < 48rem) {
@@ -622,6 +639,32 @@
 			& svg {
 				color: var(--accent);
 			}
+		}
+	}
+
+	/* As the edit bar's tips are, pointing back at the name it finishes */
+	.tip {
+		background: var(--ink);
+		border-radius: 0.5rem;
+		box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+		color: var(--bg);
+		font-size: 0.75rem;
+		padding: 0.5rem 0.625rem;
+		pointer-events: none;
+		position: fixed;
+		translate: 0 -50%;
+		white-space: nowrap;
+		z-index: 1;
+
+		&::before {
+			background: inherit;
+			block-size: 0.625rem;
+			clip-path: polygon(100% 0, 100% 100%, 0 50%);
+			content: "";
+			inline-size: 0.3125rem;
+			inset: 50% 100% auto auto;
+			position: absolute;
+			translate: 0 -50%;
 		}
 	}
 
