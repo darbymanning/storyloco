@@ -38,7 +38,7 @@ const user = (page: Page) =>
 if (signin) {
 	for (const site of sites) {
 		const page = await context.newPage()
-		await page.goto(new URL("/?edit", site).href)
+		await page.goto(new URL("/admin", site).href)
 		console.log(`Sign in to ${site} in the window…`)
 		await page.waitForFunction(
 			(origin) =>
