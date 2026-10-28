@@ -194,6 +194,12 @@ function content_for(story: number) {
  */
 async function blok_for(node: HTMLElement | null): Promise<Blok | undefined> {
 	if (!node) return
+	// a stand-in's blok is read from its block's content as it is now, so a save can't leave it behind
+	if (inferred.has(node)) {
+		const around = await blok_for(block_of(node.parentElement))
+		const { uid } = meta(node)
+		return around && uid ? (find_blok(around, uid) as Blok | undefined) : undefined
+	}
 	const own = bloks.get(node) as Blok | undefined
 	if (own) return own
 	const { id, uid } = meta(node)
@@ -293,7 +299,92 @@ function* each_blok(value: unknown): Generator<Blok> {
  * list is marked: their text is the block's to edit
  */
 const inner_bloks = (blok: Blok) =>
-	[...own_bloks(blok)].filter((inner) => inner !== blok && !element_of(inner._uid!))
+	[...own_bloks(blok)].filter((inner) => inner !== blok && !marked(inner._uid!))
+
+/** A blok the site marked with `attrs`, rather than one only found from the text it shows */
+function marked(uid: string) {
+	const node = element_of(uid)
+	return !!node && !inferred.has(node)
+}
+
+/** Elements standing in for nested bloks the site didn't mark, found from the text they show */
+const inferred = new Set<HTMLElement>()
+
+/** Every piece of text a blok and the bloks inside it hold */
+const texts_of = (blok: Blok) =>
+	new Set(
+		[...own_bloks(blok)].flatMap((inner) =>
+			Object.entries(inner)
+				.filter(([key]) => !key.startsWith("_"))
+				.map(([, value]) => loose(text_of(value) ?? ""))
+				.filter(Boolean)
+		)
+	)
+
+/** Whether every piece of text inside shows one of these */
+function shows_only(el: Element, texts: Set<string>) {
+	const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		const text = loose((node as Text).data)
+		if (text && !texts.has(text)) return false
+	}
+	return true
+}
+
+/**
+ * Text a nested blok holds, shown inside a block the site marked but not inside one of its own,
+ * like a menu item's label in a marked header: the outermost element around it showing nothing
+ * but that blok's text stands in for the blok, so it's selected, moved and named as one
+ */
+async function stand_in(node: HTMLElement, source: { story: number; uid: string }) {
+	const block = block_of(node)
+	if (!block || meta(block).uid === source.uid) return
+	const around = await blok_for(block)
+	const blok = around && (find_blok(around, source.uid) as Blok | undefined)
+	if (!blok || blok === around || !node.isConnected || block_of(node) !== block) return
+	const texts = texts_of(blok)
+	let el = node
+	for (
+		let up = node.parentElement;
+		up && up !== block && shows_only(up, texts);
+		up = up.parentElement
+	)
+		el = up
+	el.dataset.blokC = JSON.stringify({ id: source.story, uid: source.uid, name: blok.component })
+	inferred.add(el)
+	if (by_uid && !by_uid.has(source.uid)) by_uid.set(source.uid, el)
+	if (active) prepare(true)
+}
+
+/**
+ * Which of a blok's fields a region showing it shows, learned from the text only one field holds,
+ * like a header showing the layout's header menu and a footer its footer menus
+ */
+let regions = new WeakMap<HTMLElement, Set<string>>()
+function region_fields(region: HTMLElement, blok: Blok, story: number) {
+	let fields = regions.get(region)
+	if (fields) return fields
+	fields = new Set()
+	const candidates = [...own_bloks(blok)]
+	const walker = document.createTreeWalker(region, NodeFilter.SHOW_TEXT)
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		const text = loose((node as Text).data)
+		if (!text || ours(node.parentElement)) continue
+		const only = matches(text, candidates, story)
+		if (only.length === 1 && "uid" in only[0]) fields.add(top_field(blok, only[0]))
+	}
+	regions.set(region, fields)
+	return fields
+}
+
+/** The field of `root` a source sits in: one of its own, or the one holding the blok it's in */
+function top_field(root: Blok, source: { uid: string; field: string }) {
+	if (source.uid === root._uid) return source.field
+	for (const [key, value] of Object.entries(root))
+		if (!key.startsWith("_") && [...own_bloks(value)].some((inner) => inner._uid === source.uid))
+			return key
+	return source.field
+}
 
 /** Like `each_blok`, but not into the stories a field links to, which are theirs to edit */
 function* own_bloks(value: unknown): Generator<Blok> {
@@ -465,8 +556,19 @@ function showing(scope: Element, text: string) {
  * the one at the same place among them as `shown` is among the page's: fields in the content's
  * order, as a template mostly shows them
  */
-function match(text: string, candidates: Iterable<Blok>, story: number, shown?: Node) {
-	const found = matches(text, candidates, story)
+function match(
+	text: string,
+	candidates: Iterable<Blok>,
+	story: number,
+	shown?: Node,
+	near?: (source: Source) => boolean
+) {
+	let found = matches(text, candidates, story)
+	// several fields hold it: the ones this part of the page shows, like the header's menu over the footer's
+	if (found.length > 1 && near) {
+		const here = found.filter(near)
+		if (here.length) found = here
+	}
 	if (found.length === 1) return found[0]
 	if (found.length < 2 || !shown) return
 	const scope = block_of(shown instanceof Element ? shown : shown.parentElement) ?? document.body
@@ -539,11 +641,16 @@ async function source_of(
 	const blok = await blok_for(block)
 	const page = editor.story
 	if (in_rich(shown, [blok, page?.uid ? page_blok(page.uid) : undefined])) return
+	const id = block ? Number(meta(block).id) : 0
+	const near = (source: Source) =>
+		!!blok &&
+		!!block &&
+		"uid" in source &&
+		region_fields(block, blok, id).has(top_field(blok, source))
 	const own =
 		blok &&
 		block &&
-		(match(text, [blok], Number(meta(block).id), shown) ??
-			match(text, inner_bloks(blok), Number(meta(block).id), shown))
+		(match(text, [blok], id, shown, near) ?? match(text, inner_bloks(blok), id, shown, near))
 	if (own) return own
 	const around = node.closest("a[href]")
 	const story = await story_at(around ?? item_link(node, block))
@@ -1037,6 +1144,7 @@ function try_wire(node: HTMLElement) {
 	source_of(node, text).then((source) => {
 		if (!active || !source || wired.has(node)) return
 		if (first ? text_child(node) === first : inline_run(node)) wire(node, first ?? parts, source)
+		if ("uid" in source) stand_in(node, source)
 	})
 }
 
@@ -2101,6 +2209,7 @@ export function install() {
 	// a save re-renders the page, and the selected blok's element with it
 	on_saved(() => {
 		swept = new WeakSet()
+		regions = new WeakMap()
 		fetched = new Map()
 		known.clear()
 		if (selected) highlight(selected.uid)
@@ -2130,6 +2239,7 @@ export function install() {
 		if (selected && !element_of(selected.uid)) select(null)
 		// nor is text from it that was ready to edit, which lets go of its field
 		for (const [node, unwire] of wired) if (!node.isConnected) unwire()
+		for (const node of inferred) if (!node.isConnected) inferred.delete(node)
 	})
 	on_people(follow)
 	setInterval(check, 30_000)
