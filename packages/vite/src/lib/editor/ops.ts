@@ -223,8 +223,9 @@ type Operation =
 			focus: string
 	  }
 	| { op: "publish"; story: number }
-	| { op: "assets"; search?: string; page?: number }
-	| { op: "upload"; filename: string; size?: string }
+	| { op: "assets"; search?: string; page?: number; folder?: number }
+	| { op: "folders" }
+	| { op: "upload"; filename: string; size?: string; folder?: number }
 	| { op: "uploaded"; asset: number }
 	| { op: "blocks"; story: number; uid: string; field?: string }
 	| { op: "move"; story: number; uid: string; by?: number; to?: number }
@@ -795,8 +796,22 @@ export async function operate(
 			sort_by: "created_at:desc",
 		})
 		if (text(body.search, 200) && body.search) query.set("search", body.search)
+		if (id(body.folder)) query.set("in_folder", String(body.folder))
 		const { assets } = await editor.mapi<{ assets: Array<ManagedAsset> }>(`/assets/?${query}`)
 		return { assets: assets.map(asset_of) }
+	}
+
+	if (body.op === "folders") {
+		const { asset_folders } = await editor.mapi<{
+			asset_folders: Array<{ id: number; name: string; parent_id: number | null }>
+		}>("/asset_folders/")
+		return {
+			folders: asset_folders.map(({ id, name, parent_id }) => ({
+				id,
+				name,
+				parent: parent_id || null,
+			})),
+		}
 	}
 
 	if (body.op === "upload") {
@@ -808,7 +823,12 @@ export async function operate(
 			fields: Record<string, string>
 		}>("/assets/", {
 			method: "POST",
-			body: { filename: body.filename, size: body.size, validate_upload: 1 },
+			body: {
+				filename: body.filename,
+				size: body.size,
+				validate_upload: 1,
+				...(id(body.folder) && { asset_folder_id: body.folder }),
+			},
 		})
 		return { asset: signed.id, post_url: signed.post_url, fields: signed.fields }
 	}

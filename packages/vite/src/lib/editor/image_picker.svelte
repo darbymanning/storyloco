@@ -9,11 +9,13 @@
 		focus?: string | null
 	}
 	type Choice = { asset: number; alt: string; focus: string; filename: string }
+	type Folder = { id: number; name: string; parent: number | null }
 
 	let {
 		current,
 		images = true,
 		list,
+		folders,
 		upload,
 		uploaded,
 		save,
@@ -23,10 +25,13 @@
 		current: Current
 		/** Only images, as an image field takes; otherwise any file */
 		images?: boolean
-		list: (search: string, page: number) => Promise<{ assets: Array<Asset> }>
+		list: (search: string, page: number, folder?: number) => Promise<{ assets: Array<Asset> }>
+		/** The library's folders, to browse and upload into */
+		folders?: () => Promise<{ folders: Array<Folder> }>
 		upload: (
 			filename: string,
-			size?: string
+			size?: string,
+			folder?: number
 		) => Promise<{ asset: number; post_url: string; fields: Record<string, string> }>
 		uploaded: (asset: number) => Promise<{ asset: Asset }>
 		save: (choice: Choice) => Promise<string | null>
@@ -47,6 +52,22 @@
 	let measured = $state<{ filename: string; width: number; height: number } | null>(null)
 
 	let search = $state("")
+	let tree = $state<Array<Folder>>([])
+	let folder = $state<number | null>(null)
+	const inside = $derived(
+		tree.filter(({ parent }) => parent === folder).sort((a, b) => a.name.localeCompare(b.name))
+	)
+	/** The folders down to this one, for the way back up */
+	const trail = $derived.by(() => {
+		const steps: Array<Folder> = []
+		let at = tree.find(({ id }) => id === folder)
+		while (at) {
+			steps.unshift(at)
+			const { parent } = at
+			at = tree.find(({ id }) => id === parent)
+		}
+		return steps
+	})
 	let assets = $state<Array<Asset>>([])
 	let page = $state(1)
 	let more = $state(false)
@@ -103,7 +124,7 @@
 	async function load(next = 1) {
 		loading = true
 		try {
-			const { assets: found } = await list(search.trim(), next)
+			const { assets: found } = await list(search.trim(), next, folder ?? undefined)
 			const usable = images ? found.filter((asset) => IMAGE.test(asset.filename)) : found
 			assets = next === 1 ? usable : [...assets, ...usable]
 			page = next
@@ -113,6 +134,11 @@
 		} finally {
 			loading = false
 		}
+	}
+
+	function browse(to: number | null) {
+		folder = to
+		load()
 	}
 
 	let typing: ReturnType<typeof setTimeout> | undefined
@@ -150,7 +176,8 @@
 					: null
 				const signed = await upload(
 					file.name,
-					bitmap ? `${bitmap.width}x${bitmap.height}` : undefined
+					bitmap ? `${bitmap.width}x${bitmap.height}` : undefined,
+					folder ?? undefined
 				)
 				const form = new FormData()
 				for (const [key, value] of Object.entries(signed.fields)) form.append(key, value)
@@ -183,6 +210,10 @@
 			node.showModal()
 			measure(chosen.filename)
 			load()
+			// a moxy without folders yet leaves the library as one list
+			folders?.()
+				.then((found) => (tree = found.folders))
+				.catch(() => {})
 		})
 	}
 </script>
@@ -263,26 +294,55 @@
 			</section>
 
 			<section class="library">
-				<div class="tools">
-					<input
-						type="search"
-						placeholder="Search the library"
-						aria-label="Search the library"
-						bind:value={search}
-						oninput={searched}
-					/>
-					<label class="button">
+				<div class="head">
+					<div class="tools">
 						<input
-							type="file"
-							accept={images ? "image/*" : undefined}
-							multiple
-							onchange={(e) => {
-								add(e.currentTarget.files)
-								e.currentTarget.value = ""
-							}}
+							type="search"
+							placeholder="Search the library"
+							aria-label="Search the library"
+							bind:value={search}
+							oninput={searched}
 						/>
-						{uploading ? "Uploading…" : "Upload"}
-					</label>
+						<label class="button">
+							<input
+								type="file"
+								accept={images ? "image/*" : undefined}
+								multiple
+								onchange={(e) => {
+									add(e.currentTarget.files)
+									e.currentTarget.value = ""
+								}}
+							/>
+							{uploading ? "Uploading…" : "Upload"}
+						</label>
+					</div>
+					{#if tree.length}
+						<nav class="folders" aria-label="Folders">
+							{#if folder}
+								<button class="crumb" type="button" onclick={() => browse(null)}>All</button>
+								{#each trail as step (step.id)}
+									<span class="sep" aria-hidden="true">/</span>
+									{#if step.id === folder}
+										<span class="crumb" aria-current="location">{step.name}</span>
+									{:else}
+										<button class="crumb" type="button" onclick={() => browse(step.id)}
+											>{step.name}</button
+										>
+									{/if}
+								{/each}
+							{/if}
+							{#each inside as child (child.id)}
+								<button class="chip" type="button" onclick={() => browse(child.id)}>
+									<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+										<path
+											d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+										/>
+									</svg>
+									{child.name}
+								</button>
+							{/each}
+						</nav>
+					{/if}
 				</div>
 
 				<ul class="grid" aria-busy={loading}>
@@ -305,7 +365,11 @@
 					{:else}
 						{#if !loading}
 							<li class="empty">
-								{search ? "No images match" : "No images yet. Drop one here to upload it."}
+								{search
+									? "No images match"
+									: folder
+										? "No images in this folder. Drop one here to upload it into it."
+										: "No images yet. Drop one here to upload it."}
 							</li>
 						{/if}
 					{/each}
@@ -517,6 +581,68 @@
 		gap: 0.75rem;
 		grid-template-rows: auto minmax(0, 1fr);
 		min-block-size: 0;
+	}
+
+	.head {
+		display: grid;
+		gap: 0.625rem;
+	}
+
+	.folders {
+		align-items: center;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+	}
+
+	.crumb {
+		background: none;
+		border: 0;
+		color: var(--muted);
+		font: inherit;
+		padding: 0.125rem 0.25rem;
+
+		&:is(button) {
+			cursor: pointer;
+
+			&:hover {
+				color: var(--ink);
+			}
+		}
+
+		&[aria-current] {
+			color: var(--ink);
+			font-weight: 600;
+		}
+	}
+
+	.sep {
+		color: var(--muted);
+	}
+
+	.chip {
+		align-items: center;
+		background: transparent;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		color: inherit;
+		cursor: pointer;
+		display: flex;
+		font: inherit;
+		gap: 0.375rem;
+		padding: 0.25rem 0.625rem;
+
+		&:hover {
+			background: color-mix(in srgb, var(--ink) 6%, transparent);
+		}
+
+		& svg {
+			fill: none;
+			stroke: currentColor;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+			stroke-width: 2;
+		}
 	}
 
 	.tools {

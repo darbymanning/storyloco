@@ -718,7 +718,9 @@ const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-r
 [data-blok-c]:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:-2px}`
 
 /* Outside the layer, so a site's reset can't unpin our own bits */
-const OURS = `button.storyloco-replace{position:fixed;z-index:2147483000;white-space:nowrap;display:flex;align-items:center;gap:.375rem;padding:.375rem .75rem;border:0;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2);animation:storyloco-in .16s ease-out}
+const OURS = `button.storyloco-replace{position:fixed;z-index:2147483000;display:grid;place-items:center;inline-size:2rem;block-size:2rem;padding:0;border:0;border-radius:.5rem;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2);animation:storyloco-in .16s ease-out}
+button.storyloco-replace::after{content:attr(aria-label);position:absolute;inset:calc(100% + .5rem) 0 auto auto;padding:.375rem .5rem;border-radius:.5rem;background:var(--editor-ink,#1b243f);color:var(--editor-bg,#fff);font:500 .75rem/1.25 system-ui,sans-serif;white-space:nowrap;pointer-events:none;opacity:0;translate:0 -.25rem;transition:opacity .15s,translate .15s}
+button.storyloco-replace:is(:hover,:focus-visible)::after{opacity:1;translate:0 0}
 button.storyloco-replace[hidden]{display:none}
 [data-storyloco=field-ring]{position:fixed;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
 button.storyloco-replace:focus-visible{outline:2px solid #fff;outline-offset:-4px}
@@ -1316,7 +1318,8 @@ function offer(img: HTMLImageElement, spot: Spot) {
 		replace.type = "button"
 		replace.className = "storyloco-replace"
 		replace.dataset.storyloco = "replace"
-		replace.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>Replace image`
+		replace.ariaLabel = "Replace image"
+		replace.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>`
 		replace.addEventListener("pointerleave", (e) => e.relatedTarget !== offered && withdraw())
 		addEventListener("scroll", withdraw, { passive: true })
 		document.body.append(replace)
@@ -1377,8 +1380,11 @@ export async function open_picker({
 		props: {
 			current,
 			images,
-			list: (search: string, page: number) => call({ op: "assets", search, page }),
-			upload: (filename: string, size?: string) => call({ op: "upload", filename, size }),
+			list: (search: string, page: number, folder?: number) =>
+				call({ op: "assets", search, page, folder }),
+			folders: () => call({ op: "folders" }),
+			upload: (filename: string, size?: string, folder?: number) =>
+				call({ op: "upload", filename, size, folder }),
 			uploaded: (asset: number) => call({ op: "uploaded", asset }),
 			suggest: (url: string) =>
 				call<{ alt: string }>({ op: "ai", do: "alt", url }).then(({ alt }) => alt),
