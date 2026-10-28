@@ -338,7 +338,7 @@ const local = (path: string | null | undefined) =>
 	path?.startsWith("/") && !path.startsWith("//") ? path : "/"
 
 const cookie = { path: "/", httpOnly: true, secure: true, sameSite: "lax" } as const
-/** A sign-in that lands in edit mode, as ⌘⇧E does: from `/admin`, or `?edit` on any page */
+/** A sign-in that lands in edit mode, as ⌘⇧E does, from one of `create_editor`'s `entry` ways in */
 const EDIT_ON = "sl_edit_on"
 
 /** SvelteKit 3 only redirects to another origin when told it's meant to; SvelteKit 2 ignores the option */
@@ -1669,7 +1669,18 @@ const script = (value: {
 export function create_editor({
 	moxy,
 	space: configured,
-}: { moxy?: string; space?: string } = {}): Handle {
+	entry = "/admin",
+}: {
+	moxy?: string
+	space?: string
+	/** Ways in to edit mode: a path, taken only where the site has no page of its own, or a `?param` on any page */
+	entry?: string | Array<string>
+} = {}): Handle {
+	const ways = [entry].flat()
+	const params = ways.filter((way) => way.startsWith("?")).map((way) => way.slice(1))
+	const paths = ways
+		.filter((way) => !way.startsWith("?"))
+		.map((way) => way.replace(/\/$/, "") || "/")
 	return async ({ event, resolve }) => {
 		const broker = moxy ?? env("STORYLOCO_MOXY") ?? MOXY
 
@@ -1714,10 +1725,11 @@ export function create_editor({
 		const editor = (event.locals as { editor?: Editor }).editor
 		const guest = (event.locals as { guest?: Guest }).guest
 
-		// `?edit` on any page signs in to edit it, so editors can bookmark it on any deploy
-		if (event.url.searchParams.has("edit") && event.request.method === "GET") {
+		// a `?param` way in, on any page, signs in to edit that page
+		const param = params.find((name) => event.url.searchParams.has(name))
+		if (param && event.request.method === "GET") {
 			const back = new URL(event.url)
-			back.searchParams.delete("edit")
+			back.searchParams.delete(param)
 			const path = back.pathname + back.search
 			event.cookies.set(EDIT_ON, "1", { ...cookie, maxAge: 600 })
 			if (editor) redirect(303, path)
@@ -1750,11 +1762,11 @@ export function create_editor({
 				)
 			},
 		})
-		// `/admin`, where the site has no page of its own, is the home page in edit mode, signed in first
+		// a path way in, where the site has no page of its own, is the home page in edit mode, signed in first
 		if (
 			response.status === 404 &&
 			event.request.method === "GET" &&
-			/^\/admin\/?$/.test(event.url.pathname)
+			paths.includes(event.url.pathname.replace(/\/$/, "") || "/")
 		)
 			return new Response(null, {
 				status: 303,

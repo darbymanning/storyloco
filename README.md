@@ -317,6 +317,14 @@ interface Locals {
 }
 ```
 
+`/admin` is the way in by default. A site with a page there, or that wants another, sets its own
+with `create_editor({ entry })`: a path, taken only where the site has no page, or a `?param` that
+signs in to edit whichever page it's on, or a list of them.
+
+```typescript
+export const handle = sequence(create_editor({ entry: ['/cms', '?edit'] }), version)
+```
+
 A site with a Content Security Policy needs `wss://moxy.uilo.co` in its `connect-src`, for the
 multiplayer socket, and `'self'` in its `frame-ancestors`, for the phone and tablet preview.
 
@@ -374,9 +382,8 @@ caret showing, and saves to the same story take turns, so no one's change is los
   Notify me. A review request lands there too, and anything left unread for 15 minutes is
   emailed, guests' included.
 
-Visitors never see any of it. On the live site, press **⌘⇧E** (Ctrl+Shift+E), add `?edit` to
-any address, or go to `/admin` (where the site has no page of its own) to sign in, landing in edit
-mode; once signed in, the badge shows on every page, and ⌘⇧E or **E** turns
+Visitors never see any of it. On the live site, press **⌘⇧E** (Ctrl+Shift+E), or go to `/admin`
+(where the site has no page of its own) to sign in, landing in edit mode; once signed in, the badge shows on every page, and ⌘⇧E or **E** turns
 edit mode on and off. In development the badge is always there.
 
 An effect that takes over an element's content, like splitting a heading into words to animate
