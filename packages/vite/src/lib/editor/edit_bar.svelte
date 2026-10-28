@@ -1077,12 +1077,14 @@
 		transition: grid-template-columns 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 
 		/* folding, the clip below starts from 40rem out, so the track keeps the buttons in; and inert
-		   doesn't stop hover, so the buttons sliding under the pointer would flash their tips */
+		   doesn't stop hover, so the buttons sliding under the pointer would flash their tips, folding
+		   or opening (a tip's visibility waits for it to open) */
 		&:not(.open *) {
 			overflow-x: clip;
 
 			.tip {
-				display: none;
+				transition: none;
+				visibility: hidden;
 			}
 		}
 
@@ -1162,7 +1164,8 @@
 		position: absolute;
 		transition:
 			opacity 0.2s ease,
-			translate 0.2s ease;
+			translate 0.2s ease,
+			visibility 0s 0.3s;
 		translate: 0 0.25rem;
 		white-space: nowrap;
 
