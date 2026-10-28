@@ -53,7 +53,14 @@
 </script>
 
 {#if src}
-	<img {src} alt="" loading="lazy" referrerpolicy="no-referrer" onerror={() => failed++} />
+	<img
+		{src}
+		alt=""
+		draggable="false"
+		loading="lazy"
+		referrerpolicy="no-referrer"
+		onerror={() => failed++}
+	/>
 {:else}
 	{initials}
 {/if}
