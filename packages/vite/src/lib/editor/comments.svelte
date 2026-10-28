@@ -9,9 +9,7 @@
 	import { onMount, tick } from "svelte"
 	import { fly } from "svelte/transition"
 	import { createSubscriber } from "svelte/reactivity"
-	import { goto, replaceState } from "$app/navigation"
-	import { page } from "$app/state"
-	import { call, editor, on_navigate, read_notices } from "./client.js"
+	import { call, editor, kit, on_navigate, read_notices } from "./client.js"
 	import { on_comments } from "./live.js"
 	import Face from "./face.svelte"
 	import { anchored, type Anchor } from "./anchor.js"
@@ -515,7 +513,7 @@
 		if (!wanted) return false
 		opened = wanted
 		url.searchParams.delete("comment")
-		replaceState(url, page.state)
+		kit().replace_state(url, kit().page().state)
 		load().then(() => {
 			const root = comments.find((c) => c.id === wanted)
 			const node = root && element_of(root.uid)
@@ -581,7 +579,7 @@
 			type="button"
 			class={["thread", { active: opened === root.id, away: path === null && !here }]}
 			onclick={() =>
-				path === null ? go_to(root) : goto(`${path}?comment=${encodeURIComponent(root.id)}`)}
+				path === null ? go_to(root) : kit().goto(`${path}?comment=${encodeURIComponent(root.id)}`)}
 			onpointerenter={() => (lit = root.id)}
 			onpointerleave={() => (lit = null)}
 		>

@@ -41,6 +41,7 @@ import {
 	stop as go_offline,
 } from "./live.js"
 import { anchor_at } from "./anchor.js"
+import type { Asset as Stored } from "./server.js"
 import type { Inserts, RichField } from "./richtext.js"
 import { show as show_presence } from "./presence.js"
 import { share_text, type Surface } from "./together.js"
@@ -194,9 +195,11 @@ function content_for(story: number) {
  */
 async function blok_for(node: HTMLElement | null): Promise<Blok | undefined> {
 	if (!node) return
-	// a stand-in's blok is read from its block's content as it is now, so a save can't leave it behind
-	if (inferred.has(node)) {
-		const around = await blok_for(block_of(node.parentElement))
+	// a stand-in's blok is read from its block's content as it is now, so a save can't leave it behind;
+	// the page's own, with no block around it, is the page's story, as below
+	const holder = inferred.has(node) ? block_of(node.parentElement) : null
+	if (holder) {
+		const around = await blok_for(holder)
 		const { uid } = meta(node)
 		return around && uid ? (find_blok(around, uid) as Blok | undefined) : undefined
 	}
@@ -351,6 +354,25 @@ async function stand_in(node: HTMLElement, source: { story: number; uid: string 
 	)
 		el = up
 	mark(el, source.story, blok)
+}
+
+/** Every stand-in unmarked, as the page changes under them */
+function forget_stand_ins() {
+	for (const node of inferred) {
+		delete node.dataset.blokC
+		if (node.hasAttribute("data-storyloco-tab")) {
+			node.removeAttribute("tabindex")
+			delete node.dataset.storylocoTab
+		}
+		if (node.hasAttribute("data-storyloco-label")) {
+			node.removeAttribute("aria-label")
+			delete node.dataset.storylocoLabel
+		}
+	}
+	inferred.clear()
+	by_uid = null
+	swept = new WeakSet()
+	regions = new WeakMap()
 }
 
 /** An element standing in for a blok the site didn't mark */
@@ -697,10 +719,27 @@ const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-r
 [data-blok-c]:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:-2px}`
 
 /* Outside the layer, so a site's reset can't unpin our own bits */
-const OURS = `button.storyloco-replace{position:fixed;z-index:2147483000;white-space:nowrap;display:flex;align-items:center;gap:.375rem;padding:.375rem .75rem;border:0;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2);animation:storyloco-in .16s ease-out}
-button.storyloco-replace[hidden]{display:none}
+const OURS = `[data-storyloco=image]{position:fixed;z-index:2147483000;animation:storyloco-in .16s ease-out}
+[data-storyloco=image][hidden],[data-storyloco=image] [hidden]{display:none!important}
+button.storyloco-image{display:grid;place-items:center;inline-size:2rem;block-size:2rem;padding:0;border:0;border-radius:.5rem;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2)}
+button.storyloco-image:focus-visible{outline:2px solid #fff;outline-offset:-4px}
+button.storyloco-image svg{grid-area:1/1;transition:opacity .2s ease,rotate .2s ease,scale .2s ease}
+button.storyloco-image .x,button.storyloco-image[aria-expanded=true] svg:not(.x){opacity:0;rotate:-90deg;scale:.5}
+button.storyloco-image[aria-expanded=true] svg:not(.x){rotate:90deg}
+button.storyloco-image[aria-expanded=true] .x{opacity:1;rotate:0deg;scale:1}
+[data-storyloco=image] [role=menu]{position:absolute;inset:calc(100% + .375rem) 0 auto auto;display:grid;min-inline-size:9rem;padding:.25rem;border-radius:.625rem;background:var(--editor-bg,#fff);color:var(--editor-ink,#1b243f);box-shadow:0 0 0 1px var(--editor-line,rgb(27 36 63/.12)),0 8px 24px rgb(0 0 0/.18);animation:storyloco-in .12s ease-out}
+[data-storyloco=image] [role=menuitem]{all:unset;cursor:pointer;padding:.4375rem .625rem;border-radius:.375rem;font:500 .8125rem/1.25 system-ui,sans-serif;white-space:nowrap}
+[data-storyloco=image] [role=menuitem]:is(:hover,:focus-visible){background:color-mix(in srgb,currentColor 8%,transparent)}
+[data-storyloco=image] [data-do=remove]{color:var(--editor-danger,#e5484d)}
+[data-storyloco=drop]{position:fixed;z-index:2147482995;pointer-events:none;display:grid;place-items:center;box-sizing:border-box;padding:.75rem;border-radius:6px;background:color-mix(in srgb,var(--editor-accent,#05807f) 35%,rgb(0 0 0/.3));backdrop-filter:blur(2px);animation:storyloco-in .12s ease-out}
+[data-storyloco=drop] .edge{position:absolute;inset:8px;inline-size:calc(100% - 16px);block-size:calc(100% - 16px);overflow:visible;fill:none;stroke:var(--editor-accent-ink,#fff);stroke-width:1.5;stroke-dasharray:6 7;stroke-linecap:round;opacity:.85;animation:storyloco-march .9s linear infinite}
+@keyframes storyloco-march{to{stroke-dashoffset:-13}}
+[data-storyloco=drop][hidden]{display:none}
+[data-storyloco=drop] em{font-style:normal}
+[data-storyloco=drop] span{display:flex;align-items:center;gap:.5rem;padding:.5rem .875rem;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;letter-spacing:normal;box-shadow:0 4px 16px rgb(0 0 0/.25)}
+[data-storyloco=drop][data-uploading] span{animation:storyloco-pulse .8s ease-in-out infinite alternate}
+@keyframes storyloco-pulse{to{opacity:.55}}
 [data-storyloco=field-ring]{position:fixed;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
-button.storyloco-replace:focus-visible{outline:2px solid #fff;outline-offset:-4px}
 [data-storyloco=tag]{position:fixed;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
 [data-storyloco=tag][hidden]{display:block;opacity:0}
 @keyframes storyloco-in{from{opacity:0;translate:0 -2px}}
@@ -1227,7 +1266,15 @@ type Asset = {
 	focus?: string | null
 	id?: number | null
 }
-type Spot = { story: number; uid: string; field: string; index?: number; asset: Asset }
+type Spot = {
+	story: number
+	uid: string
+	field: string
+	index?: number
+	asset: Asset
+	/** a multiasset field's images, for taking this one out */
+	list?: Array<Asset>
+}
 
 /** An image URL's path without the image service's resizing, so a rendition matches its field */
 const asset_path = (src: string) => {
@@ -1256,6 +1303,7 @@ function image_field(img: HTMLImageElement, candidates: Iterable<Blok>, story: n
 						field,
 						index: Array.isArray(value) ? i : undefined,
 						asset,
+						list: Array.isArray(value) ? (value as Array<Asset>) : undefined,
 					})
 			})
 		}
@@ -1279,26 +1327,87 @@ async function spot_of(img: HTMLImageElement): Promise<Spot | undefined> {
 	return story ? image_field(img, each_blok(story.content), story.id) : undefined
 }
 
-let replace: HTMLButtonElement | undefined
+let image_tools: HTMLDivElement | undefined
 let offered: HTMLImageElement | undefined
 
+function show_menu(open: boolean) {
+	image_tools!.querySelector("[role=menu]")!.toggleAttribute("hidden", !open)
+	image_tools!.querySelector("button")!.ariaExpanded = String(open)
+}
+
 function withdraw() {
-	if (replace) replace.hidden = true
+	if (image_tools) {
+		image_tools.hidden = true
+		show_menu(false)
+	}
 	if (offered) delete offered.dataset.image
 	offered = undefined
 }
 
-/** A Replace button over the image, which stays while the pointer moves between the two */
+/** A file added to the library, from the picker or dropped on an image */
+async function put(file: File, folder?: number) {
+	const bitmap = file.type.startsWith("image/")
+		? await createImageBitmap(file).catch(() => null)
+		: null
+	const signed = await call<{ asset: number; post_url: string; fields: Record<string, string> }>({
+		op: "upload",
+		filename: file.name,
+		size: bitmap ? `${bitmap.width}x${bitmap.height}` : undefined,
+		folder,
+	})
+	const form = new FormData()
+	for (const [key, value] of Object.entries(signed.fields)) form.append(key, value)
+	form.append("file", file)
+	// Storyblok's bucket doesn't answer other sites, so the reply is opaque; finishing checks it landed
+	await fetch(signed.post_url, { method: "POST", body: form, mode: "no-cors" })
+	return (await call<{ asset: Stored }>({ op: "uploaded", asset: signed.asset })).asset
+}
+
+async function set_image(spot: Spot, choice: Omit<Choice, "filename">) {
+	const { story, uid, field, index } = spot
+	if (!(await send({ op: "image", story, uid, field, index, ...choice }))) return last_problem()
+	forget(story)
+	return null
+}
+
+/** An image field emptied, or the one image taken out of a list of them */
+async function remove_image({ story, uid, field, index, list }: Spot) {
+	const value = list
+		? list
+				.filter((asset, i) => i !== index && asset.id)
+				.map(({ id, alt, focus }) => ({ id, alt: alt ?? "", focus: focus ?? "" }))
+		: null
+	if (await send({ op: "fields", story, uid, values: { [field]: value } })) forget(story)
+	else toast(last_problem() ?? "Couldn’t remove that image")
+}
+
+/** The image's menu over its corner, which stays while the pointer moves between the two */
 function offer(img: HTMLImageElement, spot: Spot) {
-	if (!replace) {
-		replace = document.createElement("button")
-		replace.type = "button"
-		replace.className = "storyloco-replace"
-		replace.dataset.storyloco = "replace"
-		replace.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>Replace image`
-		replace.addEventListener("pointerleave", (e) => e.relatedTarget !== offered && withdraw())
+	if (!image_tools) {
+		image_tools = document.createElement("div")
+		image_tools.dataset.storyloco = "image"
+		image_tools.innerHTML = `<button type="button" class="storyloco-image" aria-label="Image" aria-haspopup="menu" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg><svg class="x" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button><div role="menu" hidden><button type="button" role="menuitem" data-do="replace">Replace image</button><button type="button" role="menuitem" data-do="remove">Remove image</button></div>`
+		const [trigger, menu] = [
+			image_tools.firstElementChild as HTMLButtonElement,
+			image_tools.lastElementChild!,
+		]
+		trigger.addEventListener("click", (e) => {
+			e.preventDefault()
+			e.stopPropagation()
+			const open = menu.hasAttribute("hidden")
+			show_menu(open)
+			if (open) (menu.firstElementChild as HTMLElement).focus()
+		})
+		// a click anywhere else closes the menu, leaving the button
+		document.addEventListener(
+			"pointerdown",
+			(e) => !image_tools!.contains(e.target as Node) && show_menu(false),
+			true
+		)
+		image_tools.addEventListener("keydown", (e) => e.key === "Escape" && withdraw())
+		image_tools.addEventListener("pointerleave", (e) => e.relatedTarget !== offered && withdraw())
 		addEventListener("scroll", withdraw, { passive: true })
-		document.body.append(replace)
+		document.body.append(image_tools)
 	}
 	if (offered !== img) {
 		withdraw()
@@ -1306,33 +1415,116 @@ function offer(img: HTMLImageElement, spot: Spot) {
 		img.dataset.image = ""
 		img.addEventListener(
 			"pointerleave",
-			(e) => e.relatedTarget !== replace && offered === img && withdraw(),
+			(e) => !image_tools!.contains(e.relatedTarget as Node) && offered === img && withdraw(),
 			{ once: true }
 		)
 	}
 	const box = img.getBoundingClientRect()
-	replace.style.top = `${Math.max(box.top, 0) + 8}px`
-	replace.style.right = `${Math.max(innerWidth - box.right, 0) + 8}px`
-	replace.onclick = (e) => {
+	image_tools.style.top = `${Math.max(box.top, 0) + 8}px`
+	image_tools.style.right = `${Math.max(innerWidth - box.right, 0) + 8}px`
+	const menu = image_tools.lastElementChild as HTMLElement
+	menu.querySelector<HTMLButtonElement>("[data-do=remove]")!.hidden = !spot.asset.id
+	menu.onclick = (e) => {
+		const chosen = (e.target as HTMLElement).closest<HTMLElement>("[data-do]")?.dataset.do
+		if (!chosen) return
 		e.preventDefault()
 		e.stopPropagation()
 		withdraw()
-		open_picker({
-			current: spot.asset,
-			save: async (choice) =>
-				(await send({
-					op: "image",
-					story: spot.story,
-					uid: spot.uid,
-					field: spot.field,
-					index: spot.index,
-					...choice,
-				}))
-					? (forget(spot.story), null)
-					: last_problem(),
-		})
+		if (chosen === "remove") remove_image(spot)
+		else
+			open_picker({
+				current: spot.asset,
+				save: ({ asset, alt, focus }) => set_image(spot, { asset, alt, focus }),
+			})
 	}
-	replace.hidden = false
+	image_tools.hidden = false
+}
+
+/* A file dragged over an image while editing: the image takes it, uploaded to the library */
+
+let target: HTMLImageElement | undefined
+let lit: HTMLImageElement | undefined
+let hint: HTMLDivElement | undefined
+// looked up once per drag, as dragover fires many times a second
+const drop_spots = new Map<HTMLImageElement, Promise<Spot | undefined>>()
+const drop_spot = (img: HTMLImageElement) => {
+	let spot = drop_spots.get(img)
+	if (!spot) drop_spots.set(img, (spot = spot_of(img)))
+	return spot
+}
+
+function image_under(event: DragEvent) {
+	if (!active || !event.dataTransfer?.types.includes("Files")) return
+	return document
+		.elementsFromPoint(event.clientX, event.clientY)
+		.find((el): el is HTMLImageElement => el instanceof HTMLImageElement && !ours(el))
+}
+
+/** Over the image a file would replace, saying so, and while it uploads */
+function show_hint(img: HTMLImageElement, uploading = false) {
+	if (!hint) {
+		hint = document.createElement("div")
+		hint.dataset.storyloco = "drop"
+		hint.innerHTML = `<svg class="edge" aria-hidden="true"><rect width="100%" height="100%" rx="6"/></svg><span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M4 20h16"/></svg><em></em></span>`
+		document.body.append(hint)
+	}
+	const box = img.getBoundingClientRect()
+	Object.assign(hint.style, {
+		top: `${box.top}px`,
+		left: `${box.left}px`,
+		width: `${box.width}px`,
+		height: `${box.height}px`,
+	})
+	hint.querySelector("em")!.textContent = uploading ? "Uploading…" : "Drop to replace"
+	hint.toggleAttribute("data-uploading", uploading)
+	hint.hidden = false
+}
+
+function drag_over(event: DragEvent) {
+	const img = image_under(event)
+	if (img !== target) {
+		lit = undefined
+		if (hint) hint.hidden = true
+		target = img
+		// only an image that's a field lights up to take it
+		if (img)
+			drop_spot(img).then((spot) => {
+				if (!spot || target !== img) return
+				lit = img
+				show_hint(img)
+			})
+	}
+	if (!img) return
+	event.preventDefault()
+	event.dataTransfer!.dropEffect = "copy"
+	if (img === lit) show_hint(img)
+}
+
+function drag_end() {
+	if (hint) hint.hidden = true
+	target = lit = undefined
+	drop_spots.clear()
+}
+
+async function dropped(event: DragEvent) {
+	const img = image_under(event)
+	const found = img && drop_spot(img)
+	drag_end()
+	if (!img) return
+	event.preventDefault()
+	const file = [...(event.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"))
+	const spot = file && (await found)
+	if (!spot) return
+	show_hint(img, true)
+	try {
+		const asset = await put(file)
+		const failed = await set_image(spot, { asset: asset.id, alt: asset.alt, focus: "" })
+		if (failed) toast(failed)
+	} catch (e) {
+		toast(`${file.name} didn’t upload: ${(e as Error).message}`)
+	} finally {
+		hint!.hidden = true
+	}
 }
 
 type Choice = { asset: number; alt: string; focus: string; filename: string }
@@ -1356,9 +1548,10 @@ export async function open_picker({
 		props: {
 			current,
 			images,
-			list: (search: string, page: number) => call({ op: "assets", search, page }),
-			upload: (filename: string, size?: string) => call({ op: "upload", filename, size }),
-			uploaded: (asset: number) => call({ op: "uploaded", asset }),
+			list: (search: string, page: number, folder?: number) =>
+				call({ op: "assets", search, page, folder }),
+			folders: () => call({ op: "folders" }),
+			put,
 			suggest: (url: string) =>
 				call<{ alt: string }>({ op: "ai", do: "alt", url }).then(({ alt }) => alt),
 			save,
@@ -2129,8 +2322,25 @@ function arm(on: boolean) {
  * Without `connect()`, the page's story is the one most of its blocks come from, which
  * outnumbers a layout's header and footer; fetched for its status, and again after each save
  */
+/**
+ * The page's own story, when the site didn't mark its root with `attrs`: the page's `<main>` stands
+ * in for it, so its own fields, rich text included, edit in place as a marked root's do
+ */
+function stand_in_page() {
+	const page = editor.story
+	if (!page?.uid || element_of(page.uid)) return
+	const main = [...document.querySelectorAll<HTMLElement>("main")]
+		.filter((el) => !block_of(el))
+		.at(-1)
+	const root = (page_blok(page.uid) as Blok | undefined) ?? { _uid: page.uid }
+	if (main) mark(main, page.id, root)
+}
+
 async function detect() {
-	if (connected_story()) return detected_story(null)
+	if (connected_story()) {
+		detected_story(null)
+		return stand_in_page()
+	}
 	const counts = new Map<number, number>()
 	for (const node of document.querySelectorAll("[data-blok-c]")) {
 		const id = Number(meta(node).id)
@@ -2143,6 +2353,7 @@ async function detect() {
 		story,
 	}).catch(() => null)
 	detected_story(found?.story ?? null)
+	stand_in_page()
 	// the others' lists of who's on this page say which story it is
 	here()
 }
@@ -2216,6 +2427,9 @@ export function install() {
 	}) as unknown as typeof bar
 	document.addEventListener("pointerover", over)
 	document.addEventListener("pointerdown", over)
+	document.addEventListener("dragover", drag_over)
+	document.addEventListener("dragleave", (e) => !e.relatedTarget && drag_end())
+	document.addEventListener("drop", dropped)
 	document.addEventListener("click", click, true)
 	document.addEventListener("keydown", keydown)
 	addEventListener("pointerleave", stay, true)
@@ -2255,13 +2469,14 @@ export function install() {
 	on_saved(live_check)
 	on_navigate(live_check)
 	on_navigate(() => {
+		// what stood in for the last page's bloks, like a layout's <main> for its story, is found again for this one's
+		forget_stand_ins()
 		detect()
 		if (active) prepare(true)
 		// a block selected on the last page isn't on this one
 		if (selected && !element_of(selected.uid)) select(null)
 		// nor is text from it that was ready to edit, which lets go of its field
 		for (const [node, unwire] of wired) if (!node.isConnected) unwire()
-		for (const node of inferred) if (!node.isConnected) inferred.delete(node)
 	})
 	on_people(follow)
 	setInterval(check, 30_000)

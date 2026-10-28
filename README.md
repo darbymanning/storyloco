@@ -336,6 +336,14 @@ export const handle = sequence(editor({ entry: ['/cms', '?edit'] }), version)
 A site with a Content Security Policy needs `wss://moxy.uilo.co` in its `connect-src`, for the
 multiplayer socket, and `'self'` in its `frame-ancestors`, for the phone and tablet preview.
 
+The editor itself isn't in the site's bundle. `EditBar` loads it for editors, guests and previews
+from `/__storyloco/editor/`, which passes on storyloco's published build of it, at the release moxy
+names. A change to the editor reaches every site without a release of theirs, and from the site's
+own origin, so its Content Security Policy needn't name anywhere new. Only the parts that wire it to
+the site (`attrs`, `connect`, `EditBar` and the hook) come with a bump. `STORYLOCO_EDITOR=local`
+(or `editor({ app: false })`) uses the copy in the installed package instead; a URL there takes the
+files from another build, like a local one served while working on the editor.
+
 A site that picks its own content version rather than using `version` asks `editor_version(event)`
 (from `storyloco/editor/server`) first: draft for editors and guests, published for the live view. A site that caches pages at
 its CDN (`s-maxage`) needs editors, and guests (`sl_guest…`), on a cache key of their own, or

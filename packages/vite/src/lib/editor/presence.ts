@@ -1,4 +1,4 @@
-import { editor, follow, on_follow } from "./client.js"
+import { editor, follow, kit, on_follow } from "./client.js"
 import {
 	cursor,
 	on_cursor,
@@ -430,8 +430,9 @@ async function along() {
 	const them = others_anywhere().find((p) => p.id === editor.following)
 	if (!them?.page || them.page === location.pathname || them.page === going) return
 	going = them.page
-	const { goto } = await import("$app/navigation")
-	await goto(them.page).catch(() => {})
+	await kit()
+		.goto(them.page)
+		.catch(() => {})
 	going = null
 }
 

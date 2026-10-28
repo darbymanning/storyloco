@@ -1,6 +1,6 @@
 <!--
 	@component
-	The badge previews and signed-in editors see in a corner. Click it for the story's publish status
+	The editor app's badge, which previews and signed-in editors see in a corner. Click it for the story's publish status
 	and signing in and out to edit in place; drag it to another corner, which it remembers. Renders
 	nothing for visitors, or inside Storyblok's own editor, and keeps clear of Next.js's dev badge.
 	On the live site ⌘⇧E (Ctrl+Shift+E) signs in, and turns edit mode on and off once signed in.
@@ -21,15 +21,13 @@
 	import { scale } from "svelte/transition"
 	import { backIn, cubicOut } from "svelte/easing"
 	import Face from "./face.svelte"
-	import { afterNavigate, goto } from "$app/navigation"
 	import {
-		being_edited,
 		editor,
 		follow,
 		history,
+		kit,
 		leave_share,
 		load_inbox,
-		navigated,
 		read_notices,
 		publish,
 		review,
@@ -123,11 +121,6 @@
 
 	const shown = $derived(!framed && (editor.draft || Boolean(editor.user)))
 
-	// for the site's CSS, as `unless_editing` is for its effects: what an animation would reveal rests
-	// in view while the page is being edited
-	$effect(() => {
-		document.documentElement.toggleAttribute("data-storyloco-editing", being_edited())
-	})
 	const story = $derived(editor.story)
 
 	// --- where it sits
@@ -205,8 +198,6 @@
 		tag.textContent = `@media (prefers-color-scheme: dark){:where(:root){--editor-bg:#171c2c;--editor-ink:#e8ecf5;--editor-muted:#98a1b6;--editor-line:rgb(255 255 255/.13);--editor-shadow:0 0 0 1px rgb(255 255 255/.1),0 4px 14px rgb(0 0 0/.45);--editor-pill:#2c3453;--editor-accent:#1fa79e}}`
 		document.head.append(tag)
 	}
-
-	afterNavigate(navigated)
 
 	// a guest lands on the draft with the panel open, so they know what they're looking at
 	let greeted = false
@@ -400,7 +391,7 @@
 			notice.kind === "review"
 				? notice.page
 				: `${notice.page}${notice.page.includes("?") ? "&" : "?"}comment=${notice.thread}`
-		if (notice.origin === location.origin) goto(path)
+		if (notice.origin === location.origin) kit().goto(path)
 		else location.assign(notice.origin + path)
 	}
 	let picked = $state(new Set<number>())
@@ -441,6 +432,8 @@
 
 	/* Everyone else on this page, from the multiplayer room, as initials in their colours */
 	const here = $derived(editor.here)
+	// whoever's signed in, as soon as they are, not once the multiplayer room has seen them
+	const me = $derived(here.me?.user ?? editor.user)
 	const initials_of = (name: string | null) =>
 		(name ?? "?")
 			.split(/\s+/)
@@ -496,14 +489,10 @@
 				}
 			}}
 		>
-			{#if here.me}
+			{#if me}
 				<!-- their own face, so nobody takes someone else's beside it for theirs -->
 				<span class="own" aria-hidden="true"
-					><Face
-						name={here.me.user.name}
-						photo={here.me.user.photo}
-						gravatar={here.me.user.gravatar}
-					/></span
+					><Face name={me.name} photo={me.photo} gravatar={me.gravatar} /></span
 				>
 			{:else}
 				<svg class="mark" viewBox="0 0 44 44" aria-hidden="true">
@@ -1087,6 +1076,18 @@
 		grid-template-columns: 0fr;
 		transition: grid-template-columns 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 
+		/* folding, the clip below starts from 40rem out, so the track keeps the buttons in; and inert
+		   doesn't stop hover, so the buttons sliding under the pointer would flash their tips, folding
+		   or opening (a tip's visibility waits for it to open) */
+		&:not(.open *) {
+			overflow-x: clip;
+
+			.tip {
+				transition: none;
+				visibility: hidden;
+			}
+		}
+
 		.open & {
 			grid-template-columns: 1fr;
 		}
@@ -1163,7 +1164,8 @@
 		position: absolute;
 		transition:
 			opacity 0.2s ease,
-			translate 0.2s ease;
+			translate 0.2s ease,
+			visibility 0s 0.3s;
 		translate: 0 0.25rem;
 		white-space: nowrap;
 

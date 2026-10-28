@@ -5,11 +5,11 @@
 -->
 <script lang="ts">
 	import { tick } from "svelte"
-	import { goto } from "$app/navigation"
 	import {
 		call,
 		discard,
 		editor,
+		kit,
 		set_editing,
 		set_guest,
 		signout,
@@ -264,7 +264,7 @@
 			group: "Pages",
 			icon: ICONS.page,
 			hint: path_of(story.full_slug),
-			run: () => (close(), goto(path_of(story.full_slug))),
+			run: () => (close(), kit().goto(path_of(story.full_slug))),
 		}))
 		return [...actions, ...here, ...pages] as Array<Item>
 	})
@@ -376,7 +376,7 @@
 		)
 		if (!reply) return
 		close()
-		goto(path_of(reply.story.full_slug))
+		kit().goto(path_of(reply.story.full_slug))
 	}
 
 	// --- asking for a review

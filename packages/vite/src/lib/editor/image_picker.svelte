@@ -9,13 +9,14 @@
 		focus?: string | null
 	}
 	type Choice = { asset: number; alt: string; focus: string; filename: string }
+	type Folder = { id: number; name: string; parent: number | null }
 
 	let {
 		current,
 		images = true,
 		list,
-		upload,
-		uploaded,
+		folders,
+		put,
 		save,
 		close,
 		suggest,
@@ -23,12 +24,11 @@
 		current: Current
 		/** Only images, as an image field takes; otherwise any file */
 		images?: boolean
-		list: (search: string, page: number) => Promise<{ assets: Array<Asset> }>
-		upload: (
-			filename: string,
-			size?: string
-		) => Promise<{ asset: number; post_url: string; fields: Record<string, string> }>
-		uploaded: (asset: number) => Promise<{ asset: Asset }>
+		list: (search: string, page: number, folder?: number) => Promise<{ assets: Array<Asset> }>
+		/** The library's folders, to browse and upload into */
+		folders?: () => Promise<{ folders: Array<Folder> }>
+		/** A file added to the library, in this folder */
+		put: (file: File, folder?: number) => Promise<Asset>
 		save: (choice: Choice) => Promise<string | null>
 		close: () => void
 		/** Alt text written for the image, by AI */
@@ -47,6 +47,12 @@
 	let measured = $state<{ filename: string; width: number; height: number } | null>(null)
 
 	let search = $state("")
+	let tree = $state<Array<Folder>>([])
+	let folder = $state<number | null>(null)
+	/** The folders shown open in the tree */
+	let opened = $state<Array<number>>([])
+	const children_of = (parent: number | null) =>
+		tree.filter((f) => f.parent === parent).sort((a, b) => a.name.localeCompare(b.name))
 	let assets = $state<Array<Asset>>([])
 	let page = $state(1)
 	let more = $state(false)
@@ -103,7 +109,7 @@
 	async function load(next = 1) {
 		loading = true
 		try {
-			const { assets: found } = await list(search.trim(), next)
+			const { assets: found } = await list(search.trim(), next, folder ?? undefined)
 			const usable = images ? found.filter((asset) => IMAGE.test(asset.filename)) : found
 			assets = next === 1 ? usable : [...assets, ...usable]
 			page = next
@@ -113,6 +119,26 @@
 		} finally {
 			loading = false
 		}
+	}
+
+	function browse(to: number | null) {
+		folder = to
+		if (to !== null && !opened.includes(to)) opened.push(to)
+		load()
+	}
+
+	/** A folder's whole name, when the tree has had to cut it short */
+	let tip = $state<{ text: string; x: number; y: number } | null>(null)
+	function name_tip(event: Event) {
+		const button = event.currentTarget as HTMLElement
+		const name = button.querySelector("span")!
+		if (name.scrollWidth <= name.clientWidth) return
+		const box = button.getBoundingClientRect()
+		tip = { text: name.textContent ?? "", x: box.right + 8, y: box.top + box.height / 2 }
+	}
+
+	function toggle(id: number) {
+		opened = opened.includes(id) ? opened.filter((open) => open !== id) : [...opened, id]
 	}
 
 	let typing: ReturnType<typeof setTimeout> | undefined
@@ -145,19 +171,7 @@
 			uploading++
 			problem = null
 			try {
-				const bitmap = file.type.startsWith("image/")
-					? await createImageBitmap(file).catch(() => null)
-					: null
-				const signed = await upload(
-					file.name,
-					bitmap ? `${bitmap.width}x${bitmap.height}` : undefined
-				)
-				const form = new FormData()
-				for (const [key, value] of Object.entries(signed.fields)) form.append(key, value)
-				form.append("file", file)
-				// Storyblok's bucket doesn't answer other sites, so the reply is opaque; finishing checks it landed
-				await fetch(signed.post_url, { method: "POST", body: form, mode: "no-cors" })
-				const { asset } = await uploaded(signed.asset)
+				const asset = await put(file, folder ?? undefined)
 				assets = [asset, ...assets.filter(({ id }) => id !== asset.id)]
 				choose(asset)
 			} catch (e) {
@@ -183,9 +197,74 @@
 			node.showModal()
 			measure(chosen.filename)
 			load()
+			// a moxy without folders yet leaves the library as one list
+			folders?.()
+				.then((found) => (tree = found.folders))
+				.catch(() => {})
 		})
 	}
 </script>
+
+{#snippet Branch(parent: number | null)}
+	<ul>
+		{#each children_of(parent) as child (child.id)}
+			{@const nested = children_of(child.id).length > 0}
+			{@const expanded = opened.includes(child.id)}
+			<li>
+				<div class="row">
+					{#if nested}
+						<button
+							class="twisty"
+							type="button"
+							aria-label="{expanded ? 'Close' : 'Open'} {child.name}"
+							aria-expanded={expanded}
+							onclick={() => toggle(child.id)}
+						>
+							<svg
+								width="12"
+								height="12"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg
+							>
+						</button>
+					{/if}
+					<button
+						class="folder"
+						type="button"
+						aria-current={folder === child.id ? "true" : undefined}
+						onclick={() => browse(child.id)}
+						onpointerenter={name_tip}
+						onpointerleave={() => (tip = null)}
+						onfocus={name_tip}
+						onblur={() => (tip = null)}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.75"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							aria-hidden="true"
+							><path
+								d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+							/></svg
+						>
+						<span>{child.name}</span>
+					</button>
+				</div>
+				{#if nested && expanded}{@render Branch(child.id)}{/if}
+			</li>
+		{/each}
+	</ul>
+{/snippet}
 
 <dialog
 	{@attach open}
@@ -218,49 +297,38 @@
 			</button>
 		</header>
 
-		<div class="body">
-			<section class="chosen">
-				{#if chosen.filename && !IMAGE.test(chosen.filename)}
-					<p class="document">{chosen.filename.split("/").pop()}</p>
-				{:else if chosen.filename}
-					<button
-						class="preview"
-						type="button"
-						aria-label="Set the focus point"
-						title="Click where the image should stay in view when it’s cropped"
-						onclick={place}
-					>
-						<img src={thumb(chosen.filename, 800)} alt="" />
-						{#if marker}
-							<span class="focus" style:left="{marker.x}%" style:top="{marker.y}%"></span>
-						{/if}
-					</button>
-				{/if}
-				<p class="hint" hidden={!IMAGE.test(chosen.filename)}>
-					{#if focus}
-						Crops keep the point you clicked in view.
-						<button class="link" type="button" onclick={() => (focus = "")}>Clear it</button>
-					{:else}
-						Click the image to choose what stays in view when it’s cropped.
-					{/if}
-				</p>
-
-				<label>
-					<span>Alt text</span>
-					<textarea
-						rows="3"
-						bind:value={alt}
-						placeholder="What the image shows, for people who can’t see it"></textarea>
-				</label>
-				{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
-					<p class="hint">
-						<button class="link" type="button" disabled={suggesting} onclick={suggest_alt}>
-							{suggesting ? "Looking at the image…" : alt ? "Suggest another" : "Suggest alt text"}
+		<div class={["body", { "with-tree": tree.length > 0 }]}>
+			{#if tree.length}
+				<nav class="tree" aria-label="Folders" onscroll={() => (tip = null)}>
+					<div class="row">
+						<button
+							class="folder"
+							type="button"
+							aria-current={folder === null ? "true" : undefined}
+							onclick={() => browse(null)}
+						>
+							<svg
+								width="16"
+								height="16"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.75"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								aria-hidden="true"
+								><rect x="3" y="3" width="18" height="18" rx="2" /><circle
+									cx="9"
+									cy="9"
+									r="2"
+								/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg
+							>
+							<span>All images</span>
 						</button>
-						· check it says what matters here
-					</p>
-				{/if}
-			</section>
+					</div>
+					{@render Branch(null)}
+				</nav>
+			{/if}
 
 			<section class="library">
 				<div class="tools">
@@ -305,7 +373,11 @@
 					{:else}
 						{#if !loading}
 							<li class="empty">
-								{search ? "No images match" : "No images yet. Drop one here to upload it."}
+								{search
+									? "No images match"
+									: folder
+										? "No images in this folder. Drop one here to upload it into it."
+										: "No images yet. Drop one here to upload it."}
 							</li>
 						{/if}
 					{/each}
@@ -317,6 +389,55 @@
 						disabled={loading}
 						onclick={() => load(page + 1)}>More</button
 					>
+				{/if}
+			</section>
+
+			<section class="chosen">
+				{#if chosen.filename && !IMAGE.test(chosen.filename)}
+					<p class="document">{chosen.filename.split("/").pop()}</p>
+				{:else if chosen.filename}
+					<button
+						class="preview"
+						type="button"
+						aria-label="Set the focus point"
+						title="Click where the image should stay in view when it’s cropped"
+						onclick={place}
+					>
+						<img src={thumb(chosen.filename, 800)} alt="" />
+						{#if marker}
+							<span class="focus" style:left="{marker.x}%" style:top="{marker.y}%"></span>
+						{/if}
+					</button>
+				{/if}
+				{#if chosen.filename}
+					<p class="meta">
+						<span class="name">{chosen.filename.split("/").pop()}</span>
+						{#if size}<span>{size.width} × {size.height}</span>{/if}
+					</p>
+				{/if}
+				<p class="hint" hidden={!IMAGE.test(chosen.filename)}>
+					{#if focus}
+						Crops keep the point you clicked in view.
+						<button class="link" type="button" onclick={() => (focus = "")}>Clear it</button>
+					{:else}
+						Click the image to choose what stays in view when it’s cropped.
+					{/if}
+				</p>
+
+				<label>
+					<span>Alt text</span>
+					<textarea
+						rows="3"
+						bind:value={alt}
+						placeholder="What the image shows, for people who can’t see it"></textarea>
+				</label>
+				{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
+					<p class="hint">
+						<button class="link" type="button" disabled={suggesting} onclick={suggest_alt}>
+							{suggesting ? "Looking at the image…" : alt ? "Suggest another" : "Suggest alt text"}
+						</button>
+						· check it says what matters here
+					</p>
 				{/if}
 			</section>
 		</div>
@@ -332,6 +453,9 @@
 			>
 		</footer>
 	</div>
+	{#if tip}
+		<span class="tip" role="tooltip" style:left="{tip.x}px" style:top="{tip.y}px">{tip.text}</span>
+	{/if}
 </dialog>
 
 <style>
@@ -362,7 +486,7 @@
 		font: var(--font);
 		/* A set height, so searching doesn't make the dialog jump */
 		block-size: min(44rem, 100dvh - 2rem);
-		inline-size: min(60rem, 100vw - 2rem);
+		inline-size: min(74rem, 100vw - 2rem);
 		padding: 0;
 
 		&::backdrop {
@@ -413,19 +537,160 @@
 
 	.body {
 		display: grid;
-		gap: 1.25rem;
-		grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr) minmax(0, 19rem);
 		min-block-size: 0;
-		padding: 1.25rem;
 
-		@media (width < 40rem) {
-			grid-template-columns: minmax(0, 1fr);
-			overflow: auto;
+		&.with-tree {
+			grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) minmax(0, 19rem);
+		}
+
+		@media (width < 48rem) {
+			&,
+			&.with-tree {
+				grid-template-columns: minmax(0, 1fr);
+				overflow: auto;
+			}
+		}
+	}
+
+	/* The space's folders, as Storyblok's own asset manager shows them */
+	.tree {
+		border-inline-end: 1px solid var(--line);
+		overflow: auto;
+		padding: 0.75rem 0.5rem;
+
+		& ul {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+
+		& ul ul {
+			padding-inline-start: 0.875rem;
+		}
+
+		& li::before {
+			content: none;
+		}
+
+		@media (width < 48rem) {
+			border-block-end: 1px solid var(--line);
+			border-inline-end: 0;
+			max-block-size: 10rem;
+		}
+	}
+
+	.row {
+		align-items: center;
+		display: grid;
+		grid-template-columns: 1.25rem minmax(0, 1fr);
+	}
+
+	.twisty {
+		background: none;
+		border: 0;
+		color: var(--muted);
+		cursor: pointer;
+		display: grid;
+		padding: 0.25rem;
+		place-items: center;
+
+		& svg {
+			transition: rotate 0.15s ease;
+		}
+
+		&[aria-expanded="true"] svg {
+			rotate: 90deg;
+		}
+	}
+
+	.folder {
+		align-items: center;
+		background: none;
+		border: 0;
+		border-radius: 0.375rem;
+		color: inherit;
+		cursor: pointer;
+		display: flex;
+		font: inherit;
+		gap: 0.5rem;
+		grid-column: 2;
+		padding: 0.375rem 0.5rem;
+		text-align: start;
+
+		& svg {
+			color: var(--muted);
+			flex: none;
+		}
+
+		& span {
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		&:hover {
+			background: color-mix(in srgb, var(--ink) 6%, transparent);
+		}
+
+		&[aria-current] {
+			background: color-mix(in srgb, var(--accent) 16%, transparent);
+
+			& svg {
+				color: var(--accent);
+			}
+		}
+	}
+
+	/* As the edit bar's tips are, pointing back at the name it finishes */
+	.tip {
+		background: var(--ink);
+		border-radius: 0.5rem;
+		box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+		color: var(--bg);
+		font-size: 0.75rem;
+		padding: 0.5rem 0.625rem;
+		pointer-events: none;
+		position: fixed;
+		translate: 0 -50%;
+		white-space: nowrap;
+		z-index: 1;
+
+		&::before {
+			background: inherit;
+			block-size: 0.625rem;
+			clip-path: polygon(100% 0, 100% 100%, 0 50%);
+			content: "";
+			inline-size: 0.3125rem;
+			inset: 50% 100% auto auto;
+			position: absolute;
+			translate: 0 -50%;
+		}
+	}
+
+	.meta {
+		color: var(--muted);
+		display: flex;
+		font-size: 0.75rem;
+		gap: 0.5rem;
+		justify-content: space-between;
+		margin: 0;
+
+		& .name {
+			color: var(--ink);
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 	}
 
 	.chosen {
+		border-inline-start: 1px solid var(--line);
 		display: grid;
+		/* the file name truncates rather than widening it */
+		grid-template-columns: minmax(0, 1fr);
+		overflow: auto;
+		padding: 1.25rem;
 		gap: 0.75rem;
 		align-content: start;
 
@@ -436,7 +701,7 @@
 	}
 
 	.preview {
-		background: repeating-conic-gradient(rgb(0 0 0 / 0.05) 0 25%, transparent 0 50%) 0 0 / 16px 16px;
+		background: repeating-conic-gradient(#e4e4e7 0 25%, #fff 0 50%) 0 0 / 16px 16px;
 		border: 0;
 		border-radius: 0.5rem;
 		cursor: crosshair;
@@ -512,7 +777,7 @@
 	}
 
 	.library {
-		border-radius: 0.75rem;
+		padding: 1.25rem;
 		display: grid;
 		gap: 0.75rem;
 		grid-template-rows: auto minmax(0, 1fr);
@@ -545,8 +810,8 @@
 
 		& button {
 			aspect-ratio: 1;
-			background: repeating-conic-gradient(rgb(0 0 0 / 0.05) 0 25%, transparent 0 50%) 0 0 / 12px
-				12px;
+			/* light whatever the editor's scheme, so a dark logo on nothing still shows */
+			background: repeating-conic-gradient(#e4e4e7 0 25%, #fff 0 50%) 0 0 / 12px 12px;
 			border: 0;
 			border-radius: 0.5rem;
 			cursor: pointer;

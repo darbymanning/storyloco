@@ -9,4 +9,4 @@ export {
 	type EditorUser,
 	type Status,
 } from "./client.js"
-export { default as EditBar } from "./edit_bar.svelte"
+export { default as EditBar } from "./shell.svelte"
