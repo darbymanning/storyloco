@@ -55,10 +55,11 @@
 	let target = $state<HTMLElement>()
 	let shown: ReturnType<Awaited<ReturnType<typeof app>>["mount"]> | undefined
 
-	// the editor's own badge, for previews and whoever's signed in or was shared the draft
+	// the editor's own badge, for previews and whoever's signed in or was shared the draft; derived, as
+	// every change to the editor's state would otherwise mount it again
+	const wanted = $derived(!!(editor.draft || editor.user || editor.guest))
 	$effect(() => {
-		if (!target || window.self !== window.top) return
-		if (!editor.draft && !editor.user && !editor.guest) return
+		if (!target || window.self !== window.top || !wanted) return
 		let gone = false
 		app().then((loaded) => {
 			if (!gone) shown = loaded.mount(target!, { accent, accent_ink })
