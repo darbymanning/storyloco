@@ -727,8 +727,11 @@ button.storyloco-image:focus-visible{outline:2px solid #fff;outline-offset:-4px}
 [data-storyloco=image] [role=menuitem]{all:unset;cursor:pointer;padding:.4375rem .625rem;border-radius:.375rem;font:500 .8125rem/1.25 system-ui,sans-serif;white-space:nowrap}
 [data-storyloco=image] [role=menuitem]:is(:hover,:focus-visible){background:color-mix(in srgb,currentColor 8%,transparent)}
 [data-storyloco=image] [data-do=remove]{color:var(--editor-danger,#e5484d)}
-img[data-storyloco-drop]{outline:3px solid var(--editor-accent,#05807f)!important;outline-offset:-3px;filter:brightness(.9)}
-img[data-storyloco-uploading]{opacity:.5;transition:opacity .2s}
+[data-storyloco=drop]{position:fixed;z-index:2147482995;pointer-events:none;display:grid;place-items:center;box-sizing:border-box;padding:.75rem;border-radius:6px;background:color-mix(in srgb,var(--editor-accent,#05807f) 35%,rgb(0 0 0/.3));backdrop-filter:blur(2px);outline:2px dashed var(--editor-accent-ink,#fff);outline-offset:-8px;animation:storyloco-in .12s ease-out}
+[data-storyloco=drop][hidden]{display:none}
+[data-storyloco=drop] span{display:flex;align-items:center;gap:.5rem;padding:.5rem .875rem;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .875rem/1.25 system-ui,sans-serif;box-shadow:0 4px 16px rgb(0 0 0/.25)}
+[data-storyloco=drop][data-uploading] span{animation:storyloco-pulse .8s ease-in-out infinite alternate}
+@keyframes storyloco-pulse{to{opacity:.55}}
 [data-storyloco=field-ring]{position:fixed;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
 [data-storyloco=tag]{position:fixed;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
 [data-storyloco=tag][hidden]{display:block;opacity:0}
@@ -1424,6 +1427,8 @@ function offer(img: HTMLImageElement, spot: Spot) {
 /* A file dragged over an image while editing: the image takes it, uploaded to the library */
 
 let target: HTMLImageElement | undefined
+let lit: HTMLImageElement | undefined
+let hint: HTMLDivElement | undefined
 // looked up once per drag, as dragover fires many times a second
 const drop_spots = new Map<HTMLImageElement, Promise<Spot | undefined>>()
 const drop_spot = (img: HTMLImageElement) => {
@@ -1439,23 +1444,49 @@ function image_under(event: DragEvent) {
 		.find((el): el is HTMLImageElement => el instanceof HTMLImageElement && !ours(el))
 }
 
+/** Over the image a file would replace, saying so, and while it uploads */
+function show_hint(img: HTMLImageElement, uploading = false) {
+	if (!hint) {
+		hint = document.createElement("div")
+		hint.dataset.storyloco = "drop"
+		hint.innerHTML = `<span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M4 20h16"/></svg><b></b></span>`
+		document.body.append(hint)
+	}
+	const box = img.getBoundingClientRect()
+	Object.assign(hint.style, {
+		top: `${box.top}px`,
+		left: `${box.left}px`,
+		width: `${box.width}px`,
+		height: `${box.height}px`,
+	})
+	hint.querySelector("b")!.textContent = uploading ? "Uploading…" : "Drop to replace"
+	hint.toggleAttribute("data-uploading", uploading)
+	hint.hidden = false
+}
+
 function drag_over(event: DragEvent) {
 	const img = image_under(event)
 	if (img !== target) {
-		if (target) delete target.dataset.storylocoDrop
+		lit = undefined
+		if (hint) hint.hidden = true
 		target = img
 		// only an image that's a field lights up to take it
 		if (img)
-			drop_spot(img).then((spot) => spot && target === img && (img.dataset.storylocoDrop = ""))
+			drop_spot(img).then((spot) => {
+				if (!spot || target !== img) return
+				lit = img
+				show_hint(img)
+			})
 	}
 	if (!img) return
 	event.preventDefault()
 	event.dataTransfer!.dropEffect = "copy"
+	if (img === lit) show_hint(img)
 }
 
 function drag_end() {
-	if (target) delete target.dataset.storylocoDrop
-	target = undefined
+	if (hint) hint.hidden = true
+	target = lit = undefined
 	drop_spots.clear()
 }
 
@@ -1468,7 +1499,7 @@ async function dropped(event: DragEvent) {
 	const file = [...(event.dataTransfer?.files ?? [])].find((f) => f.type.startsWith("image/"))
 	const spot = file && (await found)
 	if (!spot) return
-	img.dataset.storylocoUploading = ""
+	show_hint(img, true)
 	try {
 		const asset = await put(file)
 		const failed = await set_image(spot, { asset: asset.id, alt: asset.alt, focus: "" })
@@ -1476,7 +1507,7 @@ async function dropped(event: DragEvent) {
 	} catch (e) {
 		toast(`${file.name} didn’t upload: ${(e as Error).message}`)
 	} finally {
-		delete img.dataset.storylocoUploading
+		hint!.hidden = true
 	}
 }
 
