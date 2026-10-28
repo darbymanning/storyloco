@@ -1076,9 +1076,14 @@
 		grid-template-columns: 0fr;
 		transition: grid-template-columns 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 
-		/* folding, the clip below starts from 40rem out, so the track keeps the buttons in */
+		/* folding, the clip below starts from 40rem out, so the track keeps the buttons in; and inert
+		   doesn't stop hover, so the buttons sliding under the pointer would flash their tips */
 		&:not(.open *) {
 			overflow-x: clip;
+
+			.tip {
+				display: none;
+			}
 		}
 
 		.open & {
