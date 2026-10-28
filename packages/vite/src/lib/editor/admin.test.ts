@@ -23,7 +23,8 @@ async function visit(path: string, status: number, through = handle) {
 	try {
 		return (await through({ event, resolve } as never)) as Response
 	} catch (e) {
-		// SvelteKit's redirect()
+		// SvelteKit's redirect(); anything else is a failure
+		if (!(e instanceof Object && "location" in e)) throw e
 		const { status, location } = e as { status: number; location: string }
 		return new Response(null, { status, headers: { location } })
 	}
@@ -52,9 +53,10 @@ test("?edit is the site's own, unless it's asked for", async () => {
 })
 
 test("another path in, and /admin left to the site", async () => {
-	const own = create_editor({ moxy: "https://moxy.test", space: "1", entry: "/cms/" })
+	const own = create_editor({ moxy: "https://moxy.test", space: "1", entry: ["cms/", "?go=1"] })
 	expect((await visit("/cms", 404, own)).headers.get("location")).toBe(
 		"/__storyloco/signin?return=%2F"
 	)
 	expect((await visit("/admin", 404, own)).status).toBe(404)
+	expect((await visit("/about?go", 200, own)).status).toBe(303)
 })

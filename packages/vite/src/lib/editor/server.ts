@@ -340,6 +340,8 @@ const local = (path: string | null | undefined) =>
 const cookie = { path: "/", httpOnly: true, secure: true, sameSite: "lax" } as const
 /** A sign-in that lands in edit mode, as ⌘⇧E does, from one of `create_editor`'s `entry` ways in */
 const EDIT_ON = "sl_edit_on"
+/** `admin`, `/admin/` and `/admin` alike */
+const trim = (path: string) => "/" + path.replace(/^\/+|\/+$/g, "")
 
 /** SvelteKit 3 only redirects to another origin when told it's meant to; SvelteKit 2 ignores the option */
 const to_moxy = redirect as (status: 303, location: URL, options: { external: true }) => never
@@ -1677,10 +1679,8 @@ export function create_editor({
 	entry?: string | Array<string>
 } = {}): Handle {
 	const ways = [entry].flat()
-	const params = ways.filter((way) => way.startsWith("?")).map((way) => way.slice(1))
-	const paths = ways
-		.filter((way) => !way.startsWith("?"))
-		.map((way) => way.replace(/\/$/, "") || "/")
+	const params = ways.filter((way) => way.startsWith("?")).map((way) => way.slice(1).split("=")[0])
+	const paths = ways.filter((way) => !way.startsWith("?")).map(trim)
 	return async ({ event, resolve }) => {
 		const broker = moxy ?? env("STORYLOCO_MOXY") ?? MOXY
 
@@ -1766,7 +1766,7 @@ export function create_editor({
 		if (
 			response.status === 404 &&
 			event.request.method === "GET" &&
-			paths.includes(event.url.pathname.replace(/\/$/, "") || "/")
+			paths.includes(trim(event.url.pathname))
 		)
 			return new Response(null, {
 				status: 303,
