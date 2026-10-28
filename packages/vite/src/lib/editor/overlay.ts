@@ -647,10 +647,18 @@ async function source_of(
 		!!block &&
 		"uid" in source &&
 		region_fields(block, blok, id).has(top_field(blok, source))
+	// the one field among the block's and its nested bloks' that this part of the page shows, before
+	// the block's own fields win over its nested bloks', like a menu item over a footer heading
+	const regional = () => {
+		const here = matches(text, [blok!, ...inner_bloks(blok!)], id).filter(near)
+		return here.length === 1 ? here[0] : undefined
+	}
 	const own =
 		blok &&
 		block &&
-		(match(text, [blok], id, shown, near) ?? match(text, inner_bloks(blok), id, shown, near))
+		(regional() ??
+			match(text, [blok], id, shown, near) ??
+			match(text, inner_bloks(blok), id, shown, near))
 	if (own) return own
 	const around = node.closest("a[href]")
 	const story = await story_at(around ?? item_link(node, block))
@@ -1075,6 +1083,7 @@ async function edit_loose(event: PointerEvent) {
 	// found before the press is let go, so its click edits rather than presses a button round it
 	const button = parent.closest("button")
 	if (source && button) claimed.add(button)
+	if (source && "uid" in source) stand_in(parent, source)
 	await released
 	if (!source || !active || !text.isConnected || text.data !== kept) return
 	const stand = document.createElement("span")
