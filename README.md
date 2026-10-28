@@ -191,8 +191,14 @@ export const client = new StoryblokClient({
 
 `attrs` makes the block editable in the visual editor, and in place, and gives it the block's
 `anchor` field as its `id` when it has one, so sections can be linked to. Spread it anywhere the
-block shows, as many times as it does, like a menu item in both a header and a mobile drawer, or
-a shared layout story's fields across a header and a footer.
+block shows, as many times as it does, like a shared layout story across a header and a footer.
+
+The bloks nested inside need nothing of their own. Text that one of them holds edits in place, and
+the element showing only that blok's text stands in for it, so clicking a menu item selects the
+item, with its bar and settings. When two fields hold the same words, like "About" in both the
+header's menu and the footer's, the one meant is the one from the part of the page clicked in. Spread
+`attrs` on a nested blok too when its element should be exact, or when its text isn't its own, like
+a label showing the linked page's name.
 
 Prefer it to `use:editable`. Being an attachment rather than an action it spreads, so the
 element keeps its own attributes, and you can wrap it to add project-specific ones in one
