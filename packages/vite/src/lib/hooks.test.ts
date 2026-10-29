@@ -74,6 +74,29 @@ describe("version", () => {
 		expect(cookies.storyblok_preview).toStartWith(`123:${now()}:`)
 	})
 
+	test("a link a few seconds ahead of the server's clock", async () => {
+		expect((await run(`${SITE}/?${from_editor(now() + 5)}`)).version).toBe("draft")
+	})
+
+	// the editor's frame keeps the URL it loaded, so its signature ages out while the session doesn't
+	test("a stale link falls back on the session it started", async () => {
+		const { cookies } = await run(`${SITE}/?${from_editor()}`)
+		expect((await run(`${SITE}/?${from_editor(now() - 7200)}`, cookies)).version).toBe("draft")
+	})
+
+	test("the session outlasts the link's hour, but not a day", async () => {
+		const cookie = (age: number) => {
+			const signed = from_editor(now() - age)
+			return ["space_id", "timestamp", "token"]
+				.map((key) => signed.get(`_storyblok_tk[${key}]`))
+				.join(":")
+		}
+		expect((await run(`${SITE}/`, { storyblok_preview: cookie(2 * 3600) })).version).toBe("draft")
+		expect((await run(`${SITE}/`, { storyblok_preview: cookie(24 * 3600) })).version).toBe(
+			"published"
+		)
+	})
+
 	// the middleware moves a preview onto ?_storyblok=1, which mustn't spoil the cookie
 	test("the cookie carries a request the middleware moved", async () => {
 		const { cookies } = await run(`${SITE}/?${from_editor()}`)
