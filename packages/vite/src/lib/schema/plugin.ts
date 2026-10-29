@@ -4,6 +4,7 @@ import path from "node:path"
 import { $ } from "../shared/shell.js"
 import exec from "../shared/x.js"
 import { Logger } from "../shared/logger.js"
+import { load_local } from "./local.js"
 
 const name = "vite-storyblok-schema"
 const logger = new Logger(name)
@@ -40,6 +41,13 @@ interface Options {
 	output_path?: string
 	interval_ms?: number
 	filename?: string
+	/**
+	 * A schema defined in code with `@storyblok/schema`: the file exporting the `defineSchema`
+	 * result, as `schema` or as its default. The types then come from it rather than the space,
+	 * so no token is needed and a dev server regenerates them as it changes rather than polling.
+	 * Pushing it to the space stays `storyblok schema push`'s job.
+	 */
+	entry?: string
 }
 
 /**
@@ -108,6 +116,13 @@ interface Options {
  *   plugins: [schema()]
  * })
  * ```
+ *
+ * @example A schema defined in code
+ * ```ts title=vite.config.ts
+ * export default defineConfig({
+ *   plugins: [schema({ entry: 'src/schema.ts' })]
+ * })
+ * ```
  */
 export default function schema({
 	output_path,
@@ -115,23 +130,42 @@ export default function schema({
 	storyblok_personal_access_token,
 	storyblok_space_id,
 	filename,
+	entry,
 }: Options = {}): Plugin {
 	let interval: ReturnType<typeof setInterval> | null = null
 	let mode = "development"
 	let build_run: Promise<void> | null = null
+	/** What the local schema was read from, so a dev server knows what to watch. */
+	let local_files = new Set<string>()
 
 	// ensure output_path does not end with a slash
 	const out_dir = output_path?.replace(/\/?$/, "") ?? "src/lib"
 	const schema_ts_file = path.join(out_dir, filename ?? "components.schema.ts")
 
+	/** The space's components: from the schema in code where there is one, from the API otherwise. */
+	async function components(token: string, space_id: string) {
+		if (entry) {
+			const local = await load_local(path.resolve(entry))
+			local_files = new Set([
+				path.resolve(entry),
+				...local.dependencies.map((file) => path.resolve(file)),
+			])
+			return local.components
+		}
+		const url = `https://mapi.storyblok.com/v1/spaces/${space_id}/components`
+		const response = await fetch(url, { headers: new Headers({ Authorization: token }) })
+		return (await response.json()).components
+	}
+
 	async function generate(): Promise<void> {
 		const env = loadEnv(mode, process.cwd(), "")
 		const token = storyblok_personal_access_token ?? env.STORYBLOK_PERSONAL_ACCESS_TOKEN
-		const space_id = storyblok_space_id ?? env.STORYBLOK_SPACE_ID
+		// A schema in code needs no space: the generator only wants a folder name for it
+		const space_id = entry ? "local" : (storyblok_space_id ?? env.STORYBLOK_SPACE_ID)
 
 		// Skip rather than throw: plenty of builds (CI without secrets, contributors
 		// without Storyblok access) have no business failing over generated types.
-		if (!token || !space_id) {
+		if (!entry && (!token || !space_id)) {
 			logger.warn(
 				"STORYBLOK_PERSONAL_ACCESS_TOKEN and STORYBLOK_SPACE_ID are both required to generate component types — skipping"
 			)
@@ -157,11 +191,7 @@ export default function schema({
 				// No existing file, that's fine
 			}
 
-			// Fetch the new components
-			const url = `https://mapi.storyblok.com/v1/spaces/${space_id}/components`
-			const headers = new Headers({ Authorization: token })
-			const response = await fetch(url, { headers })
-			const { components: new_components } = await response.json()
+			const new_components = await components(token, space_id)
 
 			// Make the file writable
 			await $`chmod u+w ${components_file}`.quiet().nothrow()
@@ -332,6 +362,20 @@ import type { ISbStoryData } from '@storyblok/js';`,
 		},
 		async configureServer(server) {
 			mode = server.config.mode
+
+			// A schema in code changes when its files do, so it's watched rather than polled
+			if (entry) {
+				await generate()
+				let pending: ReturnType<typeof setTimeout> | undefined
+				server.watcher.on("change", (file) => {
+					if (!local_files.has(path.resolve(file))) return
+					clearTimeout(pending)
+					pending = setTimeout(generate, 100)
+				})
+				logger.info(`Regenerating Storyblok component types as ${entry} changes`)
+				return
+			}
+
 			interval_ms = interval_ms ?? 60000 // 1 minute
 
 			const seconds = interval_ms / 1000

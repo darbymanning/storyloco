@@ -544,6 +544,33 @@ The plugin will:
 - Lock the generated file to prevent manual edits
 - Regenerate automatically when components change
 
+**A schema defined in code:**
+
+With [`@storyblok/schema`](https://www.storyblok.com/docs/libraries/js/schema), the components
+live in your repo (`defineBlock`, `defineField`, `defineFolder`, `defineSchema`) and Storyblok's
+CLI pushes them to the space. Point the plugin at the file that exports the `defineSchema`
+result, as `schema` or as its default, and the types come from it instead:
+
+```typescript
+// vite.config.ts
+schema({ entry: 'src/schema.ts' })
+```
+
+- No token or space is needed to generate them, so a contributor or a CI build without Storyblok
+  access still type-checks.
+- A dev server regenerates them when the schema, or anything it imports, changes, rather than
+  polling the space.
+- They're the same generated file as before (`Blok<T>`, `ContentTypes`, typed `storyblok.stories`),
+  so blocks don't change. `allow` on a `bloks` field types it as the blocks named, and a folder in
+  `allow` as the blocks in that folder.
+
+Pushing stays the CLI's: `storyblok schema push src/schema.ts --space <id> --dry-run` to see the
+diff, then without `--dry-run` to apply it. `storyblok schema init` writes an existing space's
+components out as code to start from.
+
+In a space shared with another site, push **without** `--delete`. Every component the schema
+doesn't name is "stale" to the CLI, and `--delete` would remove the other site's.
+
 #### Storyblok Redirects Plugin
 
 Generate and handle redirects from Storyblok datasource entries:
