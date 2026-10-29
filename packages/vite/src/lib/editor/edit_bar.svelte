@@ -914,6 +914,8 @@
 		color: var(--ink);
 		display: flex;
 		font: var(--font);
+		/* within the screen, whichever corner it's in */
+		max-inline-size: calc(100% - 2 * var(--o));
 		padding: 0.25rem;
 		position: fixed;
 		transition:
@@ -1074,6 +1076,7 @@
 	.panel {
 		display: grid;
 		grid-template-columns: 0fr;
+		min-inline-size: 0;
 		transition: grid-template-columns 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 
 		/* folding, the clip below starts from 40rem out, so the track keeps the buttons in; and inert
@@ -1099,6 +1102,20 @@
 		display: flex;
 		gap: 0.625rem;
 		min-inline-size: 0;
+
+		/* on a phone the row is wider than the screen: it scrolls, rather than running off the edge */
+		@media (hover: none), (width < 40rem) {
+			.open & {
+				overflow-x: auto;
+				overscroll-behavior-x: contain;
+				scrollbar-width: none;
+			}
+
+			/* laid out, if unseen, they'd scroll the row past its last button */
+			.tip {
+				display: none;
+			}
+		}
 		transition:
 			clip-path 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
 			padding 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1142,9 +1159,12 @@
 			background-color: var(--good);
 		}
 
-		&:hover .tip {
-			opacity: 1;
-			translate: 0 0;
+		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
+		@media (hover: hover) {
+			&:hover .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
 		}
 
 		&:has(+ *) {
@@ -1288,10 +1308,17 @@
 			}
 		}
 
-		&:hover .tip,
 		&:has(:focus-visible) .tip {
 			opacity: 1;
 			translate: 0 0;
+		}
+
+		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
+		@media (hover: hover) {
+			&:hover .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
 		}
 	}
 
@@ -1391,10 +1418,17 @@
 			inset-inline-start: calc(50% - 0.9375rem);
 		}
 
-		&:hover .tip,
 		&:has(:focus-visible) .tip {
 			opacity: 1;
 			translate: 0 0;
+		}
+
+		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
+		@media (hover: hover) {
+			&:hover .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
 		}
 	}
 
@@ -1474,10 +1508,17 @@
 			place-items: center;
 		}
 
-		&:hover .tip,
 		&:focus-visible .tip {
 			opacity: 1;
 			translate: 0 0;
+		}
+
+		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
+		@media (hover: hover) {
+			&:hover .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
 		}
 
 		&[aria-pressed="true"] {
