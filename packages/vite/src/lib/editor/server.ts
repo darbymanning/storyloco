@@ -135,7 +135,7 @@ async function setting(name: string) {
 }
 
 /** The token the site reads content with; the environment's first, since a client reading through a proxy carries a stand-in */
-async function site_token() {
+export async function site_token() {
 	return (
 		(await setting("PUBLIC_STORYBLOK_ACCESS_TOKEN")) ||
 		(await setting("STORYBLOK_ACCESS_TOKEN")) ||
