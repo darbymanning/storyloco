@@ -32,14 +32,19 @@ const names = (request: Request) =>
 export const editing = (request: Request) => names(request).some((name) => EDITOR_COOKIE.test(name))
 
 /**
- * The URL to serve the request from instead, or null to serve it as it is. One with any of
+ * The URL to serve the request from instead, or null to serve it as it is. A read with any of
  * `cookies`, the editor's by default, moves onto `?<param>=1`; one already there passes straight
  * through, as does every other.
+ *
+ * Only reads: nothing else is cached, and a SvelteKit form post moved onto its own key loses its
+ * action (`?/name`) on the way, so it finds none. The `version` hook reads the cookie on a post
+ * itself.
  */
 export function own_key(
 	request: Request,
 	{ cookies = [EDITOR_COOKIE], param = UNCACHED }: { cookies?: Array<RegExp>; param?: string } = {}
 ): URL | null {
+	if (request.method !== "GET" && request.method !== "HEAD") return null
 	if (!names(request).some((name) => cookies.some((cookie) => cookie.test(name)))) return null
 	const url = new URL(request.url)
 	if (url.searchParams.has(param)) return null

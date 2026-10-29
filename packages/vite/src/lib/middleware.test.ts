@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import handle, { EDITORS, editing, middleware, own_key } from "./middleware.js"
+import handle, { EDITORS, PREVIEW, editing, middleware, own_key } from "./middleware.js"
 
 const request = (cookie?: string, url = "https://example.com/about") =>
 	new Request(url, { headers: cookie ? { cookie } : {} })
@@ -15,6 +15,19 @@ describe("own_key", () => {
 
 	test("one already on its key passes through", () => {
 		expect(own_key(request("sl_editor=x", "https://example.com/about?_storyloco=1"))).toBeNull()
+	})
+
+	test("only reads move: a form post keeps its action", () => {
+		const post = (cookie: string) =>
+			new Request("https://example.com/?/prospectus", { method: "POST", headers: { cookie } })
+		expect(own_key(post("sl_editor=x"))).toBeNull()
+		expect(own_key(post("storyblok_preview=1"), PREVIEW)).toBeNull()
+		expect(handle(post("storyblok_preview=1")).headers.get("x-middleware-next")).toBe("1")
+		const head = new Request("https://example.com/about", {
+			method: "HEAD",
+			headers: { cookie: "sl_editor=x" },
+		})
+		expect(own_key(head)?.search).toBe("?_storyloco=1")
 	})
 
 	test("a site's own cookies and parameter", () => {
