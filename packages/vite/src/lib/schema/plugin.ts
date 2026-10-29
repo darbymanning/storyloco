@@ -135,8 +135,11 @@ export default function schema({
 	let interval: ReturnType<typeof setInterval> | null = null
 	let mode = "development"
 	let build_run: Promise<void> | null = null
-	/** What the local schema was read from, so a dev server knows what to watch. */
-	let local_files = new Set<string>()
+	/** What the local schema was read from, so a dev server knows what to watch: the entry until it first loads. */
+	let local_files = new Set(entry ? [path.resolve(entry)] : [])
+	/** The run under way, and whether another was asked for while it ran. */
+	let running: Promise<void> | null = null
+	let again = false
 
 	// ensure output_path does not end with a slash
 	const out_dir = output_path?.replace(/\/?$/, "") ?? "src/lib"
@@ -345,6 +348,25 @@ import type { ISbStoryData } from '@storyblok/js';`,
 		}
 	}
 
+	/**
+	 * `generate`, one run at a time: a run writes and locks the same files, and takes seconds,
+	 * so asking while one is under way queues a single run after it rather than racing it.
+	 */
+	function regenerate(): Promise<void> {
+		if (running) {
+			again = true
+			return running
+		}
+		running = generate().finally(() => {
+			running = null
+			if (again) {
+				again = false
+				void regenerate()
+			}
+		})
+		return running
+	}
+
 	return {
 		name,
 		configResolved(config) {
@@ -357,7 +379,7 @@ import type { ISbStoryData } from '@storyblok/js';`,
 		 * let the later calls await the same run.
 		 */
 		async buildStart() {
-			build_run ??= generate()
+			build_run ??= regenerate()
 			await build_run
 		},
 		async configureServer(server) {
@@ -365,12 +387,14 @@ import type { ISbStoryData } from '@storyblok/js';`,
 
 			// A schema in code changes when its files do, so it's watched rather than polled
 			if (entry) {
-				await generate()
+				await regenerate()
 				let pending: ReturnType<typeof setTimeout> | undefined
-				server.watcher.on("change", (file) => {
+				// `add` too: an editor that saves by renaming a new file over the old one reports that
+				server.watcher.on("all", (event, file) => {
+					if (event !== "change" && event !== "add") return
 					if (!local_files.has(path.resolve(file))) return
 					clearTimeout(pending)
-					pending = setTimeout(generate, 100)
+					pending = setTimeout(regenerate, 100)
 				})
 				logger.info(`Regenerating Storyblok component types as ${entry} changes`)
 				return
@@ -383,9 +407,9 @@ import type { ISbStoryData } from '@storyblok/js';`,
 				`Regenerating Storyblok component types every ${seconds} ${seconds === 1 ? "second" : "seconds"}`
 			)
 
-			await generate()
+			await regenerate()
 
-			interval = setInterval(generate, interval_ms)
+			interval = setInterval(regenerate, interval_ms)
 		},
 		closeBundle() {
 			if (interval) clearInterval(interval)

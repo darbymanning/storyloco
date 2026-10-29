@@ -6,11 +6,14 @@ import { runnerImport } from "vite"
  * definitions are plain objects, and reading them as such keeps it an optional dependency of
  * the site's rather than ours.
  */
+/** A block name, or the blocks in a folder or with a tag, as `allow` and `deny` list them */
+type Entry = string | { folder?: string; tag?: string }
+
 interface LocalField {
 	name?: string
 	type?: string
-	allow?: Array<string | { folder?: string; tag?: string }>
-	deny?: unknown
+	allow?: Array<Entry>
+	deny?: Array<Entry>
 	datasource?: string
 	[key: string]: unknown
 }
@@ -19,6 +22,8 @@ interface LocalBlock {
 	name: string
 	fields?: Array<LocalField>
 	folder?: string | { name: string; parent?: unknown } | null
+	tags?: Array<string>
+	is_nestable?: boolean
 	[key: string]: unknown
 }
 
@@ -48,35 +53,51 @@ function folder_path(folder: LocalBlock["folder"]): string | undefined {
  * (turning `restrict_components` on for `bloks` and `richtext`), and `datasource` becomes
  * `datasource_slug`.
  *
- * Folder and tag restrictions are resolved to block names here rather than left as lists: the
- * type generator needs names, and a space's folder ids don't exist until a push. A tag can't be
- * resolved locally, so it leaves the field unrestricted, which types it as any block.
+ * Folder and tag entries are resolved to block names here, as `@storyblok/schema`'s own types
+ * resolve them: a folder takes the blocks in it or any folder within (compared case-insensitively),
+ * a tag the blocks that declare it. The type generator needs names, and a space's folder and tag ids
+ * don't exist until a push. It reads only a whitelist, so a `deny` becomes one too: every nestable
+ * block it doesn't name.
  */
 export function to_components(schema: LocalSchema): Array<Component> {
 	const blocks = Object.values(schema.blocks)
-	const in_folder = (path: string) =>
-		blocks
-			.filter((block) => {
-				const own = folder_path(block.folder)
-				return own === path || own?.startsWith(`${path}/`)
-			})
-			.map((block) => block.name)
+	const matches = (block: LocalBlock, entry: Entry) => {
+		if (typeof entry === "string") return block.name === entry
+		if (entry.tag) return !!block.tags?.includes(entry.tag)
+		const own = folder_path(block.folder)?.toLowerCase()
+		const path = entry.folder?.toLowerCase()
+		return !!own && !!path && (own === path || own.startsWith(`${path}/`))
+	}
+	const names = (keep: (block: LocalBlock) => boolean) =>
+		blocks.filter(keep).map((block) => block.name)
 
-	return blocks.map(({ fields = [], folder: _folder, ...rest }) => ({
+	return blocks.map(({ fields = [], folder: _folder, tags: _tags, ...rest }) => ({
 		...rest,
 		schema: Object.fromEntries(
 			fields
 				.filter((field): field is LocalField & { name: string } => typeof field.name === "string")
-				.map(({ name, allow, deny: _deny, datasource, ...field }, pos) => {
+				.map(({ name, allow, deny, datasource, ...field }, pos) => {
 					const value: Record<string, unknown> = { pos, ...field }
-					const names = allow?.flatMap((entry) =>
-						typeof entry === "string" ? [entry] : entry.folder ? in_folder(entry.folder) : []
-					)
-					const by_tag = allow?.some((entry) => typeof entry !== "string" && entry.tag)
-					if (names && !by_tag) {
-						value.component_whitelist = names
-						if (field.type === "bloks" || field.type === "richtext")
-							value.restrict_components = true
+					const picks_blocks = field.type === "bloks" || field.type === "richtext"
+					// A name in `allow` passes through, as it may be a block defined elsewhere. The editor
+					// ignores a `deny` beside a non-empty `allow`, and on a field that picks no blocks.
+					const whitelist = allow?.length
+						? [
+								...new Set(
+									allow.flatMap((entry) =>
+										typeof entry === "string" ? [entry] : names((block) => matches(block, entry))
+									)
+								),
+							]
+						: deny?.length && picks_blocks
+							? names(
+									(block) =>
+										block.is_nestable !== false && !deny.some((entry) => matches(block, entry))
+								)
+							: allow
+					if (whitelist) {
+						value.component_whitelist = whitelist
+						if (picks_blocks) value.restrict_components = true
 					}
 					if (datasource !== undefined) value.datasource_slug = datasource
 					return [name, value]

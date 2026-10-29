@@ -69,19 +69,63 @@ describe("to_components", () => {
 		expect(card.schema.link).toEqual({ pos: 0, type: "multilink", component_whitelist: ["page"] })
 	})
 
-	test("a datasource is its slug, and a tag restriction is left open", () => {
+	test("a folder matches whatever its case", () => {
+		const [page] = to_components({
+			blocks: {
+				page: {
+					name: "page",
+					fields: [{ name: "body", type: "bloks", allow: [{ folder: "layout" }] }],
+				},
+				hero: { name: "hero", folder: layout, fields: [] },
+			},
+		})
+		expect(page.schema.body.component_whitelist).toEqual(["hero"])
+	})
+
+	test("a tag is the blocks that declare it", () => {
+		const [page] = to_components({
+			blocks: {
+				page: { name: "page", fields: [{ name: "body", type: "bloks", allow: [{ tag: "card" }] }] },
+				hero: { name: "hero", tags: ["card"], fields: [] },
+				quote: { name: "quote", fields: [] },
+			},
+		})
+		expect(page.schema.body.component_whitelist).toEqual(["hero"])
+		expect(page).not.toHaveProperty("tags")
+	})
+
+	test("deny is every nestable block it doesn't name, on fields that pick blocks", () => {
+		const [page] = to_components({
+			blocks: {
+				page: {
+					name: "page",
+					is_nestable: false,
+					fields: [
+						{ name: "body", type: "bloks", deny: ["quote", { folder: "Layout" }] },
+						{ name: "link", type: "multilink", deny: ["quote"] },
+					],
+				},
+				hero: { name: "hero", folder: layout, fields: [] },
+				quote: { name: "quote", fields: [] },
+				card: { name: "card", fields: [] },
+			},
+		})
+		expect(page.schema.body).toMatchObject({
+			component_whitelist: ["card"],
+			restrict_components: true,
+		})
+		expect(page.schema.link).toEqual({ pos: 1, type: "multilink" })
+	})
+
+	test("a datasource is its slug", () => {
 		const [block] = to_components({
 			blocks: {
 				block: {
 					name: "block",
-					fields: [
-						{ name: "colour", type: "option", source: "internal", datasource: "colours" },
-						{ name: "body", type: "bloks", allow: [{ tag: "featured" }] },
-					],
+					fields: [{ name: "colour", type: "option", source: "internal", datasource: "colours" }],
 				},
 			},
 		})
 		expect(block.schema.colour).toMatchObject({ source: "internal", datasource_slug: "colours" })
-		expect(block.schema.body).toEqual({ pos: 1, type: "bloks" })
 	})
 })
