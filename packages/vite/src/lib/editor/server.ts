@@ -1,6 +1,6 @@
 import { redirect, type RequestEvent } from "@sveltejs/kit"
 import type { Handle } from "../kit.js"
-import { StoryblokClient } from "../storyblok.svelte.js"
+import { env, setting, site_token } from "../settings.js"
 import { LIVE, editor_version } from "./version.js"
 import { allowed } from "./content.js"
 import {
@@ -56,9 +56,6 @@ const VERIFIER = "sl_verifier"
 
 /** Vite's development flag, absent outside a Vite build, like under tests */
 const dev = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV)
-
-const env = (name: string) =>
-	(globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env[name]
 
 /** Someone a site's draft is shared with, on `event.locals.guest`: they see it, and may comment */
 export type Guest = {
@@ -123,26 +120,6 @@ async function lookup(moxy: string, handle: string, fresh = false): Promise<Sess
 // --- the site's own space
 
 let own: Promise<string> | undefined
-
-/** A setting from SvelteKit's env, where the site's .env lives; process.env alone misses it in development */
-async function setting(name: string) {
-	type Env = { env: Record<string, string | undefined> }
-	const [secret, open] = await Promise.all([
-		import("$env/dynamic/private").catch(() => null) as Promise<Env | null>,
-		import("$env/dynamic/public").catch(() => null) as Promise<Env | null>,
-	])
-	return secret?.env[name] || open?.env[name] || env(name)
-}
-
-/** The token the site reads content with; the environment's first, since a client reading through a proxy carries a stand-in */
-async function site_token() {
-	return (
-		(await setting("PUBLIC_STORYBLOK_ACCESS_TOKEN")) ||
-		(await setting("STORYBLOK_ACCESS_TOKEN")) ||
-		(await setting("PUBLIC_STORYBLOK_TOKEN")) ||
-		StoryblokClient.current?.token
-	)
-}
 
 /** `STORYBLOK_SPACE_ID`, or else the space the site's public token reads from */
 function own_space(configured?: string) {
