@@ -148,16 +148,18 @@ export default function schema({
 	let watcher: FSWatcher | undefined
 	let stop_watching: (() => void) | undefined
 
-	function watch_file(file: string) {
+	function watch_file(file: string, watch = true) {
 		const absolute = path.resolve(file)
 		local_files.add(absolute)
-		watcher?.add(absolute)
+		if (watch) watcher?.add(absolute)
 	}
+
 	/** The run under way, and whether another was asked for while it ran. */
 	let running: Promise<void> | null = null
 	let again = false
 
 	// ensure output_path does not end with a slash
+
 	const out_dir = output_path?.replace(/\/?$/, "") ?? "src/lib"
 	const schema_ts_file = () => path.resolve(root, out_dir, filename ?? "components.schema.ts")
 
@@ -186,6 +188,7 @@ export default function schema({
 			)
 			return
 		}
+
 		try {
 			const models = await components(token, space_id)
 			const output = schema_ts_file()
@@ -193,6 +196,7 @@ export default function schema({
 				path.basename(output),
 				generate_types(models, output, root, local_entry, named)
 			)
+
 			const previous = await readFile(output, "utf8").catch(() => "")
 			if (content !== previous) {
 				await mkdir(path.dirname(output), { recursive: true })
@@ -202,6 +206,7 @@ export default function schema({
 				await chmod(output, 0o444)
 				logger.succeed(`Storyblok component types generated to ${output}`)
 			}
+
 			if (had_error) server?.ws.send({ type: "full-reload" })
 			had_error = false
 		} catch (error) {
@@ -214,6 +219,7 @@ export default function schema({
 				loc?: { file?: string; line: number; column: number }
 				frame?: string
 			}
+
 			server?.ws.send({
 				type: "error",
 				err: {

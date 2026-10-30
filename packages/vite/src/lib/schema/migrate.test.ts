@@ -35,8 +35,7 @@ describe("schema migration", () => {
 		const result = await migrate(
 			{ root, space: "123", env: { STORYBLOK_PERSONAL_ACCESS_TOKEN: "test-token" }, region: "us" },
 			async (args, options) => {
-				expect(args.slice(0, 6)).toEqual([
-					"--yes",
+				expect(args.slice(0, 5)).toEqual([
 					`storyblok@${cli_version}`,
 					"schema",
 					"init",

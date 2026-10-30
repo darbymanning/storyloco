@@ -1,7 +1,7 @@
-import spawn from "cross-spawn"
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { default_entry } from "./entry.js"
+import { run_cli } from "./run.js"
 
 export const cli_version = "4.25.0"
 
@@ -17,22 +17,12 @@ interface Options {
 type Runner = (args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => Promise<void>
 
 const run: Runner = (args, options) =>
-	new Promise((resolve, reject) => {
-		const child = spawn("npx", args, {
-			...options,
-			stdio: "inherit",
-		})
-		child.on("error", reject)
-		child.on("exit", (code, signal) => {
-			if (code === 0) resolve()
-			else
-				reject(
-					new Error(
-						`Storyblok schema export failed (${signal ?? code}). No schema files were installed.`
-					)
-				)
-		})
-	})
+	run_cli(
+		args,
+		options,
+		(code, signal) =>
+			`Storyblok schema export failed (${signal ?? code}). No schema files were installed.`
+	)
 
 async function require_absent(file: string) {
 	try {
@@ -103,7 +93,9 @@ export async function migrate(options: Options, runner: Runner = run) {
 	const entry = path.resolve(root, options.entry ?? default_entry)
 	if (!entry.endsWith(".ts")) throw new Error("--entry must be a TypeScript (.ts) file")
 	if (!/^\d+$/.test(options.space)) throw new Error("--space must be a numeric Storyblok space ID")
+
 	const out_dir = path.resolve(root, options.out_dir ?? entry.slice(0, -3))
+
 	const relative_entry = path.relative(out_dir, entry)
 	if (
 		!relative_entry.startsWith(`..${path.sep}`) &&
@@ -112,11 +104,14 @@ export async function migrate(options: Options, runner: Runner = run) {
 	) {
 		throw new Error("--entry must be outside --out-dir")
 	}
+
 	await require_absent(entry)
 	await require_absent(out_dir)
 	await mkdir(path.dirname(out_dir), { recursive: true })
 	const staging = await mkdtemp(path.join(path.dirname(out_dir), ".storyloco-schema-"))
+
 	let installed = false
+
 	try {
 		const env = { ...process.env, ...options.env }
 		const token = env.STORYBLOK_PERSONAL_ACCESS_TOKEN || env.STORYBLOK_TOKEN
@@ -125,8 +120,8 @@ export async function migrate(options: Options, runner: Runner = run) {
 			env.STORYBLOK_LOGIN ||= "storyloco"
 			env.STORYBLOK_REGION = options.region ?? env.STORYBLOK_REGION ?? "eu"
 		}
+
 		const args = [
-			"--yes",
 			`storyblok@${cli_version}`,
 			"schema",
 			"init",
@@ -136,7 +131,9 @@ export async function migrate(options: Options, runner: Runner = run) {
 			staging,
 		]
 		if (options.region) args.push("--region", options.region)
+
 		await runner(args, { cwd: root, env })
+
 		// Some CLI failures return successfully but don't produce an entry.
 		await readFile(path.join(staging, "schema.ts"), "utf8")
 		await update_imports(staging)
@@ -153,6 +150,7 @@ export async function migrate(options: Options, runner: Runner = run) {
 				errorOnExist: true,
 			})
 		}
+
 		const specifier =
 			"./" +
 			path.relative(path.dirname(entry), path.join(out_dir, "schema.js")).split(path.sep).join("/")
@@ -161,6 +159,7 @@ export async function migrate(options: Options, runner: Runner = run) {
 			`// Exported from Storyblok. Review the schema before pushing changes.\nexport * from ${JSON.stringify(specifier)}\n`,
 			{ flag: "wx" }
 		)
+
 		return { entry, out_dir }
 	} catch (error) {
 		if (installed) await rm(out_dir, { recursive: true, force: true })

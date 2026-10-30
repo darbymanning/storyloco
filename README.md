@@ -587,9 +587,9 @@ available. For a named export, use `import { define_schema } from 'storyloco/sch
 **Migrate existing GUI models:**
 
 ```sh
-npx storyloco schema migrate
+bunx storyloco schema migrate
 # Or override the space and output layout:
-npx storyloco schema migrate --space 12345 --entry cms/schema.ts
+bunx storyloco schema migrate --space 12345 --entry cms/schema.ts
 ```
 
 The command reads `STORYBLOK_SPACE_ID` and `STORYBLOK_PERSONAL_ACCESS_TOKEN` from `.env`,
@@ -598,7 +598,7 @@ works. Pass `--region us` (or your space's region) when needed; environment-toke
 defaults to `eu`. Env files contain literal values, without variable expansion.
 
 It wraps Storyblok's [`schema init`](https://www.storyblok.com/docs/tooling/cli/schema/init), using
-a pinned CLI downloaded through `npx` on first use. It exports models, folders, datasources, and
+a pinned CLI downloaded through `bunx` (falling back to `npx` when Bun is unavailable) on first use. It exports models, folders, datasources, and
 field-plugin definitions into `src/schema/`, then creates `src/schema.ts` as the entry. `--out-dir`
 can choose a different supporting directory; by default it's the entry path without `.ts`.
 The export uses Storyloco imports, preserving upstream helper names and generated type exports.
@@ -624,15 +624,15 @@ builds fail on schema errors rather than succeeding with stale generated types.
 **Check a schema in CI:**
 
 ```sh
-npx storyloco schema check              # Local validation, offline, no credentials
-npx storyloco schema check --remote     # Also compare with STORYBLOK_SPACE_ID
-npx storyloco schema check --entry cms/schema.ts --remote --space 12345
+bunx storyloco schema check              # Local validation, offline, no credentials
+bunx storyloco schema check --remote     # Also compare with STORYBLOK_SPACE_ID
+bunx storyloco schema check --entry cms/schema.ts --remote --space 12345
 ```
 
 Local checks use `src/schema.ts` by default and exit nonzero on invalid definitions. Remote
 checks use the same environment credentials/region as migration (or an existing CLI login),
 print Storyblok's diff, and exit nonzero on differences or request errors. Remote comparison
-is read-only and downloads the pinned CLI through `npx`; local validation and type generation
+is read-only and downloads the pinned CLI through `bunx` (falling back to `npx` when Bun is unavailable); local validation and type generation
 run in-process.
 
 The native generator retains component interface names, `Blok<T>`, `ContentTypes`, and the
@@ -640,7 +640,7 @@ Storyloco registry. Field values now follow `@storyblok/schema`'s definitions, i
 values for Storyblok number fields and precise option values. Check downstream assignments
 when adopting this generator.
 
-Pushing stays the Storyblok CLI's: `npx storyblok@4.25.0 schema push src/schema.ts --space <id> --dry-run`
+Pushing stays the Storyblok CLI's: `bunx storyblok@4.25.0 schema push src/schema.ts --space <id> --dry-run`
 to review the diff, then without `--dry-run` to apply it. Both the short helpers and existing
 `@storyblok/schema` definitions are compatible.
 

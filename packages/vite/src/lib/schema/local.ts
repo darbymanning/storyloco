@@ -111,7 +111,9 @@ export function to_components(schema: LocalSchema): Array<Component> {
  * The schema entry's components, and the files it was read from (for a dev server to watch).
  * The entry exports the `defineSchema` result as `schema` or as its default.
  */
-export async function load_local(entry: string, on_file?: (file: string) => void) {
+export async function load_local(entry: string, on_file?: (file: string, watch?: boolean) => void) {
+	const loaded_files = new Set<string>()
+
 	const { module, dependencies } = await runnerImport<{
 		schema?: LocalSchema
 		default?: LocalSchema
@@ -120,19 +122,52 @@ export async function load_local(entry: string, on_file?: (file: string) => void
 			{
 				name: "storyloco-schema-dependencies",
 				enforce: "pre",
+
+				async resolveId(id, importer) {
+					if (
+						!on_file ||
+						!importer ||
+						!loaded_files.has(importer.split("?")[0]) ||
+						!id.startsWith(".")
+					)
+						return null
+
+					const resolved = await this.resolve(id, importer, { skipSelf: true })
+					if (resolved) return resolved
+
+					// An unresolved extensionless import never reaches load with its future filename.
+					const base = path.resolve(path.dirname(importer.split("?")[0]), id.split("?")[0])
+					on_file(path.dirname(base))
+					on_file(base, false)
+
+					if (!path.extname(base)) {
+						for (const extension of this.environment.config.resolve.extensions) {
+							on_file(base + extension, false)
+							on_file(path.join(base, "index" + extension), false)
+						}
+					}
+
+					return null
+				},
+
 				load(id) {
 					// Register files before parsing/evaluating them: runnerImport only returns
 					// its dependency list on success, but broken imports need watching too.
 					const file = id.split("?")[0]
-					if (path.isAbsolute(file)) on_file?.(file)
+					if (path.isAbsolute(file)) {
+						loaded_files.add(file)
+						on_file?.(file)
+					}
 					return null
 				},
 			},
 		],
 	})
+
 	const schema = module.schema ?? module.default
 	if (!schema?.blocks)
 		throw new Error(`${entry} exports no schema: export the defineSchema result as \`schema\``)
+
 	const validation = validateSchema(schema as SchemaLike)
 	const errors = validation.issues.filter((issue) => issue.severity === "error")
 	if (errors.length)

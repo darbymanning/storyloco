@@ -4,7 +4,13 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 // Each dev server runs in its own process to isolate its module runner and output.
-test.each(["broken import", "external dependency", "external entry"])(
+test.each([
+	"broken import",
+	"missing import",
+	"missing extensionless import",
+	"external dependency",
+	"external entry",
+])(
 	"schema watcher regenerates after editing %s",
 	async (scenario) => {
 		const root = await realpath(await mkdtemp(path.join(tmpdir(), "storyloco-watch-")))
@@ -27,8 +33,9 @@ test.each(["broken import", "external dependency", "external entry"])(
 			const contents = (value) =>
 				'import { appendFileSync } from "node:fs"; appendFileSync(' + JSON.stringify(log) + ', ' +
 				JSON.stringify(value + "\n") + '); export const fields = []'
-			await writeFile(helper, scenario === "broken import" ? "export const fields = [" : contents("initial"))
-			await writeFile(entry, 'import { fields } from ' + JSON.stringify(helper) + '; export default { blocks: fields.length ? {} : {} }')
+			if (!scenario.startsWith("missing")) await writeFile(helper, scenario === "broken import" ? "export const fields = [" : contents("initial"))
+			const imported = scenario === "missing extensionless import" ? "./" + path.relative(path.dirname(entry), helper).replace(/\.ts$/, "").split(path.sep).join("/") : helper
+			await writeFile(entry, 'import { fields } from ' + JSON.stringify(imported) + '; export default { blocks: fields.length ? {} : {} }')
 			const server = await createServer({
 				root: app,
 				configFile: false,
@@ -45,11 +52,13 @@ test.each(["broken import", "external dependency", "external entry"])(
 				throw new Error("Schema did not regenerate after " + scenario)
 			}
 			try {
+				// Wait until the external directory is registered before creating a missing file.
+				if (scenario.startsWith("missing")) await until(() => !!server.watcher.getWatched()[shared])
 				// Let the watcher establish its initial file stats before making an edit.
 				await new Promise(resolve => setTimeout(resolve, 150))
 				await writeFile(helper, contents("updated"))
 				await until(async () => (await readFile(log, "utf8").catch(() => "")).includes("updated"))
-				if (scenario !== "broken import") {
+				if (scenario !== "broken import" && !scenario.startsWith("missing")) {
 					// Dependencies first reached on a later reload must also be registered,
 					// even if that reload fails before evaluating the new file.
 					const later = path.join(shared, "later.ts")
