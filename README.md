@@ -489,7 +489,8 @@ export default defineConfig({
 - `storyblok_space_id` - Your Storyblok space ID (defaults to `STORYBLOK_SPACE_ID` env var)
 - `output_path` - Where to output generated files (defaults to `src/lib`)
 - `filename` - Name of the generated file (defaults to `components.schema.ts`)
-- `interval_ms` - How often to regenerate types (defaults to 60000ms)
+- `interval_ms` - How often to regenerate types from the space (defaults to 60000ms)
+- `entry` - Schema file relative to the Vite root. Automatically uses `src/schema.ts` when it exists; otherwise reads the space. Pass a custom path or `false` to always read the space.
 
 The plugin will create a file called `components.schema.ts` (auto-generated) in the `src/lib` directory. This file will be updated automatically when you make changes to your Storyblok components as per the interval specified.
 
@@ -540,9 +541,111 @@ The plugin will:
 - Pull your component schema from Storyblok
 - Generate TypeScript definitions with proper types
 - Use your custom plugin types when available
-- Format the output with oxfmt
+- Generate types directly in-process, without a CLI download or intermediate JSON files
+- Format the output with oxfmt or prettier when installed
 - Lock the generated file to prevent manual edits
 - Regenerate automatically when components change
+
+**A schema defined in code:**
+
+Create `src/schema.ts` and the existing `schema()` Vite plugin automatically uses it. No
+`entry`, token, space ID, or separate schema package installation is needed for local types.
+`storyloco/schema` re-exports Storyblok's helpers with shorter names and the same type inference:
+
+```typescript
+// src/schema.ts
+import { schema, block, field } from 'storyloco/schema'
+
+const hero = block({
+	name: 'hero',
+	fields: [field('headline', { type: 'text', required: true })]
+})
+
+const page = block({
+	name: 'page',
+	is_root: true,
+	fields: [field('body', { type: 'bloks', allow: [hero] })]
+})
+
+export default schema({ blocks: { page, hero } })
+```
+
+The helpers are `schema`, `block`, `field`, `folder`, `datasource`, and `field_plugin`, with
+`hide_when` and `required_when` for conditions. Upstream types and original helper names remain
+available. For a named export, use `import { define_schema } from 'storyloco/schema'` followed by
+`export const schema = define_schema({ blocks: { page, hero } })`.
+
+- The entry may export a default schema or a named `schema`.
+- Dev regenerates types when the entry or any file it imports changes. Restart Vite after first
+  creating or migrating the default entry so the plugin switches from the space to local files.
+- The output is the same `components.schema.ts` as before, including `Blok<T>`, `ContentTypes`,
+  and typed `storyblok.stories`. `allow` and `deny` resolve block names, folders, and tags.
+- A custom layout uses `schema({ entry: 'cms/schema.ts' })`. `schema({ entry: false })` always
+  reads the GUI models, even with `src/schema.ts` present. An explicit entry that fails to load
+  reports the error; it never silently generates from the space instead.
+
+**Migrate existing GUI models:**
+
+```sh
+bunx storyloco schema migrate
+# Or override the space and output layout:
+bunx storyloco schema migrate --space 12345 --entry cms/schema.ts
+```
+
+The command reads `STORYBLOK_SPACE_ID` and `STORYBLOK_PERSONAL_ACCESS_TOKEN` from `.env`,
+`.env.local`, or your shell (shell values take precedence). An existing Storyblok CLI login also
+works. Pass `--region us` (or your space's region) when needed; environment-token authentication
+defaults to `eu`. Env files contain literal values, without variable expansion.
+
+It wraps Storyblok's [`schema init`](https://www.storyblok.com/docs/tooling/cli/schema/init), using
+a pinned CLI downloaded through `bunx` (falling back to `npx` when Bun is unavailable) on first use. It exports models, folders, datasources, and
+field-plugin definitions into `src/schema/`, then creates `src/schema.ts` as the entry. `--out-dir`
+can choose a different supporting directory; by default it's the entry path without `.ts`.
+The export uses Storyloco imports, preserving upstream helper names and generated type exports.
+Known Storyloco field plugins receive their exported value types automatically; unknown plugins keep placeholder types.
+No remote models or stories are changed, and existing entries or output directories are never
+overwritten. Failed exports are cleaned up before the default entry is created.
+
+Review the generated files and the CLI's warnings before adopting them. Unknown custom field
+plugins receive placeholder value types; malformed custom fields without a plugin name are
+reported by the exporter and need attention. Restart Vite after migration to generate local types.
+
+**Custom fields and validation:**
+
+Register custom fields in the schema's `fieldPlugins` using `field_plugin({ fieldType, value })`.
+`value` is a Standard Schema validator, such as a Zod or Valibot schema. Generated custom-field
+properties infer its output type, so local schemas no longer need `StoryblokCustomPlugins` in
+`vite.config.ts`. GUI-based generation continues to use that interface.
+
+Invalid schemas show the block and field path in Vite's error overlay. Syntax errors retain the
+source file and location supplied by Vite. Fixing the schema clears the overlay. Production
+builds fail on schema errors rather than succeeding with stale generated types.
+
+**Check a schema in CI:**
+
+```sh
+bunx storyloco schema check              # Local validation, offline, no credentials
+bunx storyloco schema check --remote     # Also compare with STORYBLOK_SPACE_ID
+bunx storyloco schema check --entry cms/schema.ts --remote --space 12345
+```
+
+Local checks use `src/schema.ts` by default and exit nonzero on invalid definitions. Remote
+checks use the same environment credentials/region as migration (or an existing CLI login),
+print Storyblok's diff, and exit nonzero on differences or request errors. Remote comparison
+is read-only and downloads the pinned CLI through `bunx` (falling back to `npx` when Bun is unavailable); local validation and type generation
+run in-process.
+
+The native generator retains component interface names, `Blok<T>`, `ContentTypes`, and the
+Storyloco registry. Field values now follow `@storyblok/schema`'s definitions, including string
+values for Storyblok number fields and precise option values. Check downstream assignments
+when adopting this generator.
+
+Pushing stays the Storyblok CLI's: `bunx storyblok@4.25.0 schema push src/schema.ts --space <id> --dry-run`
+to review the diff, then without `--dry-run` to apply it. Both the short helpers and existing
+`@storyblok/schema` definitions are compatible.
+
+In a space shared with another site, push **without** `--delete`. Every component the schema
+doesn't name is "stale" to the CLI, and `--delete` would remove the other site's.
 
 #### Storyblok Redirects Plugin
 
