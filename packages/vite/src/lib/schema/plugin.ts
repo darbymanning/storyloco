@@ -5,6 +5,7 @@ import { Logger } from "../shared/logger.js"
 import { load_local } from "./local.js"
 import { resolve_entry } from "./entry.js"
 import { generate_types } from "./generate.js"
+import { strip_schema } from "./strip.js"
 
 const name = "vite-storyblok-schema"
 const logger = new Logger(name)
@@ -313,6 +314,20 @@ export default function schema({
 			await regenerate()
 
 			interval = setInterval(regenerate, interval_ms)
+		},
+		/**
+		 * A block component's schema is for the schema entry alone, which reads module scripts
+		 * through its own loader (as `?schema&lang.ts`). In the app it's taken out before Svelte
+		 * compiles the component, so `@storyblok/schema` never reaches the bundle.
+		 */
+		transform: {
+			order: "pre",
+			async handler(code, id) {
+				if (!id.endsWith(".svelte") || id.includes("/node_modules/")) return null
+				const stripped = await strip_schema(code)
+				// positions are unchanged, so the map is the identity
+				return stripped === null ? null : { code: stripped, map: null }
+			},
 		},
 		closeBundle() {
 			stop_watching?.()

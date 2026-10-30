@@ -218,6 +218,28 @@ place rather than repeating them in every block:
 
 `editable` is still exported for anything `attrs` doesn't cover.
 
+**Images:** `image(asset, attrs?, options?)` gives an `<img>` everything it needs for a Storyblok
+asset, resized by Storyblok's image service. Spread it:
+
+```svelte
+<script lang="ts">
+	import { image } from 'storyloco'
+</script>
+
+<img {...image(blok.photo)} />
+<img {...image(blok.photo, { width: 1048, height: 587, loading: 'eager' })} />
+```
+
+- A `srcset` of widths up to the asset's own, so a phone fetches and decodes an image its own
+  size rather than the original. Pass `width` and `height` to crop to them.
+- The asset's focal point centres the crop and sets `object-position`; without one, Storyblok's
+  smart crop. `--aspect` is set from the size, for CSS to keep the space.
+- Alt text from the asset, `loading="lazy"` and `decoding="async"`, any of them overridden by
+  `attrs`. `options.quality` defaults to 85.
+- Nothing for an empty asset, so a field left blank spreads as nothing. `image.exists(asset)`
+  narrows to an asset with a file. SVGs pass through; an asset whose size isn't known is served
+  as it is, filters only.
+
 ### Read Content on the Server
 
 `storyloco/server` binds a client to the current request, so reads carry the version from
@@ -639,6 +661,9 @@ export default schema({
 - `bloks` takes the allowed blocks first, as a name or a non-empty list (folders and tags go in
   the list), then options. A lone options object, or nothing, allows every nestable block. Once
   types are generated, an unknown block name is a type error.
+- The schema stays out of the app: before Svelte compiles a component, the plugin takes out its
+  `export const schema` and the imports only that used, so `@storyblok/schema` never reaches the
+  bundle. Line numbers are kept. A component that uses `schema` at runtime keeps it.
 - Only the module script is read for the schema, so the component's markup and instance script
   can import anything the app can. `$lib` and your Vite aliases resolve. Dev regenerates types
   when a block file changes, is added, or is removed.
@@ -706,8 +731,34 @@ CLI's `schema push` on a plain-data copy of your schema, since that CLI can't lo
 files or `import.meta.glob`; `check --remote` compares the same copy. Both the short helpers and
 existing `@storyblok/schema` definitions are compatible.
 
-In a space shared with another site, push **without** `--delete`. Every component the schema
-doesn't name is "stale" to the CLI, and `--delete` would remove the other site's.
+**A space shared with another site:**
+
+When two sites keep their components in one space, each schema owns its own folders. Export
+`scope` from the entry, the folder or folders this schema owns:
+
+```typescript
+// src/schema.ts
+const brochure = folder({ name: 'Brochure' })
+
+/** The Brochure folder is this site's; the rest of the space is the other site's */
+export const scope = brochure
+```
+
+- Every block the schema defines must be in one of those folders, or a subfolder, so one site
+  can't redefine another's component and have their pushes undo each other.
+- `check --remote` compares the scope alone. The other site's components don't make it differ,
+  and they're counted rather than listed.
+- `push` lists only the scope's components, and tags every block it writes with the scope's
+  owner tag (`storyloco:Brochure`), beside any tags of its own. The first scoped push adds it.
+- `push --delete` deletes a component only when it's in the scope's folders _and_ has that tag,
+  so only what this schema pushed and no longer defines. A component made in the folder by hand,
+  or moved into it from another schema's folders, is listed and left alone. At a terminal it
+  asks before deleting; `--dry-run` lists what it would delete.
+- Both read the space's folders through the Management API, with
+  `STORYBLOK_PERSONAL_ACCESS_TOKEN` or the Storyblok CLI's login.
+
+Without a scope, `push --delete` is refused: every component the schema doesn't name would be
+stale, the other site's included.
 
 #### Storyblok Redirects Plugin
 
