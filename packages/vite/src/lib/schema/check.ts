@@ -4,7 +4,7 @@ import { load_local } from "./local.js"
 import { resolve_entry } from "./entry.js"
 import { cli_version } from "./migrate.js"
 import { run_cli } from "./run.js"
-import { folders, in_scope, management, scoped } from "./scope.js"
+import { folders, in_scope, management, scoped, type Space } from "./scope.js"
 
 interface Options {
 	entry?: string
@@ -59,12 +59,24 @@ function remote(options: Options) {
 
 /** The names a scoped run compares the space's output with */
 function own(local: Awaited<ReturnType<typeof load_local>>) {
-	const datasources = (local.schema as { datasources?: Record<string, { slug?: string }> })
-		.datasources
+	const datasources = (
+		local.schema as { datasources?: Record<string, { name?: string; slug?: string }> }
+	).datasources
 	return {
 		components: local.components.map((component) => component.name),
-		datasources: Object.entries(datasources ?? {}).map(([key, d]) => d?.slug ?? key),
+		// the CLI prints a datasource by its name
+		datasources: Object.entries(datasources ?? {}).flatMap(([key, d]) =>
+			[key, d?.name, d?.slug].filter((name): name is string => !!name)
+		),
 	}
+}
+
+/** The CLI's output for the scope alone, and a count of what it left out */
+function report(output: string | void, local: Awaited<ReturnType<typeof load_local>>, held: Space) {
+	const result = scoped(output ?? "", local.scope!, own(local), held)
+	console.log(result.text)
+	if (result.hidden) console.log(`${result.hidden} outside ${local.scope!.join(", ")} not shown.`)
+	return result
 }
 
 /**
@@ -82,10 +94,9 @@ export async function check_schema(
 		const { space, env } = remote(options)
 		const flat = await write_flat(root, local.schema)
 		const args = [`storyblok@${cli_version}`, "schema", "diff", "--from", space, "--to", flat]
-		if (!local.scope) args.push("--exit-code")
 		if (options.region) args.push("--region", options.region)
 		if (!local.scope) {
-			await run(args, { cwd: root, env })
+			await run([...args, "--exit-code"], { cwd: root, env })
 			return local.components.length
 		}
 
@@ -93,9 +104,7 @@ export async function check_schema(
 			run(args, { cwd: root, env, capture: true }),
 			management(space, env, options.region, request).then((api) => api.read()),
 		])
-		const { text, changed, hidden } = scoped(output ?? "", local.scope, own(local), held)
-		console.log(text)
-		if (hidden) console.log(`${hidden} outside ${local.scope.join(", ")} not shown.`)
+		const { changed } = report(output, local, held)
 		if (changed.length)
 			throw new Error(
 				`Schema differs from the space in ${local.scope.join(", ")}: ${changed.join(", ")}.`
@@ -135,9 +144,7 @@ export async function push_schema(
 	const output = await run(args, { cwd: root, env, capture: true })
 	const held = await api.read()
 	const names = own(local)
-	const { text, hidden } = scoped(output ?? "", local.scope, names, held)
-	console.log(text)
-	if (hidden) console.log(`${hidden} outside ${local.scope.join(", ")} not shown.`)
+	report(output, local, held)
 
 	if (options.delete) {
 		const { components } = folders(held)

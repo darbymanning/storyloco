@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import path from "node:path"
+import { stripVTControlCharacters } from "node:util"
 
 /**
  * A schema's scope: the folders it owns in a space other schemas share. Every block it defines
@@ -122,23 +123,26 @@ export function scoped(
 	let section: keyof typeof owned | undefined
 	let hidden = 0
 	const changed: Array<string> = []
-	const lines = output.split("\n").filter((line) => {
-		const heading = line.trim()
-		if (heading in owned) {
-			section = heading as keyof typeof owned
+	// the CLI colours its output when FORCE_COLOR is set, as CI often does; read it plain
+	const lines = stripVTControlCharacters(output)
+		.split("\n")
+		.filter((line) => {
+			const heading = line.trim()
+			if (heading in owned) {
+				section = heading as keyof typeof owned
+				return true
+			}
+			const entity = line.match(ENTITY)
+			// the CLI's own summary counts the whole space, so it's replaced
+			if (/^\s*(Summary:|⚠️)/.test(line)) return false
+			if (!entity || !section) return true
+			if (!owned[section](entity[1])) {
+				hidden++
+				return false
+			}
+			if (entity[2] !== "unchanged") changed.push(`${entity[1]} (${entity[2]})`)
 			return true
-		}
-		const entity = line.match(ENTITY)
-		// the CLI's own summary counts the whole space, so it's replaced
-		if (/^\s*(Summary:|⚠️)/.test(line)) return false
-		if (!entity || !section) return true
-		if (!owned[section](entity[1])) {
-			hidden++
-			return false
-		}
-		if (entity[2] !== "unchanged") changed.push(`${entity[1]} (${entity[2]})`)
-		return true
-	})
+		})
 	// a heading whose entities were all another schema's goes too
 	const shown = lines.filter(
 		(line, i) => !(line.trim() in owned) || ENTITY.test(lines[i + 1] ?? "")

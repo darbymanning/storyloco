@@ -67,7 +67,12 @@ function names_used(root: unknown, skip: Array<Node>): Set<string> {
 		const node = value as Node
 		let scope = shadowed
 		if (typeof node.type === "string") {
-			if (node.type.startsWith("TS") || node.type === "ImportDeclaration") return
+			if (node.type === "ImportDeclaration") return
+			// a type is skipped, but `x as T`, `x!` and `x satisfies T` hold runtime code in `expression`
+			if (node.type.startsWith("TS")) {
+				walk(node.expression, shadowed, node, "expression")
+				return
+			}
 			if (typeof node.start === "number" && skipped(node)) return
 			if (node.type === "Identifier") {
 				const property = parent?.type === "MemberExpression" && key === "property"

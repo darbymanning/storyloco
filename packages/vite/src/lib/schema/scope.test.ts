@@ -35,6 +35,34 @@ Datasources
 Summary: 1 changed, 4 stale
 ⚠️  4 stale entity(s) exist remotely but not in schema. Use --delete to remove.`
 
+describe("scoped output", () => {
+	test("reads the CLI's output plain when it's coloured", () => {
+		const coloured = diff.replace(
+			"~ brochure_card (changed)",
+			"\x1b[33m~ brochure_card (changed)\x1b[39m"
+		)
+		const { changed } = scoped(
+			coloured,
+			["Brochure"],
+			{ components: ["brochure_card"], datasources: [] },
+			space
+		)
+		expect(changed).toContain("brochure_card (changed)")
+	})
+
+	test("knows its own datasources by the name the CLI prints", () => {
+		const output = "Datasources\n  ~ Colours (changed)\n  - Asset+ (removed)"
+		const { changed, hidden } = scoped(
+			output,
+			["Brochure"],
+			{ components: [], datasources: ["colours", "Colours"] },
+			space
+		)
+		expect(changed).toEqual(["Colours (changed)"])
+		expect(hidden).toBe(1)
+	})
+})
+
 describe("in_scope", () => {
 	test("a folder, or one inside it, compared as the CLI prints them", () => {
 		expect(in_scope("Brochure", ["Brochure"])).toBe(true)

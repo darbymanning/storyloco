@@ -78,6 +78,16 @@ describe("strip_schema", () => {
 		expect(await strip_schema(source)).toMatch(/import \{\s+text \} from "storyloco\/schema"/)
 	})
 
+	test("an import used inside `as`, `!` or `satisfies` stays", async () => {
+		for (const use of ["text() as Field", "text()!", "text() satisfies Field"]) {
+			const source = component(
+				`\timport { block, text } from "storyloco/schema"\n\texport const schema = block("a", {})`,
+				`\tconst field = ${use}`
+			)
+			expect(await strip_schema(source)).toContain("text")
+		}
+	})
+
 	test("a type of the schema doesn't count as using it", async () => {
 		const source = component(
 			`\timport { block, type Props } from "storyloco/schema"\n\texport const schema = block("a", {})`,
