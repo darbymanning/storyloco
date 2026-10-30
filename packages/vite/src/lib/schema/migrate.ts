@@ -15,7 +15,10 @@ interface Options {
 	env?: NodeJS.ProcessEnv
 }
 
-type Runner = (args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => Promise<void>
+type Runner = (
+	args: string[],
+	options: { cwd: string; env: NodeJS.ProcessEnv }
+) => Promise<string | void>
 
 const run: Runner = (args, options) =>
 	run_cli(

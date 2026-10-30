@@ -4,6 +4,7 @@ import { load_local } from "./local.js"
 import { resolve_entry } from "./entry.js"
 import { cli_version } from "./migrate.js"
 import { run_cli } from "./run.js"
+import { folders, in_scope, management, scoped } from "./scope.js"
 
 interface Options {
 	entry?: string
@@ -13,7 +14,10 @@ interface Options {
 	env?: NodeJS.ProcessEnv
 }
 
-type Runner = (args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) => Promise<void>
+type Runner = (
+	args: string[],
+	options: { cwd: string; env: NodeJS.ProcessEnv; capture?: boolean }
+) => Promise<string | void>
 
 async function load(options: Options) {
 	const root = path.resolve(options.root ?? process.cwd())
@@ -53,45 +57,105 @@ function remote(options: Options) {
 	return { space, env }
 }
 
-export async function check_schema(options: Options & { remote?: boolean } = {}, run = run_diff) {
+/** The names a scoped run compares the space's output with */
+function own(local: Awaited<ReturnType<typeof load_local>>) {
+	const datasources = (local.schema as { datasources?: Record<string, { slug?: string }> })
+		.datasources
+	return {
+		components: local.components.map((component) => component.name),
+		datasources: Object.entries(datasources ?? {}).map(([key, d]) => d?.slug ?? key),
+	}
+}
+
+/**
+ * Validate the schema, and with `remote`, compare it with the space. A scoped schema is compared
+ * with its own folders alone: another schema's components in the space don't make it differ.
+ */
+export async function check_schema(
+	options: Options & { remote?: boolean } = {},
+	run: Runner = run_diff,
+	request = fetch
+) {
 	const { root, local } = await load(options)
 
 	if (options.remote) {
 		const { space, env } = remote(options)
 		const flat = await write_flat(root, local.schema)
-		const args = [
-			`storyblok@${cli_version}`,
-			"schema",
-			"diff",
-			"--from",
-			space,
-			"--to",
-			flat,
-			"--exit-code",
-		]
+		const args = [`storyblok@${cli_version}`, "schema", "diff", "--from", space, "--to", flat]
+		if (!local.scope) args.push("--exit-code")
 		if (options.region) args.push("--region", options.region)
-		await run(args, { cwd: root, env })
+		if (!local.scope) {
+			await run(args, { cwd: root, env })
+			return local.components.length
+		}
+
+		const [output, held] = await Promise.all([
+			run(args, { cwd: root, env, capture: true }),
+			management(space, env, options.region, request).then((api) => api.read()),
+		])
+		const { text, changed, hidden } = scoped(output ?? "", local.scope, own(local), held)
+		console.log(text)
+		if (hidden) console.log(`${hidden} outside ${local.scope.join(", ")} not shown.`)
+		if (changed.length)
+			throw new Error(
+				`Schema differs from the space in ${local.scope.join(", ")}: ${changed.join(", ")}.`
+			)
 	}
 
 	return local.components.length
 }
 
+/**
+ * Push the schema. A push only ever creates and updates what the schema defines. `delete` also
+ * removes the space's components in the schema's scope that it no longer defines, so it needs a
+ * scope: unscoped, every component another schema in the space defines would count as stale.
+ */
 export async function push_schema(
-	options: Options & { dry_run?: boolean } = {},
+	options: Options & { dry_run?: boolean; delete?: boolean } = {},
 	run: Runner = (args, opts) =>
-		run_cli(args, opts, (code, signal) => `Schema push failed (${signal ?? code}).`)
+		run_cli(args, opts, (code, signal) => `Schema push failed (${signal ?? code}).`),
+	request = fetch
 ) {
 	const { space, env } = remote(options)
 	const { root, local } = await load(options)
+	if (options.delete && !local.scope)
+		throw new Error(
+			"push --delete needs the schema's scope: export `scope`, the folders it owns, from the entry. Without one it would delete every component another schema in the space defines."
+		)
 	const flat = await write_flat(root, local.schema)
 	const args = [`storyblok@${cli_version}`, "schema", "push", flat, "--space", space]
 	if (options.dry_run) args.push("--dry-run")
 	if (options.region) args.push("--region", options.region)
-	await run(args, { cwd: root, env })
+	if (!local.scope) {
+		await run(args, { cwd: root, env })
+		return local.components.length
+	}
+
+	const api = await management(space, env, options.region, request)
+	const output = await run(args, { cwd: root, env, capture: true })
+	const held = await api.read()
+	const names = own(local)
+	const { text, hidden } = scoped(output ?? "", local.scope, names, held)
+	console.log(text)
+	if (hidden) console.log(`${hidden} outside ${local.scope.join(", ")} not shown.`)
+
+	if (options.delete) {
+		const { components } = folders(held)
+		const stale = held.components.filter(
+			(c) => !names.components.includes(c.name) && in_scope(components.get(c.name), local.scope!)
+		)
+		for (const component of stale) {
+			if (!options.dry_run) await api.delete(component.id)
+			console.log(`${options.dry_run ? "Would delete" : "Deleted"} ${component.name}`)
+		}
+	}
 	return local.components.length
 }
 
-function run_diff(args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): Promise<void> {
+function run_diff(
+	args: string[],
+	options: { cwd: string; env: NodeJS.ProcessEnv; capture?: boolean }
+): Promise<string> {
 	return run_cli(args, options, (code, signal) =>
 		code === 1
 			? "Schema differs from the space. Review the diff above."

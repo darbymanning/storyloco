@@ -17,6 +17,8 @@ Export a Storyblok space's GUI models into schema files. Does not change the spa
   --region <region> Storyblok region (defaults to eu when using an environment token)
   --remote          Compare with the space as well (check only)
   --dry-run         Show what push would change without changing it
+  --delete          Also delete the space's components in the schema's scope that it no longer
+                    defines (push only; needs \`export const scope\` in the entry)
   --help            Show this help
 
 Reads .env, .env.local, then the shell environment. Use STORYBLOK_PERSONAL_ACCESS_TOKEN
@@ -31,6 +33,7 @@ export async function main(args: string[]) {
 		options: {
 			remote: { type: "boolean" },
 			"dry-run": { type: "boolean" },
+			delete: { type: "boolean" },
 			space: { type: "string" },
 			entry: { type: "string" },
 			"out-dir": { type: "string" },
@@ -72,6 +75,7 @@ export async function main(args: string[]) {
 		const count = await push_schema({
 			entry: values.entry,
 			dry_run: values["dry-run"],
+			delete: values.delete,
 			space: values.space,
 			region: values.region,
 			env,

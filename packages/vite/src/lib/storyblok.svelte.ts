@@ -453,3 +453,6 @@ export function attrs<T extends BlokFields>(blok: T & { _uid?: string; _editable
 
 /** Re-export commonly used Storyblok utilities */
 export { editable, Block, richtext }
+
+/** Storyblok image attributes: see `image.ts` */
+export { image, type Asset } from "./image.js"

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises"
 import { validateSchema, type SchemaLike } from "@storyblok/schema"
 import path from "node:path"
 import { plugin_types } from "./plugins.js"
+import { in_scope, type Scope } from "./scope.js"
 
 /**
  * A space's schema defined in code with `@storyblok/schema` (`defineSchema`, `defineBlock`,
@@ -69,6 +70,8 @@ export interface Component {
 	schema: Record<string, Record<string, unknown>>
 	[key: string]: unknown
 }
+
+type Folder = NonNullable<LocalBlock["folder"]>
 
 /** `defineFolder` keeps its parent as another folder; a path names it the way `allow` does. */
 function folder_path(folder: LocalBlock["folder"]): string | undefined {
@@ -175,6 +178,7 @@ export async function load_local(
 	const { module, dependencies } = await runnerImport<{
 		schema?: LocalSchema
 		default?: LocalSchema
+		scope?: Folder | ReadonlyArray<Folder>
 	}>(entry, {
 		resolve: { alias },
 		plugins: [
@@ -234,6 +238,21 @@ export async function load_local(
 		)
 	const schema = with_own_plugins(exported)
 
+	// A scope is the folders this schema owns in a space it shares; its blocks are all in them
+	const scope: Scope | undefined =
+		module.scope === undefined
+			? undefined
+			: [module.scope].flat().map((folder) => folder_path(folder as Folder)!)
+	if (scope) {
+		const outside = Object.values(schema.blocks).filter(
+			(b) => !in_scope(folder_path(b.folder), scope)
+		)
+		if (outside.length)
+			throw new Error(
+				`${entry} scopes its schema to ${scope.join(", ")}, which ${outside.map((b) => b.name).join(", ")} ${outside.length === 1 ? "isn't" : "aren't"} in: give ${outside.length === 1 ? "it" : "each"} one of those folders, or widen \`scope\``
+			)
+	}
+
 	const validation = validateSchema(schema as SchemaLike)
 	const errors = validation.issues.filter((issue) => issue.severity === "error")
 	if (errors.length)
@@ -242,6 +261,7 @@ export async function load_local(
 		)
 	return {
 		schema,
+		scope,
 		named: !!module.schema,
 		components: to_components(schema),
 		dependencies: dependencies ?? [],
