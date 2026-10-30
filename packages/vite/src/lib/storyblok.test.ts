@@ -87,6 +87,13 @@ describe("href", () => {
 		expect(href({ linktype: "email", email: "" })).toBeUndefined()
 	})
 
+	// the native generator types a multilink's unset parts as null
+	test("null parts count as unset", () => {
+		expect(href({ linktype: "story", cached_url: "a", anchor: null })).toBe("/a")
+		expect(href({ linktype: "url", url: null, cached_url: null })).toBeUndefined()
+		expect(href({ linktype: "email", email: null, url: null })).toBeUndefined()
+	})
+
 	test("an anchor alone stays on the page", () => {
 		expect(href({ linktype: "story", cached_url: "", anchor: "top" })).toBe("#top")
 	})
