@@ -340,13 +340,13 @@ export type Resolved<T extends { story?: unknown }> = T & {
 	story?: NonNullable<T["story"]> & { url?: string }
 }
 
-/** Structural, so a generated `StoryblokMultilink` satisfies it. */
+/** Structural, so a generated multilink satisfies it: the native generator types unset parts as `null`. */
 interface Link {
 	linktype?: string
-	url?: string
-	cached_url?: string
-	anchor?: string
-	email?: string
+	url?: string | null
+	cached_url?: string | null
+	anchor?: string | null
+	email?: string | null
 	// The index signature stops TypeScript rejecting the generated `story` as a weak type
 	story?: { url?: string; [key: string]: unknown }
 }
