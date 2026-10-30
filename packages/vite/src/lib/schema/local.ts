@@ -1,10 +1,11 @@
 import { runnerImport } from "vite"
+import { validateSchema, type SchemaLike } from "@storyblok/schema"
+import path from "node:path"
 
 /**
  * A space's schema defined in code with `@storyblok/schema` (`defineSchema`, `defineBlock`,
  * `defineField`…), read for its types. Nothing is imported from the package itself: its
- * definitions are plain objects, and reading them as such keeps it an optional dependency of
- * the site's rather than ours.
+ * definitions are plain objects, so either the upstream helpers or `storyloco/schema` work.
  */
 /** A block name, or the blocks in a folder or with a tag, as `allow` and `deny` list them */
 type Entry = string | { folder?: string; tag?: string }
@@ -12,17 +13,17 @@ type Entry = string | { folder?: string; tag?: string }
 interface LocalField {
 	name?: string
 	type?: string
-	allow?: Array<Entry>
-	deny?: Array<Entry>
+	allow?: ReadonlyArray<Entry>
+	deny?: ReadonlyArray<Entry>
 	datasource?: string
 	[key: string]: unknown
 }
 
 interface LocalBlock {
 	name: string
-	fields?: Array<LocalField>
+	fields?: ReadonlyArray<LocalField>
 	folder?: string | { name: string; parent?: unknown } | null
-	tags?: Array<string>
+	tags?: ReadonlyArray<string>
 	is_nestable?: boolean
 	[key: string]: unknown
 }
@@ -110,13 +111,38 @@ export function to_components(schema: LocalSchema): Array<Component> {
  * The schema entry's components, and the files it was read from (for a dev server to watch).
  * The entry exports the `defineSchema` result as `schema` or as its default.
  */
-export async function load_local(entry: string) {
+export async function load_local(entry: string, on_file?: (file: string) => void) {
 	const { module, dependencies } = await runnerImport<{
 		schema?: LocalSchema
 		default?: LocalSchema
-	}>(entry)
+	}>(entry, {
+		plugins: [
+			{
+				name: "storyloco-schema-dependencies",
+				enforce: "pre",
+				load(id) {
+					// Register files before parsing/evaluating them: runnerImport only returns
+					// its dependency list on success, but broken imports need watching too.
+					const file = id.split("?")[0]
+					if (path.isAbsolute(file)) on_file?.(file)
+					return null
+				},
+			},
+		],
+	})
 	const schema = module.schema ?? module.default
 	if (!schema?.blocks)
 		throw new Error(`${entry} exports no schema: export the defineSchema result as \`schema\``)
-	return { components: to_components(schema), dependencies: dependencies ?? [] }
+	const validation = validateSchema(schema as SchemaLike)
+	const errors = validation.issues.filter((issue) => issue.severity === "error")
+	if (errors.length)
+		throw new Error(
+			`${entry}\n${errors.map((issue) => `${issue.entity} ${issue.path.join(".")}: ${issue.message}`).join("\n")}`
+		)
+	return {
+		schema,
+		named: !!module.schema,
+		components: to_components(schema),
+		dependencies: dependencies ?? [],
+	}
 }
