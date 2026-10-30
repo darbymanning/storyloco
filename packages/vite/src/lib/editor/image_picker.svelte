@@ -130,6 +130,8 @@
 	/** A folder's whole name, when the tree has had to cut it short */
 	let tip = $state<{ text: string; x: number; y: number } | null>(null)
 	function name_tip(event: Event) {
+		// a pointer that can't hover shows no tips
+		if (event instanceof PointerEvent && event.pointerType !== "mouse") return
 		const button = event.currentTarget as HTMLElement
 		const name = button.querySelector("span")!
 		if (name.scrollWidth <= name.clientWidth) return
