@@ -1,6 +1,8 @@
-import { runnerImport } from "vite"
+import { runnerImport, type AliasOptions, type Plugin } from "vite"
+import { readFile } from "node:fs/promises"
 import { validateSchema, type SchemaLike } from "@storyblok/schema"
 import path from "node:path"
+import { plugin_types } from "./plugins.js"
 
 /**
  * A space's schema defined in code with `@storyblok/schema` (`defineSchema`, `defineBlock`,
@@ -30,6 +32,35 @@ interface LocalBlock {
 
 interface LocalSchema {
 	blocks: Record<string, LocalBlock>
+	fieldPlugins?: Record<string, { fieldType?: string; [key: string]: unknown }>
+}
+
+/**
+ * Registers each of Storyloco's own plugins a field uses but the schema doesn't, so `mux()` and
+ * friends need no `fieldPlugins` entry. Their values are typed by the generator, so the validator
+ * here accepts anything, as a placeholder field plugin does.
+ */
+function with_own_plugins(schema: LocalSchema): LocalSchema {
+	const plugins = { ...schema.fieldPlugins }
+	const registered = new Set(Object.values(plugins).map((plugin) => plugin.fieldType))
+	for (const block of Object.values(schema.blocks))
+		for (const field of block?.fields ?? []) {
+			const type = field.field_type
+			if (field.type !== "custom" || typeof type !== "string" || registered.has(type)) continue
+			if (!Object.hasOwn(plugin_types, type)) continue
+			registered.add(type)
+			plugins[`storyloco:${type}`] = {
+				fieldType: type,
+				value: {
+					"~standard": {
+						version: 1,
+						vendor: "storyloco",
+						validate: (value: unknown) => ({ value }),
+					},
+				},
+			}
+		}
+	return Object.keys(plugins).length ? { ...schema, fieldPlugins: plugins } : schema
 }
 
 /** A component as the Management API returns it, which the type generator reads. */
@@ -108,16 +139,44 @@ export function to_components(schema: LocalSchema): Array<Component> {
 }
 
 /**
+ * A block component's `<script module>`, where it can export its `block()`, so an entry can
+ * import or glob `.svelte` files. The rest of the component is left out: its markup and instance
+ * script may import what only the app can resolve. The script is served as `?schema&lang.ts`,
+ * the way Vue serves its SFC blocks, so Vite strips the TypeScript.
+ */
+const svelte_module: Plugin = {
+	name: "storyloco-schema-svelte",
+	async load(id) {
+		const [file, query] = id.split("?")
+		if (!file.endsWith(".svelte")) return null
+		if (query !== "schema&lang.ts")
+			return `export * from ${JSON.stringify(`${file}?schema&lang.ts`)}`
+		const { parse } = await import("svelte/compiler")
+		const source = await readFile(file, "utf8")
+		const { module } = parse(source, { modern: true })
+		const { start, end } = (module?.content as unknown as { start: number; end: number }) ?? {}
+		if (!module) return ""
+		// Blank what precedes the script, newlines kept, so error positions are the file's own
+		return source.slice(0, start).replace(/[^\n]/g, " ") + source.slice(start, end)
+	},
+}
+
+/**
  * The schema entry's components, and the files it was read from (for a dev server to watch).
  * The entry exports the `defineSchema` result as `schema` or as its default.
  */
-export async function load_local(entry: string, on_file?: (file: string, watch?: boolean) => void) {
+export async function load_local(
+	entry: string,
+	on_file?: (file: string, watch?: boolean) => void,
+	alias: AliasOptions = { $lib: path.resolve(path.dirname(entry), "lib") }
+) {
 	const loaded_files = new Set<string>()
 
 	const { module, dependencies } = await runnerImport<{
 		schema?: LocalSchema
 		default?: LocalSchema
 	}>(entry, {
+		resolve: { alias },
 		plugins: [
 			{
 				name: "storyloco-schema-dependencies",
@@ -161,12 +220,19 @@ export async function load_local(entry: string, on_file?: (file: string, watch?:
 					return null
 				},
 			},
+			svelte_module,
 		],
 	})
 
-	const schema = module.schema ?? module.default
-	if (!schema?.blocks)
+	const exported = module.schema ?? module.default
+	if (!exported?.blocks)
 		throw new Error(`${entry} exports no schema: export the defineSchema result as \`schema\``)
+	const missing = Object.entries(exported.blocks).filter(([, block]) => !block)
+	if (missing.length)
+		throw new Error(
+			`${entry} lists blocks that are undefined: ${missing.map(([key]) => key).join(", ")}. A globbed .svelte file must export \`schema\` from its <script module>.`
+		)
+	const schema = with_own_plugins(exported)
 
 	const validation = validateSchema(schema as SchemaLike)
 	const errors = validation.issues.filter((issue) => issue.severity === "error")

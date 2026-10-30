@@ -1,5 +1,6 @@
 import path from "node:path"
 import type { Component } from "./local.js"
+import { plugin_types } from "./plugins.js"
 
 export function type_name(name: string) {
 	const clean = name
@@ -92,7 +93,7 @@ export function generate_types(
 			T extends object
 				? { [K in keyof T]: K extends "content" ? Richtext<T[K], B> : T[K] } : T`,
 		"",
-		"export type PluginValue<K extends string> = K extends keyof StoryblokCustomPlugins ? StoryblokCustomPlugins[K] : unknown",
+		"export type PluginValue<K extends string, Known = unknown> = K extends keyof StoryblokCustomPlugins ? StoryblokCustomPlugins[K] : Known",
 		"export type Blok<T> = T & { component?: string; _uid?: string; _editable?: string }",
 		'export type { AssetFieldValue as StoryblokAsset, MultilinkFieldValue as StoryblokMultilink, RichTextFieldValue as StoryblokRichtext, TableFieldValue as StoryblokTable } from "storyloco/schema"'
 	)
@@ -120,9 +121,14 @@ export function generate_types(
 					field.type === "bloks"
 						? `(${types.join(" | ") || "never"})[]`
 						: `Richtext<RichTextFieldValue, ${types.join(" | ") || "never"}>`
-			} else if (field.type === "custom")
-				value = `PluginValue<${JSON.stringify(field.field_type ?? "")}>`
-			else
+			} else if (field.type === "custom") {
+				// A registered field plugin wins; Storyloco's own plugins are typed without one
+				const plugin = String(field.field_type ?? "")
+				const known = Object.hasOwn(plugin_types, plugin)
+					? plugin_types[plugin as keyof typeof plugin_types]
+					: undefined
+				value = `PluginValue<${JSON.stringify(plugin)}${known ? `, ${known}` : ""}>`
+			} else
 				value = `FieldValue<Extract<Field, { type: ${JSON.stringify(field.type)} }> & ${JSON.stringify(field)}>`
 			lines.push(`${JSON.stringify(key)}${field.required ? "" : "?"}: ${value}`)
 		}
@@ -136,7 +142,10 @@ export function generate_types(
 			.map((c) => `${JSON.stringify(c.name)}: ${names.get(c.name)}`),
 		"}",
 		"export type ContentType = ContentTypes[keyof ContentTypes]",
-		'declare module "storyloco" { interface Registry extends ContentTypes {} }'
+		'declare module "storyloco" { interface Registry extends ContentTypes {} }',
+		'declare module "storyloco/schema" { interface Blocks {',
+		...components.map((c) => `${JSON.stringify(c.name)}: ${names.get(c.name)}`),
+		"} }"
 	)
 	return lines.join("\n") + "\n"
 }

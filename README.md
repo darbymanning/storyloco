@@ -584,6 +584,66 @@ available. For a named export, use `import { define_schema } from 'storyloco/sch
   reads the GUI models, even with `src/schema.ts` present. An explicit entry that fails to load
   reports the error; it never silently generates from the space instead.
 
+**Blocks colocated with their components:**
+
+A block can define its schema in its own component's `<script module>`, and type its props from
+it. `block(name, fields, options?)` takes fields keyed by name, in editor order, with a helper per
+field type (`text`, `textarea`, `richtext`, `markdown`, `number`, `datetime`, `boolean`, `option`,
+`options`, `asset`, `multiasset`, `multilink`, `table`, `section`, `tab`, `custom`, and `bloks`):
+
+Storyloco's field plugins have helpers too, typed with their plugin's value without a
+`fieldPlugins` entry: `mux`, `link`, `heading`, `input`, `currency`, `r2_asset`, `dates`, `time`,
+`seo`, `hubspot_form`, `plans`, `churchsuite_categories`, `blok_select`, and `theme`. Each is a
+`custom` field on the plugin's `uiloco-*` name, so `video: mux({ required: true })` gives
+`blok.video` the `Video` type from `storyloco/mux`. `r2_asset` is the R2 asset plugin; `asset` is
+Storyblok's own asset field. A plugin you register in `fieldPlugins` keeps its own type.
+
+```svelte
+<!-- src/lib/bloks/hero.svelte -->
+<script module lang="ts">
+	import { block, text, asset, bloks, type Props } from 'storyloco/schema'
+
+	export const schema = block('hero', {
+		title: text({ required: true }),
+		image: asset({ filetypes: ['images'] }),
+		items: bloks(['teaser', 'card'], { minimum: 1, maximum: 6 })
+	})
+</script>
+
+<script lang="ts">
+	let { blok }: Props<'hero'> = $props()
+</script>
+
+<h1>{blok.title}</h1>
+```
+
+Then glob the blocks from the entry:
+
+```typescript
+// src/schema.ts
+import { schema, block, bloks, type Block } from 'storyloco/schema'
+
+const page = block('page', { body: bloks('hero') }, { is_root: true })
+
+export default schema({
+	blocks: {
+		page,
+		...import.meta.glob<Block>('./lib/bloks/*.svelte', { eager: true, import: 'schema' })
+	}
+})
+```
+
+- `Props<'hero'>` types `blok` from the generated schema, nested blocks and field plugins
+  included. `Props<'hero', { class?: string }>` adds props; `Props<typeof schema>` types it from
+  the definition alone, before types are generated.
+- `bloks` takes the allowed blocks first, as a name or a non-empty list (folders and tags go in
+  the list), then options. A lone options object, or nothing, allows every nestable block. Once
+  types are generated, an unknown block name is a type error.
+- Only the module script is read for the schema, so the component's markup and instance script
+  can import anything the app can. `$lib` and your Vite aliases resolve. Dev regenerates types
+  when a block file changes, is added, or is removed.
+- The object form and the upstream `block({ name, fields: [...] })` form mix freely.
+
 **Migrate existing GUI models:**
 
 ```sh
@@ -640,9 +700,11 @@ Storyloco registry. Field values now follow `@storyblok/schema`'s definitions, i
 values for Storyblok number fields and precise option values. Check downstream assignments
 when adopting this generator.
 
-Pushing stays the Storyblok CLI's: `bunx storyblok@4.25.0 schema push src/schema.ts --space <id> --dry-run`
-to review the diff, then without `--dry-run` to apply it. Both the short helpers and existing
-`@storyblok/schema` definitions are compatible.
+Push with `bunx storyloco schema push --dry-run` to review the diff, then without `--dry-run` to
+apply it (`--space`, `--region`, and `--entry` work as for `check`). It runs the pinned Storyblok
+CLI's `schema push` on a plain-data copy of your schema, since that CLI can't load `.svelte`
+files or `import.meta.glob`; `check --remote` compares the same copy. Both the short helpers and
+existing `@storyblok/schema` definitions are compatible.
 
 In a space shared with another site, push **without** `--delete`. Every component the schema
 doesn't name is "stale" to the CLI, and `--delete` would remove the other site's.

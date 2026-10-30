@@ -27,6 +27,7 @@
 		"packages/asset/types.ts",
 		"packages/asset/r2.ts",
 		"packages/theme/types.ts",
+		"packages/blok_select/types.ts",
 		"packages/shared/dist",
 		"packages/vite/dist",
 		"packages/vite/dist-editor",
@@ -128,6 +129,9 @@
 		},
 		"./churchsuite_categories": {
 			"types": "./packages/churchsuite_categories/types.ts"
+		},
+		"./blok_select": {
+			"types": "./packages/blok_select/types.ts"
 		},
 		"./schema": {
 			"types": "./packages/vite/dist/schema/index.d.ts",

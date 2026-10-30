@@ -2,6 +2,7 @@ import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "nod
 import path from "node:path"
 import { default_entry } from "./entry.js"
 import { run_cli } from "./run.js"
+import { plugin_types } from "./plugins.js"
 
 export const cli_version = "4.25.0"
 
@@ -43,20 +44,17 @@ export function storyloco_imports(source: string) {
 	)
 }
 
+/** Storyloco's plugins, and the names older spaces deployed some of them under. */
 const known_plugins: Record<string, string> = {
+	...plugin_types,
 	"loco-link-field": 'import("storyloco/link").Link',
 	"mux-video": 'import("storyloco/mux").Video',
 	"video-mux": 'import("storyloco/mux").Video',
-	"uiloco-currency": 'import("storyloco/currency").Currency',
-	"uiloco-input": 'import("storyloco/input").Input',
 	"heading-field": 'import("storyloco/heading").Heading',
-	"uiloco-heading": 'import("storyloco/heading").Heading',
 	"mux-field": 'import("storyloco/mux").Video',
 	"loco-mux": 'import("storyloco/mux").Video',
-	"uiloco-mux": 'import("storyloco/mux").Video',
 	"loco-link": 'import("storyloco/link").Link',
 	"link-field": 'import("storyloco/link").Link',
-	"uiloco-link": 'import("storyloco/link").Link',
 	"loco-input": 'import("storyloco/input").Input',
 	"loco-time": "string",
 	"loco-currency": 'import("storyloco/currency").Currency',

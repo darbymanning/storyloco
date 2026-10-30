@@ -1,4 +1,4 @@
-import { type Plugin, type FSWatcher, type ViteDevServer, loadEnv } from "vite"
+import { type AliasOptions, type Plugin, type FSWatcher, type ViteDevServer, loadEnv } from "vite"
 import { writeFile, readFile, mkdir, chmod, rename } from "node:fs/promises"
 import path from "node:path"
 import { Logger } from "../shared/logger.js"
@@ -142,6 +142,7 @@ export default function schema({
 	let named = true
 	let had_error = false
 	let local_entry: string | undefined
+	let alias: AliasOptions | undefined
 	let build_run: Promise<void> | null = null
 	/** What the local schema was read from, so a dev server knows what to watch: the entry until it first loads. */
 	let local_files = new Set<string>()
@@ -166,7 +167,7 @@ export default function schema({
 	/** The space's components: from the schema in code where there is one, from the API otherwise. */
 	async function components(token: string, space_id: string) {
 		if (local_entry) {
-			const local = await load_local(local_entry, watch_file)
+			const local = await load_local(local_entry, watch_file, alias)
 			local_files = new Set([local_entry, ...local.dependencies.map((file) => path.resolve(file))])
 			watcher?.add([...local_files])
 			named = local.named
@@ -258,6 +259,7 @@ export default function schema({
 		async configResolved(config) {
 			mode = config.mode
 			root = config.root
+			alias = config.resolve.alias
 			building = config.command === "build"
 			local_entry = await resolve_entry(config.root, entry)
 			local_files = new Set(local_entry ? [local_entry] : [])
@@ -284,7 +286,9 @@ export default function schema({
 				// `add` too: an editor that saves by renaming a new file over the old one reports that
 				const on_change = (event: string, file: string) => {
 					if (event !== "change" && event !== "add" && event !== "unlink") return
-					if (!local_files.has(path.resolve(file))) return
+					// A block file added or removed may be one the entry globs, which no import names yet
+					const block_file = event !== "change" && file.endsWith(".svelte")
+					if (!block_file && !local_files.has(path.resolve(file))) return
 					clearTimeout(pending)
 					pending = setTimeout(regenerate, 100)
 				}

@@ -2,11 +2,12 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { parseArgs, parseEnv } from "node:util"
 import { migrate } from "./migrate.js"
-import { check_schema } from "./check.js"
+import { check_schema, push_schema } from "./check.js"
 
-const help = `Usage: storyloco schema <migrate|check> [options]
+const help = `Usage: storyloco schema <migrate|check|push> [options]
 
 check validates the local schema offline; check --remote also fails on space drift.
+push sends the local schema to the space (try --dry-run first).
 
 Export a Storyblok space's GUI models into schema files. Does not change the space.
 
@@ -15,6 +16,7 @@ Export a Storyblok space's GUI models into schema files. Does not change the spa
   --out-dir <dir>    Defaults to the entry path without .ts
   --region <region> Storyblok region (defaults to eu when using an environment token)
   --remote          Compare with the space as well (check only)
+  --dry-run         Show what push would change without changing it
   --help            Show this help
 
 Reads .env, .env.local, then the shell environment. Use STORYBLOK_PERSONAL_ACCESS_TOKEN
@@ -28,6 +30,7 @@ export async function main(args: string[]) {
 		allowPositionals: true,
 		options: {
 			remote: { type: "boolean" },
+			"dry-run": { type: "boolean" },
 			space: { type: "string" },
 			entry: { type: "string" },
 			"out-dir": { type: "string" },
@@ -39,7 +42,8 @@ export async function main(args: string[]) {
 		console.log(help)
 		return
 	}
-	if (!["schema migrate", "schema check"].includes(positionals.join(" "))) throw new Error(help)
+	if (!["schema migrate", "schema check", "schema push"].includes(positionals.join(" ")))
+		throw new Error(help)
 
 	const env: NodeJS.ProcessEnv = {}
 	for (const file of [".env", ".env.local"]) {
@@ -61,6 +65,20 @@ export async function main(args: string[]) {
 			env,
 		})
 		console.log(`Schema valid: ${count} blocks${values.remote ? "; space matches" : ""}.`)
+		return
+	}
+
+	if (positionals[1] === "push") {
+		const count = await push_schema({
+			entry: values.entry,
+			dry_run: values["dry-run"],
+			space: values.space,
+			region: values.region,
+			env,
+		})
+		console.log(
+			`Schema ${values["dry-run"] ? "checked against" : "pushed to"} the space: ${count} blocks.`
+		)
 		return
 	}
 

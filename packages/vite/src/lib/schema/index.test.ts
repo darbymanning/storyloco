@@ -1,10 +1,9 @@
 import { expect, test } from "bun:test"
-import { defineBlock, defineField, defineSchema } from "@storyblok/schema"
+import { defineField, defineSchema } from "@storyblok/schema"
 import { block, field, folder, datasource, schema, define_schema, type Schema } from "./index.js"
 import { to_components } from "./local.js"
 
 test("short helpers preserve the upstream functions and schema inference", () => {
-	expect(block).toBe(defineBlock)
 	expect(field).toBe(defineField)
 	expect(schema).toBe(defineSchema)
 	expect(define_schema).toBe(schema)
