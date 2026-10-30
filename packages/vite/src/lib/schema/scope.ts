@@ -16,6 +16,13 @@ const slug = (name: string) =>
 		.replace(/[^a-z0-9/]+/g, "-")
 		.replace(/(^-|-$)|-?(\/)-?/g, "$2")
 
+/**
+ * The block tag a scoped push puts on every component it writes, naming the scope: `push --delete`
+ * deletes only a component in the scope's folders that has it. A component someone moved into the
+ * folders by hand, or another schema pushed, has none, or another schema's, so it's left alone.
+ */
+export const owner_tag = (scope: Scope) => `storyloco:${scope.join("+")}`
+
 /** Whether a folder path is one of the scope's folders, or inside one */
 export function in_scope(folder: string | undefined, scope: Scope) {
 	if (!folder) return false
@@ -25,7 +32,12 @@ export function in_scope(folder: string | undefined, scope: Scope) {
 
 /** What the space holds that a scoped check needs: its components, and the folders they're in */
 export interface Space {
-	components: Array<{ id: number; name: string; component_group_uuid?: string | null }>
+	components: Array<{
+		id: number
+		name: string
+		component_group_uuid?: string | null
+		internal_tags_list?: Array<{ name: string }> | null
+	}>
 	component_groups: Array<{ uuid: string; name: string; parent_uuid?: string | null }>
 }
 
@@ -121,6 +133,8 @@ export function scoped(
 		Datasources: (name: string) => local.datasources.includes(name),
 	}
 	let section: keyof typeof owned | undefined
+	// the detail lines under a hidden entity (`~ tags`, `- []`) are hidden with it
+	let hiding = false
 	let hidden = 0
 	const changed: Array<string> = []
 	// the CLI colours its output when FORCE_COLOR is set, as CI often does; read it plain
@@ -130,13 +144,15 @@ export function scoped(
 			const heading = line.trim()
 			if (heading in owned) {
 				section = heading as keyof typeof owned
+				hiding = false
 				return true
 			}
 			const entity = line.match(ENTITY)
 			// the CLI's own summary counts the whole space, so it's replaced
 			if (/^\s*(Summary:|⚠️)/.test(line)) return false
-			if (!entity || !section) return true
-			if (!owned[section](entity[1])) {
+			if (!entity || !section) return !(hiding && /^\s{4,}\S/.test(line))
+			hiding = !owned[section](entity[1])
+			if (hiding) {
 				hidden++
 				return false
 			}

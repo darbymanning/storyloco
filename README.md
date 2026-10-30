@@ -748,8 +748,12 @@ export const scope = brochure
   can't redefine another's component and have their pushes undo each other.
 - `check --remote` compares the scope alone. The other site's components don't make it differ,
   and they're counted rather than listed.
-- `push` lists only the scope's components. `push --delete` deletes the components in the scope
-  that the schema no longer defines, never the other site's; `--dry-run` lists them instead.
+- `push` lists only the scope's components, and tags every block it writes with the scope's
+  owner tag (`storyloco:Brochure`), beside any tags of its own. The first scoped push adds it.
+- `push --delete` deletes a component only when it's in the scope's folders _and_ has that tag,
+  so only what this schema pushed and no longer defines. A component made in the folder by hand,
+  or moved into it from another schema's folders, is listed and left alone. At a terminal it
+  asks before deleting; `--dry-run` lists what it would delete.
 - Both read the space's folders through the Management API, with
   `STORYBLOK_PERSONAL_ACCESS_TOKEN` or the Storyblok CLI's login.
 

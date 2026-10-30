@@ -5,6 +5,8 @@ import { tmpdir } from "node:os"
 import { in_scope, scoped, type Space } from "./scope.js"
 import { check_schema, push_schema } from "./check.js"
 
+const own = { name: "storyloco:Brochure" }
+
 // Another schema's components share the space: `hero` and `card`, in Components
 const space: Space = {
 	component_groups: [
@@ -12,10 +14,18 @@ const space: Space = {
 		{ uuid: "c", name: "Components" },
 	],
 	components: [
-		{ id: 1, name: "brochure_card", component_group_uuid: "b" },
-		{ id: 2, name: "brochure_old", component_group_uuid: "b" },
+		{ id: 1, name: "brochure_card", component_group_uuid: "b", internal_tags_list: [own] },
+		{ id: 2, name: "brochure_old", component_group_uuid: "b", internal_tags_list: [own] },
 		{ id: 3, name: "hero", component_group_uuid: "c" },
 		{ id: 4, name: "card", component_group_uuid: "c" },
+		// made by hand in the folder, and moved into it from another schema's
+		{ id: 5, name: "brochure_draft", component_group_uuid: "b" },
+		{
+			id: 6,
+			name: "banner",
+			component_group_uuid: "b",
+			internal_tags_list: [{ name: "storyloco:Components" }],
+		},
 	],
 }
 
@@ -60,6 +70,20 @@ describe("scoped output", () => {
 		)
 		expect(changed).toEqual(["Colours (changed)"])
 		expect(hidden).toBe(1)
+	})
+})
+
+describe("hidden entities", () => {
+	test("take their detail lines with them", () => {
+		const output =
+			"Components\n  ~ hero (update)\n    ~ tags\n      - []\n  ~ brochure_card (update)\n    ~ tags"
+		const { text } = scoped(
+			output,
+			["Brochure"],
+			{ components: ["brochure_card"], datasources: [] },
+			space
+		)
+		expect(text).toBe("Components\n  ~ brochure_card (update)\n    ~ tags")
 	})
 })
 
@@ -153,6 +177,20 @@ export default schema({ blocks: { hero: block("hero", {}) } })`,
 		})
 	})
 
+	test("its owner tag goes on every block it pushes, beside their own", async () => {
+		await project(brochure, async (root) => {
+			let pushed = ""
+			await push_schema(
+				{ root, env, space: "1" },
+				async (args) => {
+					pushed = await Bun.file(args[3]).text()
+				},
+				api([])
+			)
+			expect(pushed).toContain(`"tags":["storyloco:Brochure"]`)
+		})
+	})
+
 	test("push --delete removes its own stale components, never another schema's", async () => {
 		await project(brochure, async (root) => {
 			const deleted: Array<string> = []
@@ -163,6 +201,7 @@ export default schema({ blocks: { hero: block("hero", {}) } })`,
 			)
 			expect(deleted).toEqual([])
 			await push_schema({ root, env, space: "1", delete: true }, async () => diff, api(deleted))
+			// not brochure_draft or banner, in the folder but not pushed by this schema
 			expect(deleted).toEqual(["2"])
 		})
 	})

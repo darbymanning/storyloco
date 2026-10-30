@@ -4,7 +4,8 @@ import { load_local } from "./local.js"
 import { resolve_entry } from "./entry.js"
 import { cli_version } from "./migrate.js"
 import { run_cli } from "./run.js"
-import { folders, in_scope, management, scoped, type Space } from "./scope.js"
+import { createInterface } from "node:readline/promises"
+import { folders, in_scope, management, owner_tag, scoped, type Space } from "./scope.js"
 
 interface Options {
 	entry?: string
@@ -32,11 +33,19 @@ async function load(options: Options) {
  * are names by now. Field plugins lose their validator functions, which only the CLI's story
  * validation runs, not a diff or push.
  */
-async function write_flat(root: string, schema: Awaited<ReturnType<typeof load_local>>["schema"]) {
+async function write_flat(root: string, local: Awaited<ReturnType<typeof load_local>>) {
+	const { schema, scope } = local
 	const flat = path.join(root, "node_modules/.cache/storyloco/schema.mjs")
 	await mkdir(path.dirname(flat), { recursive: true })
-	// Keyed by name: a globbed entry keys its blocks by file path
-	const blocks = Object.fromEntries(Object.values(schema.blocks).map((b) => [b.name, b]))
+	// Keyed by name: a globbed entry keys its blocks by file path. A scoped schema's blocks carry
+	// its owner tag, beside any tags of their own, so `push --delete` knows what it pushed.
+	const tag = scope && owner_tag(scope)
+	const blocks = Object.fromEntries(
+		Object.values(schema.blocks).map((b) => [
+			b.name,
+			tag ? { ...b, tags: [...new Set([...(b.tags ?? []), tag])] } : b,
+		])
+	)
 	await writeFile(flat, `export default ${JSON.stringify({ ...schema, blocks })}\n`)
 	return flat
 }
@@ -92,7 +101,7 @@ export async function check_schema(
 
 	if (options.remote) {
 		const { space, env } = remote(options)
-		const flat = await write_flat(root, local.schema)
+		const flat = await write_flat(root, local)
 		const args = [`storyblok@${cli_version}`, "schema", "diff", "--from", space, "--to", flat]
 		if (options.region) args.push("--region", options.region)
 		if (!local.scope) {
@@ -131,7 +140,7 @@ export async function push_schema(
 		throw new Error(
 			"push --delete needs the schema's scope: export `scope`, the folders it owns, from the entry. Without one it would delete every component another schema in the space defines."
 		)
-	const flat = await write_flat(root, local.schema)
+	const flat = await write_flat(root, local)
 	const args = [`storyblok@${cli_version}`, "schema", "push", flat, "--space", space]
 	if (options.dry_run) args.push("--dry-run")
 	if (options.region) args.push("--region", options.region)
@@ -148,15 +157,36 @@ export async function push_schema(
 
 	if (options.delete) {
 		const { components } = folders(held)
-		const stale = held.components.filter(
+		const tag = owner_tag(local.scope)
+		const leftover = held.components.filter(
 			(c) => !names.components.includes(c.name) && in_scope(components.get(c.name), local.scope!)
 		)
+		// only what this schema pushed: a component moved into the folders by hand has no owner tag
+		const pushed = (c: (typeof leftover)[number]) =>
+			(c.internal_tags_list ?? []).some(({ name }) => name === tag)
+		const stale = leftover.filter(pushed)
+		for (const c of leftover.filter((c) => !pushed(c)))
+			console.log(
+				`Left ${c.name}: it's in ${local.scope.join(", ")}, but this schema didn't push it`
+			)
+
+		if (stale.length && !options.dry_run && !(await confirm(stale.map((c) => c.name))))
+			return local.components.length
 		for (const component of stale) {
 			if (!options.dry_run) await api.delete(component.id)
 			console.log(`${options.dry_run ? "Would delete" : "Deleted"} ${component.name}`)
 		}
 	}
 	return local.components.length
+}
+
+/** Asks before deleting, at a terminal; a script that passed `--delete` has said so already */
+async function confirm(names: Array<string>) {
+	if (!process.stdin.isTTY) return true
+	const prompt = createInterface({ input: process.stdin, output: process.stdout })
+	const answer = await prompt.question(`Delete ${names.join(", ")}? (y/N) `)
+	prompt.close()
+	return /^y(es)?$/i.test(answer.trim())
 }
 
 function run_diff(
