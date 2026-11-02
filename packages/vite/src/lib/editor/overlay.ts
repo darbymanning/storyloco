@@ -1925,12 +1925,33 @@ function peek({ story, uid }: Selection) {
 	return { blok, trail, components }
 }
 
+/** Where the edit bar keeps the settings, handed over each time the bar draws it */
+let slot: HTMLElement | undefined
+
+export function dock(el: HTMLElement) {
+	if (slot === el) return
+	slot = el
+	// drawn into the bar it replaced: drawn again here
+	inspector?.then((panel) => unmount(panel as unknown as Record<string, unknown>)).catch(() => {})
+	inspector = undefined
+	if (active) inspect().catch(() => {})
+}
+
+/** The settings, opened or folded, from the edit bar's badge */
+export function toggle_settings() {
+	inspect()
+		.then((panel) => panel.toggle())
+		.catch(() => {})
+}
+
 function inspect() {
+	const target = slot
+	if (!target) return Promise.reject(new Error("storyloco/editor: no edit bar to show settings in"))
 	return (inspector ??= import("./inspector.svelte")
 		.then(
 			({ default: Panel }) =>
 				mount(Panel, {
-					target: document.body,
+					target,
 					props: {
 						select,
 						highlight,

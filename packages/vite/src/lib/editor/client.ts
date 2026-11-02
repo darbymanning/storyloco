@@ -120,6 +120,8 @@ type State = {
 	pending: number
 	problem: string | null
 	editing: boolean
+	/** the block settings open in the edit bar, rather than folded to the block's name */
+	settings_open: boolean
 	toggled: Set<(on: boolean) => void>
 	matches_live: Map<number, { updated_at: string | undefined; same: boolean }>
 	saved_listeners: Set<() => void>
@@ -134,6 +136,8 @@ type State = {
 }
 
 const EDITING = "storyloco-editing"
+/** Each browser remembers whether the block settings were left open */
+const SETTINGS = "storyloco-settings"
 
 const S = ((globalThis as { __storyloco?: Partial<State> }).__storyloco ??= {}) as State
 S.bridge ??= BRIDGE
@@ -156,6 +160,14 @@ if (S.editing === undefined) {
 		S.editing = typeof localStorage === "undefined" || localStorage.getItem(EDITING) !== "off"
 	} catch {
 		// storage blocked: start in edit mode
+	}
+}
+if (S.settings_open === undefined) {
+	S.settings_open = false
+	try {
+		S.settings_open = localStorage.getItem(SETTINGS) === "open"
+	} catch {
+		// storage blocked: folded until it's opened
 	}
 }
 S.toggled ??= new Set()
@@ -229,6 +241,17 @@ export async function read_notices(which: { ids?: Array<string>; thread?: string
 	changed()
 	await call({ op: "comments", do: "read", ...which }).catch(() => {})
 	await load_inbox()
+}
+
+/** Open the block settings in the edit bar, or fold them to the block's name */
+export function set_settings_open(on: boolean) {
+	S.settings_open = on
+	try {
+		localStorage.setItem(SETTINGS, on ? "open" : "folded")
+	} catch {
+		// storage blocked: it lasts until the page reloads
+	}
+	changed()
 }
 
 /** Follow someone's view, or stop with null */
@@ -406,6 +429,11 @@ export const editor = {
 	get inbox() {
 		watch()
 		return S.inbox
+	},
+	/** Whether the block settings are open in the edit bar, rather than folded to the block's name */
+	get settings_open() {
+		watch()
+		return S.settings_open
 	},
 	/** Who this page is following, by their place in the room */
 	get following() {

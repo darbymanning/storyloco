@@ -9,7 +9,7 @@
 	import { SvelteMap } from "svelte/reactivity"
 	import { tick, untrack } from "svelte"
 	import type { Attachment } from "svelte/attachments"
-	import { call, editor, last_problem, send } from "./client.js"
+	import { call, editor, last_problem, send, set_settings_open } from "./client.js"
 	import { is_heading, is_video, rich_supported, same } from "./content.js"
 	import type { Inserts, RichDoc, RichField } from "./richtext.js"
 	import type { Selection } from "./overlay.js"
@@ -102,30 +102,21 @@
 	/** Whether a blok is showing, for the overlay */
 	export const showing = () => selection !== null
 
-	// --- folded to its name, or open
+	// --- folded to its name in the edit bar, or open as the bar's panel
 
-	const OPEN = "storyloco-settings"
-	/** Open, rather than folded to its name; each browser remembers which */
-	let expanded = $state(false)
-	try {
-		expanded = localStorage.getItem(OPEN) === "open"
-	} catch {
-		// storage blocked: folded until it's opened
-	}
 	/** Open, but stepped aside while text it would cover is typed in on the page */
 	let aside = $state(false)
-	const folded = $derived(!expanded || aside)
+	const folded = $derived(!editor.settings_open || aside)
 
 	let panel_el = $state<HTMLElement>()
 	let fold_el = $state<HTMLElement>()
 
 	/**
-	 * Folding or opening morphs one shape into the other: its box before the change, measured before
-	 * the DOM updates, grows or shrinks into the one after. Placed by its corner for the animation,
-	 * since open on a phone it's pinned to both sides.
+	 * Folding or opening morphs the edit bar from one shape into the other: its box before the
+	 * change grows or shrinks into the one after. Placed by its corner for the animation, since
+	 * open on a phone it's pinned to both sides.
 	 */
-	let from: { rect: DOMRect; radius: number } | undefined
-	let morph: Animation | undefined
+	let morphing: Animation | undefined
 	const shape = (el: HTMLElement) => {
 		const rect = el.getBoundingClientRect()
 		return {
@@ -143,39 +134,30 @@
 		maxHeight: "none",
 		borderRadius: `${radius}px`,
 	})
-	$effect.pre(() => {
-		void folded
+	async function morph(change: () => void) {
+		const bar = panel_el?.closest<HTMLElement>("[data-storyloco=bar]")
 		// mid-morph, it measures where it's got to, so a second toggle turns back from there
-		untrack(() => (from = panel_el && shape(panel_el)))
-	})
-	$effect(() => {
-		void folded
-		untrack(() => {
-			if (!panel_el || !from || matchMedia("(prefers-reduced-motion: reduce)").matches) return
-			morph?.cancel()
-			morph = panel_el.animate([frame(from), frame(shape(panel_el))], {
-				duration: 340,
-				easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
-			})
+		const from = bar && shape(bar)
+		change()
+		await tick()
+		if (!bar || !from || matchMedia("(prefers-reduced-motion: reduce)").matches) return
+		morphing?.cancel()
+		morphing = bar.animate([frame(from), frame(shape(bar))], {
+			duration: 340,
+			easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
 		})
-	})
+	}
 
 	/** Open or fold it; from the keyboard, focus goes with it */
 	export async function toggle(keyboard = false) {
 		const inside = panel_el?.contains(document.activeElement)
-		// stepped aside, it's still open, so it only comes back
-		if (aside) aside = false
-		else {
-			expanded = !expanded
-			try {
-				localStorage.setItem(OPEN, expanded ? "open" : "folded")
-			} catch {
-				// storage blocked: it lasts until the page reloads
-			}
-			if (!expanded) flush()
+		await morph(() => {
+			// stepped aside, it's still open, so it only comes back
+			if (aside) return void (aside = false)
+			set_settings_open(!editor.settings_open)
+			if (!editor.settings_open) flush()
 			else if (selection) load(selection, false)
-		}
-		await tick()
+		})
 		if (!folded && keyboard) title_el?.focus()
 		else if (inside && !panel_el?.contains(document.activeElement)) fold_el?.focus()
 	}
@@ -198,14 +180,15 @@
 	let on_page = $state<{ uid: string; field: string } | null>(null)
 	export function typing(at: { uid: string; field: string } | null) {
 		on_page = at
-		if (!at) return void (aside = false)
+		if (!at) return void (aside && morph(() => (aside = false)))
 		// open over the text being typed in, say as a sheet on a phone, it folds until that's done
 		requestAnimationFrame(() => {
 			const text = document.activeElement
 			if (!on_page || folded || !panel_el || !text || panel_el.contains(text)) return
 			const a = panel_el.getBoundingClientRect()
 			const b = text.getBoundingClientRect()
-			aside = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+			if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
+				morph(() => (aside = true))
 		})
 	}
 	/** The field being changed here, which the page marks where it shows it */
@@ -283,18 +266,6 @@
 
 	let title_el = $state<HTMLElement>()
 
-	/** Away the way it came in: to the side, or down on a narrow screen */
-	function slide_out(_: Element) {
-		if (matchMedia("(prefers-reduced-motion: reduce)").matches) return { duration: 0 }
-		const narrow = innerWidth < 640
-		return {
-			duration: 200,
-			easing: (t: number) => t * t,
-			css: (t: number) =>
-				`opacity: ${t}; translate: ${narrow ? `0 ${(1 - t) * 24}px` : `${(1 - t) * 24}px 0`}`,
-		}
-	}
-
 	/**
 	 * Show the selected blok; from the keyboard, focus moves to the panel's heading so its fields are
 	 * next, or to its name when it's folded
@@ -320,7 +291,7 @@
 			const story = { id: next.story, uuid: "", name: "", full_slug: "", published_at: null }
 			loaded = { story, blok: quick.blok as Blok, trail: quick.trail }
 			tab = groups[0]?.name ?? ""
-			if (expanded) load(next, false)
+			if (editor.settings_open) load(next, false)
 		} else {
 			loaded = null
 			load(next)
@@ -330,7 +301,7 @@
 	/** The page saved something; the blok may have changed under the panel */
 	export function refresh() {
 		// folded, it catches up when it's opened
-		if (!selection || !expanded) return
+		if (!selection || !editor.settings_open) return
 		// mid-save, the reply has the field's own value; anything else changed waits until it lands
 		if (Object.values(saving).some(Boolean)) stale = true
 		else load(selection, false)
@@ -1813,7 +1784,6 @@
 		data-storyloco="inspector"
 		aria-label={is_page ? "Page settings" : "Block settings"}
 		onkeydown={keydown}
-		out:slide_out
 		bind:this={panel_el}
 	>
 		<header>
@@ -1834,15 +1804,6 @@
 				<p class="trail">{component_label(loaded.blok.component)}</p>
 			{/if}
 			<div class="title">
-				{#if folded}
-					<svg class="sliders" viewBox="0 0 24 24" aria-hidden="true"
-						><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" /><circle
-							cx="15"
-							cy="6"
-							r="2"
-						/><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></svg
-					>
-				{/if}
 				<h2 tabindex="-1" bind:this={title_el}>
 					{#if loaded}{is_page && editor.story?.name
 							? editor.story.name
@@ -1902,18 +1863,6 @@
 							>
 						</button>
 					</div>
-				{/if}
-				{#if picked && !is_page}
-					<!-- back to the page's own settings, unless that's what's picked -->
-					<button
-						type="button"
-						class="round deselect"
-						aria-label="Deselect"
-						title="Deselect"
-						onclick={() => select(null)}
-					>
-						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-					</button>
 				{/if}
 				<button
 					type="button"
@@ -1997,6 +1946,7 @@
 		all: revert;
 	}
 
+	/* In the edit bar's slot: its name there while folded, the bar's panel when open */
 	.inspector {
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
@@ -2009,42 +1959,15 @@
 		--danger: var(--editor-danger, #e5484d);
 		--field: color-mix(in srgb, var(--ink) 4%, transparent);
 
-		background: var(--bg);
-		block-size: calc(100dvh - 1.5rem);
-		border-radius: 1rem;
-		box-shadow:
-			0 0 0 1px var(--line),
-			0 16px 48px rgb(0 0 0 / 0.16);
+		block-size: 100%;
 		color: var(--ink);
 		display: grid;
 		font:
 			400 0.8125rem/1.4 system-ui,
 			sans-serif;
 		grid-template-rows: auto minmax(0, 1fr);
-		inline-size: min(22rem, 100vw - 1.5rem);
-		inset: 0.75rem 0.75rem auto auto;
+		min-inline-size: 0;
 		overflow: hidden;
-		position: fixed;
-		transition:
-			opacity 0.22s ease,
-			translate 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-		z-index: 2147483002;
-
-		@starting-style {
-			opacity: 0;
-			translate: 1.5rem 0;
-		}
-
-		@media (width < 40rem) {
-			block-size: auto;
-			inline-size: auto;
-			inset: auto 0.5rem 0.5rem;
-			max-block-size: 65dvh;
-
-			@starting-style {
-				translate: 0 1.5rem;
-			}
-		}
 
 		& * {
 			box-sizing: border-box;
@@ -2064,26 +1987,18 @@
 		}
 	}
 
-	/* Folded: a pill with the name, where the panel's top edge would be, or its bottom on a phone */
+	/* Folded: the block's name and a button to open it, beside the badge */
 	.inspector.folded {
-		block-size: auto;
-		border-radius: 999px;
 		grid-template-rows: auto;
-		inline-size: auto;
-		max-inline-size: min(22rem, 100vw - 1.5rem);
-
-		@media (width < 40rem) {
-			inset: auto 0.5rem 0.5rem auto;
-			max-inline-size: calc(100vw - 1rem);
-		}
+		position: relative;
 
 		& header {
 			border: 0;
-			padding: 0.3125rem 0.3125rem 0.3125rem 0.875rem;
+			padding: 0 0 0 0.625rem;
 		}
 
 		& .title {
-			gap: 0.5rem;
+			gap: 0.375rem;
 		}
 
 		& h2 {
@@ -2094,41 +2009,12 @@
 			white-space: nowrap;
 		}
 
-		/* the whole pill opens it */
+		/* the name opens it too */
 		& .fold::after {
 			content: "";
 			inset: 0;
 			position: absolute;
 		}
-
-		& .deselect {
-			position: relative;
-			z-index: 1;
-		}
-	}
-
-	/* clear of the edit bar when it's in the same corner */
-	:global(body:has([data-storyloco="bar"][data-corner="tr"])) .inspector.folded {
-		@media (width >= 40rem) {
-			inset-block-start: calc(var(--editor-offset, 1rem) + 3.5rem);
-		}
-	}
-
-	:global(body:has([data-storyloco="bar"][data-corner="br"])) .inspector.folded {
-		@media (width < 40rem) {
-			inset-block-end: calc(var(--editor-offset, 1rem) + 3.5rem);
-		}
-	}
-
-	.sliders {
-		block-size: 1rem;
-		color: var(--muted);
-		fill: none;
-		flex: none;
-		inline-size: 1rem;
-		stroke: currentColor;
-		stroke-linecap: round;
-		stroke-width: 2;
 	}
 
 	header {

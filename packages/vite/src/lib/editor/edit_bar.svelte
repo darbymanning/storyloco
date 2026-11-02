@@ -120,6 +120,16 @@
 	let bar = $state<HTMLElement>()
 
 	const shown = $derived(!framed && (editor.draft || Boolean(editor.user)))
+	/* Editing, the badge opens the block settings, which the bar holds, and the bar's row with them */
+	const settings = $derived(editor.editing && Boolean(editor.user))
+	const card = $derived(settings && editor.settings_open)
+	const opened = $derived(settings ? card : open)
+
+	/* Badge, S key and the settings' own button alike */
+	function toggle() {
+		if (settings) import("./overlay.js").then((o) => o.toggle_settings())
+		else open = !open
+	}
 
 	const story = $derived(editor.story)
 
@@ -253,10 +263,7 @@
 		if (!drag || event.pointerId !== drag.id) return
 		const moved = drag.moved
 		drag = null
-		if (!moved) {
-			open = !open
-			return
-		}
+		if (!moved) return toggle()
 		// snap to the nearest corner, animating from where it was dropped
 		const from = bar!.getBoundingClientRect()
 		corner = corner_of(from.x + from.width / 2, from.y + from.height / 2)
@@ -466,7 +473,7 @@
 {#if shown}
 	<div
 		bind:this={bar}
-		class={["bar", { open, dragging: offset.x || offset.y }]}
+		class={["bar", { open: opened, dragging: offset.x || offset.y }]}
 		data-storyloco="bar"
 		data-corner={corner}
 		style:--clear="{clear}px"
@@ -475,9 +482,9 @@
 		<button
 			class="badge"
 			type="button"
-			aria-label={open ? "Close the site editor" : "Open the site editor"}
+			aria-label={opened ? "Close the site editor" : "Open the site editor"}
 			title={story?.status === "published" ? title : undefined}
-			aria-expanded={open}
+			aria-expanded={opened}
 			onpointerdown={press}
 			onpointermove={move}
 			onpointerup={release}
@@ -485,7 +492,7 @@
 			onkeydown={(event) => {
 				if (event.key === "Enter" || event.key === " ") {
 					event.preventDefault()
-					open = !open
+					toggle()
 				}
 			}}
 		>
@@ -503,7 +510,7 @@
 			{/if}
 			{#if editor.saving}<span class="ring" aria-hidden="true"></span>{/if}
 			<span class="dot" data-signal={signal} aria-hidden="true"></span>
-			{#if inbox.unread && !open}
+			{#if inbox.unread && !opened}
 				<span class="unread" aria-hidden="true">{count(inbox.unread)}</span>
 				<span class="sr">{inbox.unread} unread notifications</span>
 			{/if}
@@ -544,7 +551,15 @@
 			</span>
 		{/if}
 
-		{#if (waiting || published) && !open}
+		{#if editor.user}
+			<!-- the block settings: their name beside the badge, or the panel above the row when open -->
+			<div
+				class="settings"
+				{@attach (el) => void import("./overlay.js").then((o) => o.dock(el))}
+			></div>
+		{/if}
+
+		{#if (waiting || published) && !opened}
 			<button
 				class="publish outside"
 				type="button"
@@ -556,7 +571,7 @@
 			</button>
 		{/if}
 
-		<div class="panel" inert={!open}>
+		<div class="panel" inert={!opened}>
 			<div class="inner">
 				{#if story && LABELS[story.status]}
 					<div class="status" data-status={story.status}>
@@ -963,6 +978,127 @@
 			@starting-style {
 				scale: 1;
 			}
+		}
+	}
+
+	/* The block settings: their name beside the badge while folded */
+	.settings {
+		display: flex;
+		min-inline-size: 0;
+
+		&:empty {
+			display: none;
+		}
+	}
+
+	/* holding the settings' name, the bar is a pill of its own, which morphs whole as it opens */
+	.bar:has(.settings:not(:empty)) {
+		background-color: var(--bg);
+		box-shadow: var(--shadow);
+
+		& :is(.panel, .inner) {
+			transition: none;
+		}
+	}
+
+	/* stepped aside while text under it is typed in, the row folds away with the settings */
+	.bar.open:has(:global(.inspector.folded)) {
+		& .panel {
+			grid-template-columns: 0fr;
+		}
+
+		& .inner {
+			clip-path: inset(-10rem 100% -10rem 0);
+			padding-inline: 0;
+		}
+	}
+
+	/*
+	 * Open, one panel in the bar's corner: the settings, then the row along the bottom edge, or
+	 * the top in a top corner, so the badge stays put. A sheet across a phone's screen
+	 */
+	.bar:has(:global(.inspector:not(.folded))) {
+		align-items: center;
+		block-size: calc(100dvh - 2 * var(--o) - var(--clear));
+		border-radius: 1rem;
+		box-shadow:
+			var(--shadow),
+			0 16px 48px rgb(0 0 0 / 0.16);
+		display: grid;
+		grid-template: minmax(0, 1fr) auto / auto auto minmax(0, 1fr);
+		inline-size: min(22rem, 100% - 2 * var(--o));
+		overflow: hidden;
+		padding: 0 0.375rem 0.375rem;
+
+		& > * {
+			grid-row: 2;
+		}
+
+		& .settings {
+			align-self: stretch;
+			border-block-end: 1px solid var(--line);
+			grid-area: 1 / 1 / 2 / -1;
+			margin: 0 -0.375rem 0.375rem;
+		}
+
+		& .people {
+			grid-column: 2;
+		}
+
+		& .panel {
+			grid-column: 3;
+		}
+
+		/* narrower than the row: it wraps rather than widening the panel */
+		& .inner {
+			flex-wrap: wrap;
+			row-gap: 0.375rem;
+			white-space: normal;
+		}
+
+		/* clear of the row, over the settings */
+		& .review {
+			grid-row: auto;
+			inset-block: auto 3rem;
+		}
+
+		&[data-corner^="t"] {
+			grid-template-rows: auto minmax(0, 1fr);
+			padding: 0.375rem 0.375rem 0;
+
+			& > * {
+				grid-row: 1;
+			}
+
+			& .settings {
+				border-block: 1px solid var(--line) 0;
+				grid-row: 2;
+				margin: 0.375rem -0.375rem 0;
+			}
+
+			& .review {
+				inset-block: 3rem auto;
+			}
+		}
+
+		&[data-corner$="r"] {
+			grid-template-columns: minmax(0, 1fr) auto auto;
+
+			& .badge {
+				grid-column: 3;
+			}
+
+			& .panel {
+				grid-column: 1;
+			}
+		}
+
+		@media (width < 40rem) {
+			block-size: auto;
+			inline-size: auto;
+			inset-inline: 0.5rem;
+			max-block-size: 65dvh;
+			max-inline-size: none;
 		}
 	}
 
