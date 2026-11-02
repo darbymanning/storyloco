@@ -467,6 +467,7 @@ export function fresh_blok(component: Component): Node {
 const HEADINGS = new Set(["uiloco-heading", "heading-field"])
 const VIDEOS = new Set(["uiloco-mux", "mux-field", "loco-mux", "video-mux"])
 const LINKS = new Set(["uiloco-link", "loco-link", "link-field"])
+const PLANS = new Set(["uiloco-plans", "plans"])
 
 type Plugged = { field_type?: string | null } | null | undefined
 /** A heading plugin's field: its text, and the tag it shows as */
@@ -476,7 +477,7 @@ export const is_video = (field: Plugged) => VIDEOS.has(field?.field_type ?? "")
 /** A link plugin's field, whose text is the link's label */
 export const is_link = (field: Plugged) => LINKS.has(field?.field_type ?? "")
 /** A floor plans plugin's field, whose types', floors' and rooms' names and sizes show as text */
-export const is_plans = (field: Plugged) => field?.field_type === "uiloco-plans"
+export const is_plans = (field: Plugged) => PLANS.has(field?.field_type ?? "")
 
 /** A field that shows as plain text on the page, so it can be typed in where it shows */
 export const is_text = (field: (Plugged & { type?: string }) | null | undefined) =>

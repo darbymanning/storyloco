@@ -346,6 +346,8 @@ describe("a plugin's strings", () => {
 		expect(with_string(plans, ["__proto__", "name"], "x")).toBeUndefined()
 		expect(with_string(["a"], [0], "x")).toBeUndefined()
 		expect(is_plans({ field_type: "uiloco-plans" })).toBe(true)
+		// by the name a space deployed it under before
+		expect(is_plans({ field_type: "plans" })).toBe(true)
 		expect(is_plans({ field_type: "uiloco-heading" })).toBe(false)
 	})
 })
