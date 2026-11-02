@@ -1,6 +1,7 @@
 import path from "node:path"
 import type { Component } from "./local.js"
 import { plugin_types } from "./plugins.js"
+import { allowed } from "../editor/content.js"
 
 export function type_name(name: string) {
 	const clean = name
@@ -31,6 +32,9 @@ export function generate_types(
 	entry?: string,
 	named = true
 ) {
+	const nestable = components.map((c) => ({ ...c, is_nestable: c.is_nestable !== false })) as Array<
+		Parameters<typeof allowed>[0][number]
+	>
 	const names = new Map<string, string>()
 	const used = new Set([
 		"StoryblokAsset",
@@ -112,11 +116,10 @@ export function generate_types(
 
 			let value: string
 			if (field.type === "bloks" || (field.type === "richtext" && field.restrict_components)) {
-				const allowed =
-					field.restrict_components && Array.isArray(field.component_whitelist)
-						? (field.component_whitelist as string[])
-						: components.filter((c) => c.is_nestable !== false).map((c) => c.name)
-				const types = allowed.map((name) => names.get(name) ?? "Blok<Record<string, unknown>>")
+				// by name, folder or tag, as the editor offers them; a block is nestable unless it says not
+				const types = allowed(nestable, field as Parameters<typeof allowed>[1]).map((c) =>
+					names.get(c.name)!
+				)
 				value =
 					field.type === "bloks"
 						? `(${types.join(" | ") || "never"})[]`
