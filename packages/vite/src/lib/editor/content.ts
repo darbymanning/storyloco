@@ -45,6 +45,43 @@ export function with_paragraph(value: string, index: number, next: string) {
 		.join("\n\n")
 }
 
+/** Where one string sits in a plugin's value, like a floor plan's `["types", 0, "floors", 1, "name"]` */
+export type Path = Array<string | number>
+
+/** Keys whose strings are the plugin's own, not text a site shows */
+const NOT_TEXT = new Set(["id", "uuid", "plugin", "filename", "url", "href", "src"])
+
+/**
+ * The strings in a plugin's value a site may show, with where each is: not its ids or links, nor
+ * the assets and links Storyblok keeps in it, nor its `_` markers, like the floor last open
+ */
+export function strings_of(value: unknown, path: Path = []): Array<{ path: Path; text: string }> {
+	if (typeof value === "string")
+		return path.length && !/^(https?:|mailto:|tel:|\/|#)/.test(value) ? [{ path, text: value }] : []
+	if (!value || typeof value !== "object" || "fieldtype" in value) return []
+	return Object.entries(value).flatMap(([key, child]) =>
+		key.startsWith("_") || NOT_TEXT.has(key)
+			? []
+			: strings_of(child, [...path, Array.isArray(value) ? Number(key) : key])
+	)
+}
+
+/** The string at `path` in a plugin's value, if it's one `strings_of` finds */
+export const string_at = (value: unknown, path: Path) =>
+	strings_of(value).find((found) => JSON.stringify(found.path) === JSON.stringify(path))?.text
+
+/**
+ * A copy of a plugin's value with the string at `path` replaced and the rest as it was, or none
+ * when there's no such string there, so nothing else in it can be written this way
+ */
+export function with_string(value: unknown, path: Path, next: string) {
+	if (Array.isArray(value) || string_at(value, path) === undefined) return
+	const out = structuredClone(value) as Node
+	const parent = path.slice(0, -1).reduce<Node>((at, key) => at[key] as Node, out)
+	parent[path.at(-1)!] = next
+	return out
+}
+
 const is_asset = (value: unknown): value is Node =>
 	!!value && typeof value === "object" && (value as Node).fieldtype === "asset"
 
@@ -438,6 +475,8 @@ export const is_heading = (field: Plugged) => HEADINGS.has(field?.field_type ?? 
 export const is_video = (field: Plugged) => VIDEOS.has(field?.field_type ?? "")
 /** A link plugin's field, whose text is the link's label */
 export const is_link = (field: Plugged) => LINKS.has(field?.field_type ?? "")
+/** A floor plans plugin's field, whose types', floors' and rooms' names and sizes show as text */
+export const is_plans = (field: Plugged) => field?.field_type === "uiloco-plans"
 
 /** A field that shows as plain text on the page, so it can be typed in where it shows */
 export const is_text = (field: (Plugged & { type?: string }) | null | undefined) =>

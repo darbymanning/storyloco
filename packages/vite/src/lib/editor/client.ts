@@ -566,6 +566,14 @@ const TYPING = 30_000
 function same_edit(last: Done | undefined, back: Change) {
 	if (!last?.at || Date.now() - last.at > TYPING) return false
 	const was = last.change
+	// a string in a plugin's value, by where it is in it
+	if (was.op === "set" && back.op === "set")
+		return (
+			was.story === back.story &&
+			was.uid === back.uid &&
+			was.field === back.field &&
+			JSON.stringify(was.path) === JSON.stringify(back.path)
+		)
 	if (was.op !== "fields" || back.op !== "fields") return false
 	if (was.story !== back.story || was.uid !== back.uid) return false
 	const keys = (change: Change) =>

@@ -10,8 +10,11 @@ import {
 	locate,
 	set_asset,
 	set_text,
+	string_at,
 	trail,
+	with_string,
 	type Node,
+	type Path,
 	type Place,
 } from "./content.js"
 
@@ -211,7 +214,7 @@ export const CHANGES = new Set([
 ])
 
 type Operation =
-	| { op: "set"; story: number; uid: string; field: string; value: string }
+	| { op: "set"; story: number; uid: string; field: string; value: string; path?: Path }
 	| {
 			op: "image"
 			story: number
@@ -1334,11 +1337,17 @@ export async function operate(
 		body.op !== "set" ||
 		typeof body.uid !== "string" ||
 		!field_name(body.field) ||
-		!text(body.value, 20_000)
+		!text(body.value, 20_000) ||
+		(body.path !== undefined &&
+			!(
+				Array.isArray(body.path) &&
+				body.path.length <= 20 &&
+				body.path.every((key) => typeof key === "string" || Number.isInteger(key))
+			))
 	)
 		throw new EditorError(400, "Unknown change")
 
-	const { uid, field, value } = body
+	const { uid, field, value, path } = body
 	const components = await components_of(editor)
 	let before: unknown
 	const changed = await editor.patch(body.story, (content) => {
@@ -1347,7 +1356,13 @@ export async function operate(
 		// only what the schema says is text, so a typo'd or crafted field can't clobber anything else
 		const schema = components.find((c) => c.name === blok.component)?.schema[field]
 		before = input_of(schema, structuredClone(blok[field]))
-		if (!schema || !is_text(schema) || !set_text(blok, field, value))
+		// a string in a plugin's value, into the value as it's saved now: only one that's already there
+		if (path) {
+			const next = schema?.type === "custom" && with_string(blok[field], path, value)
+			if (!next) throw new EditorError(400, `${field} has no text there`)
+			before = string_at(blok[field], path)
+			blok[field] = next
+		} else if (!schema || !is_text(schema) || !set_text(blok, field, value))
 			throw new EditorError(400, `${field} isn’t a text field`)
 		const longest = Number(schema.max_length)
 		if (longest && value.length > longest)
@@ -1358,8 +1373,11 @@ export async function operate(
 	})
 	return {
 		ok: true,
-		undo: changed
-			? { op: "fields", story: body.story, uid, values: { [field]: before } }
-			: undefined,
+		// a string in a plugin's value goes back the same way, as the rest of it may have changed since
+		undo: !changed
+			? undefined
+			: path
+				? { op: "set", story: body.story, uid, field, path, value: before }
+				: { op: "fields", story: body.story, uid, values: { [field]: before } },
 	}
 }
