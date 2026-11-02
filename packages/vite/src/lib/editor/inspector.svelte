@@ -119,6 +119,47 @@
 	let panel_el = $state<HTMLElement>()
 	let fold_el = $state<HTMLElement>()
 
+	/**
+	 * Folding or opening morphs one shape into the other: its box before the change, measured before
+	 * the DOM updates, grows or shrinks into the one after. Placed by its corner for the animation,
+	 * since open on a phone it's pinned to both sides.
+	 */
+	let from: { rect: DOMRect; radius: number } | undefined
+	let morph: Animation | undefined
+	const shape = (el: HTMLElement) => {
+		const rect = el.getBoundingClientRect()
+		return {
+			rect,
+			radius: Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius), rect.height / 2),
+		}
+	}
+	const frame = ({ rect, radius }: ReturnType<typeof shape>) => ({
+		inset: "auto",
+		top: `${rect.top}px`,
+		left: `${rect.left}px`,
+		width: `${rect.width}px`,
+		height: `${rect.height}px`,
+		maxWidth: "none",
+		maxHeight: "none",
+		borderRadius: `${radius}px`,
+	})
+	$effect.pre(() => {
+		void folded
+		// mid-morph, it measures where it's got to, so a second toggle turns back from there
+		untrack(() => (from = panel_el && shape(panel_el)))
+	})
+	$effect(() => {
+		void folded
+		untrack(() => {
+			if (!panel_el || !from || matchMedia("(prefers-reduced-motion: reduce)").matches) return
+			morph?.cancel()
+			morph = panel_el.animate([frame(from), frame(shape(panel_el))], {
+				duration: 340,
+				easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+			})
+		})
+	})
+
 	/** Open or fold it; from the keyboard, focus goes with it */
 	export async function toggle(keyboard = false) {
 		const inside = panel_el?.contains(document.activeElement)
@@ -1862,8 +1903,8 @@
 						</button>
 					</div>
 				{/if}
-				{#if picked}
-					<!-- back to the page's own settings -->
+				{#if picked && !is_page}
+					<!-- back to the page's own settings, unless that's what's picked -->
 					<button
 						type="button"
 						class="round deselect"
