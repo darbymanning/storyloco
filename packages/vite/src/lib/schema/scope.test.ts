@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "node:os"
-import { in_scope, scoped, type Space } from "./scope.js"
+import { in_scope, management, scoped, type Space } from "./scope.js"
 import { check_schema, push_schema } from "./check.js"
 
 const own = { name: "storyloco:Brochure" }
@@ -70,6 +70,35 @@ describe("scoped output", () => {
 		)
 		expect(changed).toEqual(["Colours (changed)"])
 		expect(hidden).toBe(1)
+	})
+})
+
+describe("the Management API", () => {
+	test("waits out Storyblok's rate limit, as long as Retry-After says", async () => {
+		const seen: Array<number> = []
+		const started = Date.now()
+		let calls = 0
+		const request = (async () => {
+			calls++
+			seen.push(Date.now() - started)
+			return calls === 1
+				? new Response(null, { status: 429, headers: { "retry-after": "1" } })
+				: new Response(null, { status: 204 })
+		}) as unknown as typeof fetch
+		const api = await management("1", env, "eu", request)
+		await api.delete(7)
+		expect(calls).toBe(2)
+		expect(seen[1]).toBeGreaterThanOrEqual(1000)
+	})
+
+	test("gives up after five tries", async () => {
+		const request = (async () =>
+			new Response(null, {
+				status: 429,
+				headers: { "retry-after": "0.001" },
+			})) as unknown as typeof fetch
+		const api = await management("1", env, "eu", request)
+		await expect(api.delete(7)).rejects.toThrow("Storyblok DELETE components/7: 429")
 	})
 })
 
