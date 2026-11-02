@@ -213,7 +213,17 @@ export default function schema({
 			had_error = false
 		} catch (error) {
 			had_error = true
-			if (building) throw error
+			// a build fails without its types, unless it has them from before, like a project that commits
+			// them: a space it can't read just now, or a token without access to its components, keeps them
+			const kept =
+				building && !local_entry && (await readFile(schema_ts_file(), "utf8").catch(() => ""))
+			if (building && !kept) throw error
+			if (kept) {
+				logger.warn(
+					`${error instanceof Error ? error.message : error}; keeping the types already generated`
+				)
+				return
+			}
 			const err = error instanceof Error ? error : new Error(String(error))
 			logger.fail(err.message)
 			const detail = err as Error & {
