@@ -17,11 +17,13 @@ const slug = (name: string) =>
 		.replace(/(^-|-$)|-?(\/)-?/g, "$2")
 
 /**
- * The block tag a scoped push puts on every component it writes, naming the scope: `push --delete`
- * deletes only a component in the scope's folders that has it. A component someone moved into the
- * folders by hand, or another schema pushed, has none, or another schema's, so it's left alone.
+ * The block tag a scoped push puts on every component it writes, naming the scope or the name the
+ * schema gives it: `push --delete` deletes only a component in the scope's folders that has it. A
+ * component someone moved into the folders by hand, or another schema pushed, has none, or another
+ * schema's, so it's left alone. `</>` marks it as pushed from code, and keeps it from matching a
+ * tag someone made by hand.
  */
-export const owner_tag = (scope: Scope) => `storyloco:${scope.join("+")}`
+export const owner_tag = (scope: Scope, name?: string) => `</> ${name || scope.join(" + ")}`
 
 /** Whether a folder path is one of the scope's folders, or inside one */
 export function in_scope(folder: string | undefined, scope: Scope) {

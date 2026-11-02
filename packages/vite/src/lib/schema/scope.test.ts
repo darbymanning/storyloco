@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { in_scope, management, scoped, type Space } from "./scope.js"
 import { check_schema, push_schema } from "./check.js"
 
-const own = { name: "storyloco:Brochure" }
+const own = { name: "</> Brochure" }
 
 // Another schema's components share the space: `hero` and `card`, in Components
 const space: Space = {
@@ -24,7 +24,7 @@ const space: Space = {
 			id: 6,
 			name: "banner",
 			component_group_uuid: "b",
-			internal_tags_list: [{ name: "storyloco:Components" }],
+			internal_tags_list: [{ name: "</> Components" }],
 		},
 	],
 }
@@ -216,8 +216,42 @@ export default schema({ blocks: { hero: block("hero", {}) } })`,
 				},
 				api([])
 			)
-			expect(pushed).toContain(`"tags":["storyloco:Brochure"]`)
+			expect(pushed).toContain(`"tags":["</> Brochure"]`)
 		})
+	})
+
+	test("a schema can name its own owner tag", async () => {
+		const named = brochure.replace(
+			"export const scope",
+			'export const tag = "Prospectus"\nexport const scope'
+		)
+		await project(named, async (root) => {
+			let pushed = ""
+			await push_schema(
+				{ root, env, space: "1" },
+				async (args) => {
+					pushed = await Bun.file(args[3]).text()
+				},
+				api([])
+			)
+			expect(pushed).toContain(`"tags":["</> Prospectus"]`)
+			// and deletes by it: brochure_old has the default tag, not this one
+			const deleted: Array<string> = []
+			await push_schema({ root, env, space: "1", delete: true }, async () => diff, api(deleted))
+			expect(deleted).toEqual([])
+		})
+	})
+
+	test("a tag needs a scope", async () => {
+		await project(
+			`export const tag = "Prospectus"
+export default schema({ blocks: { hero: block("hero", { title: text() }) } })`,
+			async (root) => {
+				await expect(
+					push_schema({ root, env, space: "1" }, async () => "", api([]))
+				).rejects.toThrow(/export `scope` too/)
+			}
+		)
 	})
 
 	test("push --delete removes its own stale components, never another schema's", async () => {

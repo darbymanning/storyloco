@@ -749,7 +749,9 @@ export const scope = brochure
 - `check --remote` compares the scope alone. The other site's components don't make it differ,
   and they're counted rather than listed.
 - `push` lists only the scope's components, and tags every block it writes with the scope's
-  owner tag (`storyloco:Brochure`), beside any tags of its own. The first scoped push adds it.
+  owner tag, beside any tags of its own. The first scoped push adds it. It's `</> Brochure`, or
+  `</> Prospectus` when the entry names it: `export const tag = 'Prospectus'`. `</>` marks it as
+  pushed from code, so it never matches a tag someone made by hand.
 - `push --delete` deletes a component only when it's in the scope's folders _and_ has that tag,
   so only what this schema pushed and no longer defines. A component made in the folder by hand,
   or moved into it from another schema's folders, is listed and left alone. At a terminal it
