@@ -23,6 +23,7 @@ import {
 	allowed,
 	find_blok,
 	fresh_blok,
+	is_plans,
 	is_text,
 	is_rich,
 	locate,
@@ -30,8 +31,11 @@ import {
 	rich_supported,
 	paragraphs,
 	shows_rich,
+	string_at,
+	strings_of,
 	text_of,
 	with_paragraph,
+	type Path,
 } from "./content.js"
 import {
 	enter,
@@ -87,6 +91,8 @@ type Source = (
 			field: string
 			/** one paragraph of the field, as `paragraphs` counts them, shown on its own */
 			paragraph?: number
+			/** one string in a plugin's value, like a floor's name in a floor plans field */
+			path?: Path
 	  }
 	| { story: number; name: true }
 ) & {
@@ -561,6 +567,10 @@ function matches(text: string, candidates: Iterable<Blok>, story: number) {
 	const in_parts: Array<Source> = []
 	for (const blok of candidates)
 		for (const [key, value] of Object.entries(blok)) {
+			// a floor plans field shows its names and sizes one at a time, each in a place of its own
+			if (!key.startsWith("_") && is_plans(components.get(blok.component ?? "")?.schema[key]))
+				for (const { path, text: shown } of strings_of(value))
+					if (loose(shown) === text) found.push({ story, uid: blok._uid!, field: key, path })
 			const field = !key.startsWith("_") && text_field(blok, key)
 			const shown = field && text_of(value)
 			if (!field || !shown) continue
@@ -885,10 +895,11 @@ const wired = new Map<HTMLElement, () => void>()
 const shareable = new Map<HTMLElement, { key: string; watch(): void; done(): void }>()
 
 /** The room a field's text is typed in together in */
-const room_key = (source: Source) =>
-	"name" in source
-		? `${source.story}:name`
-		: `${source.story}:${source.uid}:${source.field}${source.paragraph === undefined ? "" : `#${source.paragraph}`}`
+const room_key = (source: Source) => {
+	if ("name" in source) return `${source.story}:name`
+	const part = source.paragraph ?? source.path?.join(".")
+	return `${source.story}:${source.uid}:${source.field}${part === undefined ? "" : `#${part}`}`
+}
 
 /**
  * The fields someone else is typing in right now, by what they've said they're in: everyone
@@ -987,12 +998,13 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 		},
 	}
 
-	/** The field as saved now, for a paragraph of it to go back into */
+	/** The field as saved now, for a paragraph of it to go back into, or the string at its path */
 	const saved = () =>
 		"name" in source
 			? Promise.resolve(undefined)
 			: call<{ blok: Blok }>({ op: "blok", story: source.story, uid: source.uid }).then(
-					({ blok }) => text_of(blok[source.field])
+					({ blok }) =>
+						source.path ? string_at(blok[source.field], source.path) : text_of(blok[source.field])
 				)
 
 	/** Saved while being typed in, so the page's data catches up once it's left */
@@ -1007,7 +1019,15 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 		const change =
 			"name" in source
 				? { op: "name", story: source.story, value }
-				: { op: "set", story: source.story, uid: source.uid, field: source.field, value: whole }
+				: {
+						op: "set",
+						story: source.story,
+						uid: source.uid,
+						field: source.field,
+						// a string in a plugin's value goes into it as it's saved then, on the server
+						path: source.path,
+						value: whole,
+					}
 		const typing = document.activeElement === node
 		if (
 			whole !== undefined &&

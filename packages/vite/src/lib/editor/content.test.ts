@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
 	is_heading,
 	is_link,
+	is_plans,
 	is_text,
 	is_video,
 	like_page,
@@ -17,7 +18,10 @@ import {
 	same,
 	set_asset,
 	set_text,
+	string_at,
+	strings_of,
 	trail,
+	with_string,
 } from "./content.js"
 
 describe("editor content", () => {
@@ -283,5 +287,67 @@ describe("paragraphs", () => {
 			"Third.",
 		])
 		expect(with_paragraph("A\n\nB", 0, "Z")).toBe("Z\n\nB")
+	})
+})
+
+describe("a plugin's strings", () => {
+	const plans = {
+		_active_type: "t1",
+		types: [
+			{
+				id: "t1",
+				name: "Apartment 1",
+				floors: [
+					{
+						id: "f1",
+						name: "Ground Floor",
+						plan: { id: 7, filename: "https://a.storyblok.com/f/1/plan.jpg", fieldtype: "asset" },
+						dimensions: [
+							{
+								id: "d1",
+								name: "Apartment 1",
+								rooms: [
+									{ id: "r1", name: "Utility", area_m: "2.58m x 1.67m", area_ft: "8’5” x 5’5”" },
+								],
+							},
+						],
+					},
+				],
+			},
+		],
+	}
+	const floor = ["types", 0, "floors", 0, "name"]
+
+	test("names and sizes, with where each is: not ids, assets, links or markers", () => {
+		expect(strings_of(plans).map(({ text }) => text)).toEqual([
+			"Apartment 1",
+			"Ground Floor",
+			"Apartment 1",
+			"Utility",
+			"2.58m x 1.67m",
+			"8’5” x 5’5”",
+		])
+		expect(string_at(plans, floor)).toBe("Ground Floor")
+		expect(string_at(plans, ["types", 0, "id"])).toBeUndefined()
+		expect(string_at(plans, ["types", 0, "floors", 0, "plan", "filename"])).toBeUndefined()
+		expect(strings_of({ link: "https://example.com", path: "/about" })).toEqual([])
+		expect(strings_of("A plain string")).toEqual([])
+	})
+
+	test("one replaced, the rest as they were, and nothing written that isn't text there", () => {
+		const next = with_string(plans, floor, "First Floor")
+		expect(string_at(next, floor)).toBe("First Floor")
+		expect({ ...next, types: [] }).toEqual({ ...plans, types: [] })
+		expect(strings_of(next).length).toBe(strings_of(plans).length)
+		expect(plans.types[0].floors[0].name).toBe("Ground Floor")
+		expect(with_string(plans, ["types", 0, "id"], "x")).toBeUndefined()
+		expect(with_string(plans, ["types", 0, "floors"], "x")).toBeUndefined()
+		expect(with_string(plans, ["types", 9, "name"], "x")).toBeUndefined()
+		expect(with_string(plans, ["__proto__", "name"], "x")).toBeUndefined()
+		expect(with_string(["a"], [0], "x")).toBeUndefined()
+		expect(is_plans({ field_type: "uiloco-plans" })).toBe(true)
+		// by the name a space deployed it under before
+		expect(is_plans({ field_type: "plans" })).toBe(true)
+		expect(is_plans({ field_type: "uiloco-heading" })).toBe(false)
 	})
 })
