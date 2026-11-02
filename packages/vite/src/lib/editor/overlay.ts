@@ -696,9 +696,11 @@ async function source_of(
 	// outside every block, or in the page's own: a template showing the page's fields under names
 	// of its own, or the page's name, like its title
 	const at_root = !block || (page?.uid !== undefined && meta(block).uid === page.uid)
-	const root = at_root && page?.uid ? page_blok(page.uid) : undefined
-	if (!page || !root) return
+	if (!page || !at_root) return
+	// a story the page didn't connect, and the overlay worked out, has its name but no content here
 	if (loose(page.name) === text) return { story: page.id, name: true, max: 255 }
+	const root = page.uid ? page_blok(page.uid) : undefined
+	if (!root) return
 	return match(text, [root], page.id, shown) ?? match(text, inner_bloks(root), page.id, shown)
 }
 
@@ -2342,7 +2344,10 @@ async function detect() {
 		return stand_in_page()
 	}
 	const counts = new Map<number, number>()
-	for (const node of document.querySelectorAll("[data-blok-c]")) {
+	// the page's own blocks are in its <main>, when it has one: a header and footer from a story of
+	// the whole site's settings can be as many, and would win a tie with the page's
+	const main = document.querySelector("main")
+	for (const node of (main ?? document).querySelectorAll("[data-blok-c]")) {
 		const id = Number(meta(node).id)
 		if (id) counts.set(id, (counts.get(id) ?? 0) + 1)
 	}
