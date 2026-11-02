@@ -1286,8 +1286,15 @@ function wire_all(block: HTMLElement) {
 	mark_riches(block)
 }
 
-/** Whether an element shows nothing, like an empty wrapper, so taking it in with some text hides nothing */
+const MEDIA = "img, picture, video, iframe, canvas, svg"
+
+/**
+ * Whether an element shows nothing, like an empty wrapper, so taking it in with some text hides
+ * nothing. An image is never nothing, even at no size yet: one that's lazy has none until it loads,
+ * and the block may be swept for its text before then.
+ */
 function blank(el: Element) {
+	if (el.matches(MEDIA) || el.querySelector(MEDIA)) return false
 	const box = el.getBoundingClientRect()
 	return !box.width || !box.height
 }
