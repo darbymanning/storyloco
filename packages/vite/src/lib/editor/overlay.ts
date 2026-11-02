@@ -1781,6 +1781,7 @@ type Inspector = {
 	refresh(): void
 	close(): void
 	showing(): boolean
+	toggle(keyboard?: boolean): void
 }
 let inspector: Promise<Inspector> | undefined
 
@@ -2094,6 +2095,12 @@ function keydown(event: KeyboardEvent) {
 	if (event.key === "c" && plain) {
 		event.preventDefault()
 		comment()
+		return
+	}
+	// S opens the settings, or folds them back to a name
+	if (event.key === "s" && plain) {
+		event.preventDefault()
+		inspector?.then((panel) => panel.toggle(true))
 		return
 	}
 	// ⌘Z and ⇧⌘Z, or Ctrl+Z and Ctrl+Y, outside a field, where typing has its own undo

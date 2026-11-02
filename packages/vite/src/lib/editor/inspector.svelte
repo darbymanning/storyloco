@@ -1,7 +1,9 @@
 <!--
 	@component
-	The selected blok's fields, from its schema, in a panel beside the page. Each change saves as
-	a draft as it's made and the page shows it. Mounted by the overlay; nothing for a site to add.
+	The selected blok's fields, from its schema, in a panel beside the page, or the page's own story's
+	with nothing selected. Folded to its name by default, out of the page's way; it opens on a click
+	or S, and each browser remembers which. Each change saves as a draft as it's made and the page
+	shows it. Mounted by the overlay; nothing for a site to add.
 -->
 <script lang="ts">
 	import { SvelteMap } from "svelte/reactivity"
@@ -100,10 +102,70 @@
 	/** Whether a blok is showing, for the overlay */
 	export const showing = () => selection !== null
 
+	// --- folded to its name, or open
+
+	const OPEN = "storyloco-settings"
+	/** Open, rather than folded to its name; each browser remembers which */
+	let expanded = $state(false)
+	try {
+		expanded = localStorage.getItem(OPEN) === "open"
+	} catch {
+		// storage blocked: folded until it's opened
+	}
+	/** Open, but stepped aside while text it would cover is typed in on the page */
+	let aside = $state(false)
+	const folded = $derived(!expanded || aside)
+
+	let panel_el = $state<HTMLElement>()
+	let fold_el = $state<HTMLElement>()
+
+	/** Open or fold it; from the keyboard, focus goes with it */
+	export async function toggle(keyboard = false) {
+		const inside = panel_el?.contains(document.activeElement)
+		// stepped aside, it's still open, so it only comes back
+		if (aside) aside = false
+		else {
+			expanded = !expanded
+			try {
+				localStorage.setItem(OPEN, expanded ? "open" : "folded")
+			} catch {
+				// storage blocked: it lasts until the page reloads
+			}
+			if (expanded) selection && load(selection, false)
+			else flush()
+		}
+		await tick()
+		if (!folded && keyboard) title_el?.focus()
+		else if (inside && !panel_el?.contains(document.activeElement)) fold_el?.focus()
+	}
+
+	/** The page's own story, which the panel shows with nothing selected, so it's never empty */
+	const page = $derived(
+		editor.story?.uid ? { story: editor.story.id, uid: editor.story.uid } : null
+	)
+	const is_page = $derived(selection?.uid === page?.uid && selection?.story === page?.story)
+	/** Whether the overlay has something selected, rather than the panel falling back on the page */
+	let picked = $state(false)
+
+	$effect(() => {
+		const at = page
+		if (picked || !editor.editing) return
+		untrack(() => (at ? show(at) : clear()))
+	})
+
 	/** The field typed in on the page, which the settings mark so it's clear what's changing */
 	let on_page = $state<{ uid: string; field: string } | null>(null)
 	export function typing(at: { uid: string; field: string } | null) {
 		on_page = at
+		if (!at) return void (aside = false)
+		// open over the text being typed in, say as a sheet on a phone, it folds until that's done
+		requestAnimationFrame(() => {
+			const text = document.activeElement
+			if (!on_page || folded || !panel_el || !text || panel_el.contains(text)) return
+			const a = panel_el.getBoundingClientRect()
+			const b = text.getBoundingClientRect()
+			aside = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+		})
 	}
 	/** The field being changed here, which the page marks where it shows it */
 	const on_panel = (at: { uid: string; field: string } | null) =>
@@ -192,15 +254,24 @@
 		}
 	}
 
-	/** Show a blok; from the keyboard, focus moves to the panel's heading so its fields are next */
+	/**
+	 * Show the selected blok; from the keyboard, focus moves to the panel's heading so its fields are
+	 * next, or to its name when it's folded
+	 */
 	export function open(next: Selection, keyboard = false) {
-		if (keyboard) tick().then(() => title_el?.focus())
+		picked = true
+		show(next, keyboard)
+	}
+
+	function show(next: Selection, keyboard = false) {
+		if (keyboard) tick().then(() => (folded ? fold_el : title_el)?.focus())
 		if (selection?.story === next.story && selection.uid === next.uid) return
 		flush()
 		selection = next
 		saving = {}
 		failed = {}
-		// the page's own copy first, so the fields are there at once; Storyblok's follows quietly
+		// the page's own copy first, so the fields are there at once; Storyblok's follows quietly, once
+		// they're open to see
 		const quick = peek(next)
 		if (quick) {
 			components = quick.components as Map<string, Component>
@@ -208,7 +279,7 @@
 			const story = { id: next.story, uuid: "", name: "", full_slug: "", published_at: null }
 			loaded = { story, blok: quick.blok as Blok, trail: quick.trail }
 			tab = groups[0]?.name ?? ""
-			load(next, false)
+			if (expanded) load(next, false)
 		} else {
 			loaded = null
 			load(next)
@@ -217,7 +288,8 @@
 
 	/** The page saved something; the blok may have changed under the panel */
 	export function refresh() {
-		if (!selection) return
+		// folded, it catches up when it's opened
+		if (!selection || !expanded) return
 		// mid-save, the reply has the field's own value; anything else changed waits until it lands
 		if (Object.values(saving).some(Boolean)) stale = true
 		else load(selection, false)
@@ -231,7 +303,14 @@
 		load(selection, false)
 	}
 
+	/** Nothing selected: the page's own story, or nothing on a page without one */
 	export function close() {
+		picked = false
+		if (page && editor.editing) show(page)
+		else clear()
+	}
+
+	function clear() {
 		flush()
 		selection = null
 		loaded = null
@@ -1685,17 +1764,19 @@
 	</div>
 {/snippet}
 
-{#if selection}
+{#if selection && editor.editing}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<aside
 		class="inspector"
+		class:folded
 		data-storyloco="inspector"
-		aria-label="Block settings"
+		aria-label={is_page ? "Page settings" : "Block settings"}
 		onkeydown={keydown}
 		out:slide_out
+		bind:this={panel_el}
 	>
 		<header>
-			{#if loaded && loaded.trail.length > 1}
+			{#if !folded && loaded && loaded.trail.length > 1}
 				<nav class="trail" aria-label="Where this block is">
 					{#each loaded.trail.slice(0, -1) as step (step.uid)}
 						<button
@@ -1708,15 +1789,28 @@
 						<span aria-hidden="true">›</span>
 					{/each}
 				</nav>
+			{:else if !folded && loaded && is_page}
+				<p class="trail">{component_label(loaded.blok.component)}</p>
 			{/if}
 			<div class="title">
+				{#if folded}
+					<svg class="sliders" viewBox="0 0 24 24" aria-hidden="true"
+						><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" /><circle
+							cx="15"
+							cy="6"
+							r="2"
+						/><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></svg
+					>
+				{/if}
 				<h2 tabindex="-1" bind:this={title_el}>
-					{#if loaded}{component_label(loaded.blok.component)}{:else}<span
+					{#if loaded}{is_page && editor.story?.name
+							? editor.story.name
+							: component_label(loaded.blok.component)}{:else}<span
 							class="bone title-bone"
 							aria-label="Loading"
 						></span>{/if}
 				</h2>
-				{#if loaded && loaded.trail.length > 1}
+				{#if !folded && loaded && loaded.trail.length > 1}
 					<div class="actions" role="group" aria-label="Block">
 						<button
 							type="button"
@@ -1768,11 +1862,35 @@
 						</button>
 					</div>
 				{/if}
-				<button type="button" class="round" aria-label="Close" onclick={() => select(null)}>
-					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+				{#if picked}
+					<!-- back to the page's own settings -->
+					<button
+						type="button"
+						class="round deselect"
+						aria-label="Deselect"
+						title="Deselect"
+						onclick={() => select(null)}
+					>
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="round fold"
+					aria-expanded={!folded}
+					aria-controls="storyloco-settings"
+					aria-label={folded ? "Open the settings" : "Fold the settings"}
+					title={folded ? "Open the settings (S)" : "Fold the settings (S)"}
+					bind:this={fold_el}
+					onclick={() => toggle()}
+				>
+					<!-- arrows apart to open, together to fold, whichever edge it's on -->
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><path d={folded ? "m7 15 5 5 5-5M7 9l5-5 5 5" : "m7 20 5-5 5 5M7 4l5 5 5-5"} /></svg
+					>
 				</button>
 			</div>
-			{#if elsewhere}
+			{#if !folded && elsewhere}
 				<!-- a quiet note: the name of the story it's from, which opens it; the why is in the tooltip -->
 				<button
 					type="button"
@@ -1788,7 +1906,7 @@
 					<span>{elsewhere.name}</span>
 				</button>
 			{/if}
-			{#if groups.length > 1}
+			{#if !folded && groups.length > 1}
 				<div class="tabs" role="tablist">
 					{#each groups as group (group.name)}
 						<button
@@ -1802,31 +1920,33 @@
 			{/if}
 		</header>
 
-		<div class="body">
-			{#if problem}
-				<p class="state bad" role="alert">{problem}</p>
-			{:else if !loaded || !component}
-				<!-- shaped like the fields it becomes, so nothing jumps when they arrive -->
-				<div class="fields skeleton" aria-busy="true" aria-label="Loading the block’s fields">
-					{#each [7, 10, 5, 8] as width, i (i)}
-						<div class="sl-field">
-							<span class="bone" style:inline-size="{width}rem"></span>
-							<span class="bone input" class:tall={i === 1}></span>
-						</div>
-					{/each}
-				</div>
-			{:else if current}
-				{#key `${loaded.blok._uid}:${current.name}`}
-					<div class="fields">
-						{#each current.fields as [key, field] (key)}
-							{@render Control(key, field)}
+		{#if !folded}
+			<div class="body" id="storyloco-settings">
+				{#if problem}
+					<p class="state bad" role="alert">{problem}</p>
+				{:else if !loaded || !component}
+					<!-- shaped like the fields it becomes, so nothing jumps when they arrive -->
+					<div class="fields skeleton" aria-busy="true" aria-label="Loading the block’s fields">
+						{#each [7, 10, 5, 8] as width, i (i)}
+							<div class="sl-field">
+								<span class="bone" style:inline-size="{width}rem"></span>
+								<span class="bone input" class:tall={i === 1}></span>
+							</div>
 						{/each}
 					</div>
-				{/key}
-			{:else}
-				<p class="help">This block has no fields.</p>
-			{/if}
-		</div>
+				{:else if current}
+					{#key `${loaded.blok._uid}:${current.name}`}
+						<div class="fields">
+							{#each current.fields as [key, field] (key)}
+								{@render Control(key, field)}
+							{/each}
+						</div>
+					{/key}
+				{:else}
+					<p class="help">This block has no fields.</p>
+				{/if}
+			</div>
+		{/if}
 	</aside>
 {/if}
 
@@ -1903,6 +2023,73 @@
 		}
 	}
 
+	/* Folded: a pill with the name, where the panel's top edge would be, or its bottom on a phone */
+	.inspector.folded {
+		block-size: auto;
+		border-radius: 999px;
+		grid-template-rows: auto;
+		inline-size: auto;
+		max-inline-size: min(22rem, 100vw - 1.5rem);
+
+		@media (width < 40rem) {
+			inset: auto 0.5rem 0.5rem auto;
+			max-inline-size: calc(100vw - 1rem);
+		}
+
+		& header {
+			border: 0;
+			padding: 0.3125rem 0.3125rem 0.3125rem 0.875rem;
+		}
+
+		& .title {
+			gap: 0.5rem;
+		}
+
+		& h2 {
+			font-size: 0.8125rem;
+			min-inline-size: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		/* the whole pill opens it */
+		& .fold::after {
+			content: "";
+			inset: 0;
+			position: absolute;
+		}
+
+		& .deselect {
+			position: relative;
+			z-index: 1;
+		}
+	}
+
+	/* clear of the edit bar when it's in the same corner */
+	:global(body:has([data-storyloco="bar"][data-corner="tr"])) .inspector.folded {
+		@media (width >= 40rem) {
+			inset-block-start: calc(var(--editor-offset, 1rem) + 3.5rem);
+		}
+	}
+
+	:global(body:has([data-storyloco="bar"][data-corner="br"])) .inspector.folded {
+		@media (width < 40rem) {
+			inset-block-end: calc(var(--editor-offset, 1rem) + 3.5rem);
+		}
+	}
+
+	.sliders {
+		block-size: 1rem;
+		color: var(--muted);
+		fill: none;
+		flex: none;
+		inline-size: 1rem;
+		stroke: currentColor;
+		stroke-linecap: round;
+		stroke-width: 2;
+	}
+
 	header {
 		border-block-end: 1px solid var(--line);
 		display: grid;
@@ -1940,6 +2127,7 @@
 		justify-content: space-between;
 
 		& h2 {
+			flex: 1;
 			font-size: 1rem;
 			font-weight: 600;
 		}
