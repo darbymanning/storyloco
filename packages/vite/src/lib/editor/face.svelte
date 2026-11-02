@@ -62,7 +62,7 @@
 		onerror={() => failed++}
 	/>
 {:else}
-	{initials}
+	<span class="initials">{initials}</span>
 {/if}
 
 <style>
@@ -72,5 +72,14 @@
 		display: block;
 		inline-size: 100%;
 		object-fit: cover;
+	}
+
+	/* centred in whatever it fills, whether or not that centres what's in it */
+	.initials {
+		block-size: 100%;
+		display: grid;
+		inline-size: 100%;
+		line-height: 1;
+		place-items: center;
 	}
 </style>
