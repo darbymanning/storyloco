@@ -27,8 +27,10 @@ import {
 	locate,
 	rich_compact,
 	rich_supported,
+	paragraphs,
 	shows_rich,
 	text_of,
+	with_paragraph,
 } from "./content.js"
 import {
 	enter,
@@ -77,7 +79,16 @@ export type Target = { node: HTMLElement; story: number; uid: string; name: stri
 export type Selection = { story: number; uid: string }
 
 /** Where a piece of text comes from: a blok's field, or a story's own name */
-type Source = ({ story: number; uid: string; field: string } | { story: number; name: true }) & {
+type Source = (
+	| {
+			story: number
+			uid: string
+			field: string
+			/** one paragraph of the field, as `paragraphs` counts them, shown on its own */
+			paragraph?: number
+	  }
+	| { story: number; name: true }
+) & {
 	multiline?: boolean
 	max?: number
 }
@@ -541,22 +552,39 @@ const holds_blok = (node: Element, embedded: Set<string>) =>
 const loose = (text: string) => text.replace(/\s+/g, " ").trim()
 
 /** The one field among these bloks showing exactly this text, if only one does */
-/** Every field among these bloks showing exactly this text */
+/**
+ * Every field among these bloks showing exactly this text, or else every longer field one of whose
+ * paragraphs it is, as a site shows a body a paragraph at a time
+ */
 function matches(text: string, candidates: Iterable<Blok>, story: number) {
 	const found: Array<Source> = []
+	const in_parts: Array<Source> = []
 	for (const blok of candidates)
 		for (const [key, value] of Object.entries(blok)) {
 			const field = !key.startsWith("_") && text_field(blok, key)
-			if (!field || loose(text_of(value) ?? "") !== text) continue
-			found.push({
+			const shown = field && text_of(value)
+			if (!field || !shown) continue
+			const source = {
 				story,
 				uid: blok._uid!,
 				field: key,
 				multiline: field.type !== "text" && field.type !== "custom",
 				max: Number(field.max_length) || undefined,
-			})
+			}
+			if (loose(shown) === text) found.push(source)
+			else if (source.multiline) {
+				const parts = paragraphs(shown)
+				const paragraph = parts.findIndex((part) => loose(part) === text)
+				// it alone of them, so which paragraph is never a guess
+				if (
+					parts.length > 1 &&
+					paragraph >= 0 &&
+					parts.findLastIndex((part) => loose(part) === text) === paragraph
+				)
+					in_parts.push({ ...source, paragraph, max: undefined })
+			}
 		}
-	return found
+	return found.length ? found : in_parts
 }
 
 /**
@@ -855,7 +883,9 @@ const shareable = new Map<HTMLElement, { key: string; watch(): void; done(): voi
 
 /** The room a field's text is typed in together in */
 const room_key = (source: Source) =>
-	"name" in source ? `${source.story}:name` : `${source.story}:${source.uid}:${source.field}`
+	"name" in source
+		? `${source.story}:name`
+		: `${source.story}:${source.uid}:${source.field}${source.paragraph === undefined ? "" : `#${source.paragraph}`}`
 
 /**
  * The fields someone else is typing in right now, by what they've said they're in: everyone
@@ -954,16 +984,32 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 		},
 	}
 
+	/** The field as saved now, for a paragraph of it to go back into */
+	const saved = () =>
+		"name" in source
+			? Promise.resolve(undefined)
+			: call<{ blok: Blok }>({ op: "blok", story: source.story, uid: source.uid }).then(
+					({ blok }) => text_of(blok[source.field])
+				)
+
 	/** Saved while being typed in, so the page's data catches up once it's left */
 	let behind = false
 	async function persist(value: string, together = false) {
 		node.dataset.edit = "saving"
+		const part = "paragraph" in source ? source.paragraph : undefined
+		// a paragraph goes back into the field as it is now, so one typed in elsewhere meanwhile stays
+		// and isn't saved at all if that can't be read, or it would take the field's other paragraphs with it
+		const now = part === undefined ? value : await saved().catch(() => undefined)
+		const whole = part === undefined || now === undefined ? now : with_paragraph(now, part, value)
 		const change =
 			"name" in source
 				? { op: "name", story: source.story, value }
-				: { op: "set", story: source.story, uid: source.uid, field: source.field, value }
+				: { op: "set", story: source.story, uid: source.uid, field: source.field, value: whole }
 		const typing = document.activeElement === node
-		if (await send(change, together ? "shared" : "change", { again: !typing })) {
+		if (
+			whole !== undefined &&
+			(await send(change, together ? "shared" : "change", { again: !typing }))
+		) {
 			if (typing) behind = true
 			delete node.dataset.edit
 			forget(source.story)
@@ -987,8 +1033,8 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 				"name" in source
 					? undefined
 					: () =>
-							call<{ blok: Blok }>({ op: "blok", story: source.story, uid: source.uid }).then(
-								({ blok }) => text_of(blok[source.field])
+							saved().then((value) =>
+								source.paragraph === undefined ? value : paragraphs(value ?? "")[source.paragraph]
 							),
 		})
 	}

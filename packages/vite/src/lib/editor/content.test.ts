@@ -9,6 +9,8 @@ import {
 	differences,
 	find_blok,
 	locate,
+	paragraphs,
+	with_paragraph,
 	rich_compact,
 	shows_rich,
 	rich_supported,
@@ -265,4 +267,21 @@ test("text fields: plain text, and a heading's or a link's text", () => {
 	expect(is_text({ type: "custom", field_type: "uiloco-mux" })).toBe(false)
 	expect(is_text({ type: "richtext" })).toBe(false)
 	expect(is_text(undefined)).toBe(false)
+})
+
+describe("paragraphs", () => {
+	const body = "First one.\n\nSecond, over\ntwo lines.\n \n\nThird."
+
+	test("split at blank lines, as a site shows them, empty ones left out", () => {
+		expect(paragraphs(body)).toEqual(["First one.", "Second, over\ntwo lines.", "Third."])
+	})
+
+	test("one replaced, the rest as they were", () => {
+		expect(paragraphs(with_paragraph(body, 1, "Second."))).toEqual([
+			"First one.",
+			"Second.",
+			"Third.",
+		])
+		expect(with_paragraph("A\n\nB", 0, "Z")).toBe("Z\n\nB")
+	})
 })
