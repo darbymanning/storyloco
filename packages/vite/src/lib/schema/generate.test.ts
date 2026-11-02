@@ -127,3 +127,33 @@ test("generation rejects name collisions", () => {
 		)
 	).toThrow("conflicting")
 })
+
+test("a blocks field takes its components by folder or tag, as well as by name", () => {
+	const field = (restrict: Record<string, unknown>) => ({
+		type: "bloks",
+		restrict_components: true,
+		component_whitelist: [],
+		...restrict,
+	})
+	const types = generate_types(
+		[
+			{
+				name: "page",
+				is_nestable: false,
+				schema: {
+					by_folder: field({ restrict_type: "groups", component_group_whitelist: ["blocks"] }),
+					by_tag: field({ restrict_type: "tags", component_tag_whitelist: [7] }),
+					by_name: field({ restrict_type: "", component_whitelist: ["title"] }),
+				},
+			},
+			{ name: "title", component_group_uuid: "blocks", schema: {} },
+			{ name: "image", component_group_uuid: "blocks", internal_tag_ids: ["7"], schema: {} },
+			{ name: "link", schema: {} },
+		],
+		"/types.ts",
+		"/"
+	).replace(/\s+/g, " ")
+	expect(types).toContain('"by_folder"?: (Title | Image)[]')
+	expect(types).toContain('"by_tag"?: (Image)[]')
+	expect(types).toContain('"by_name"?: (Title)[]')
+})
