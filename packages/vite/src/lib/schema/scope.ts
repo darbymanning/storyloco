@@ -92,11 +92,22 @@ export async function management(
 ) {
 	const { token, region: resolved } = await login(env, region)
 	const base = `https://${HOSTS[resolved] ?? HOSTS.eu}/v1/spaces/${space}`
-	async function call<T>(method: string, route: string): Promise<T> {
+	/**
+	 * Storyblok allows 6 requests a second, and a push has just spent them, so a 429 is waited out:
+	 * for as long as `Retry-After` says, or a growing pause. Reads and deletes are safe to repeat.
+	 */
+	async function call<T>(method: string, route: string, attempt = 0): Promise<T> {
 		const response = await request(`${base}/${route}`, {
 			method,
 			headers: { Authorization: token },
 		})
+		if (response.status === 429 && attempt < 5) {
+			const after = Number(response.headers.get("retry-after"))
+			await new Promise((resolve) =>
+				setTimeout(resolve, after > 0 ? after * 1000 : 500 * 2 ** attempt)
+			)
+			return call(method, route, attempt + 1)
+		}
 		if (!response.ok) throw new Error(`Storyblok ${method} ${route}: ${response.status}`)
 		return (response.status === 204 ? {} : await response.json()) as T
 	}
