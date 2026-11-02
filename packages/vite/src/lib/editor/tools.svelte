@@ -477,6 +477,13 @@
 		unsent = (reply.sent ?? []).filter((s) => !s.sent)
 	}
 
+	/** The share's link, landing on this page rather than the home page, as an invitation's does */
+	const to_here = (link: string) => {
+		const url = new URL(link)
+		url.searchParams.set("to", location.pathname)
+		return url.href
+	}
+
 	async function copy(text: string, what: string) {
 		await navigator.clipboard.writeText(text).catch(() => {})
 		copied = what
@@ -1045,7 +1052,7 @@
 									class="primary"
 									disabled={share.access !== "link"}
 									title={share.access === "link" ? "" : "Let anyone with the link look first"}
-									onclick={() => share && copy(share.link, "link")}
+									onclick={() => share && copy(to_here(share.link), "link")}
 								>
 									{@render Icon(copied === "link" ? ICONS.check : ICONS.link)}
 									{copied === "link" ? "Copied" : "Copy link"}
