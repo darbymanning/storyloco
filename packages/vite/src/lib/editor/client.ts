@@ -179,17 +179,20 @@ const changed = () => {
 // reading it before then would make the two disagree
 const watch = createSubscriber((update) => {
 	S.subscribers.add(update)
-	if (!S.read && typeof document !== "undefined") {
-		S.read = true
-		queueMicrotask(() => {
-			const tag = document.getElementById("storyloco-editor")
-			if (tag) S.injected = JSON.parse(tag.textContent || "{}")
-			if (S.injected.edit) set_editing(true)
-			changed()
-		})
-	}
+	read_injected()
 	return () => S.subscribers.delete(update)
 })
+
+function read_injected() {
+	if (S.read || typeof document === "undefined") return
+	S.read = true
+	queueMicrotask(() => {
+		const tag = document.getElementById("storyloco-editor")
+		if (tag) S.injected = JSON.parse(tag.textContent || "{}")
+		if (S.injected.edit) set_editing(true)
+		changed()
+	})
+}
 
 /** Set by the multiplayer connection, loaded only for editors */
 export function set_presence(next: State["presence"]) {
@@ -441,8 +444,33 @@ const in_history = (() => {
 	}
 })()
 
+const edited_now = () => (S.editing && !!S.injected.user) || in_history
+
+/**
+ * Run `listener` only when whether the page is being edited changes, not on every change to the
+ * editor's state, like presence or notifications arriving; returns the way to stop
+ */
+export function on_edited(listener: () => void) {
+	let was = edited_now()
+	const check = () => {
+		if (edited_now() === was) return
+		was = !was
+		listener()
+	}
+	S.subscribers.add(check)
+	read_injected()
+	return () => S.subscribers.delete(check)
+}
+
+// its own subscriber, so what rests while editing, like a site's animations, isn't torn down and
+// run again each time anything else about the editor changes
+const watch_edited = createSubscriber(on_edited)
+
 /** Whether the page is being edited, or shown as it was in Page history's window */
-export const being_edited = () => editor.editing || in_history
+export const being_edited = () => {
+	watch_edited()
+	return edited_now()
+}
 
 /**
  * An attachment that only runs while the page isn't being edited: one whose effect takes over the
