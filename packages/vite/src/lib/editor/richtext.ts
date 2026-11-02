@@ -1402,6 +1402,7 @@ export function edit_in_place(
 		together,
 		field,
 		inserts,
+		run,
 	}: {
 		save: (doc: RichDoc) => void
 		end?: () => void
@@ -1410,6 +1411,11 @@ export function edit_in_place(
 		inserts?: Inserts
 		/** Typed in together, when the room saves it rather than `save` */
 		together?: { room: Room; seed: boolean }
+		/**
+		 * The elements in `element` that show the text, when it shows more than that, like a body beside
+		 * its title: only they make way for the editor, which sits where they were, in `element`'s styles
+		 */
+		run?: Array<HTMLElement>
 	}
 ) {
 	doc = as_shown(doc)
@@ -1425,12 +1431,12 @@ export function edit_in_place(
 			copy.removeAttribute(name)
 		return copy
 	}
-	const host = shell(element)
+	const host = run ? document.createElement("div") : shell(element)
 	host.dataset.storyloco = "rich"
 	let mount = host
 	/** What holds the text's own blocks, the paragraphs and headings */
 	let source: Element = element
-	for (let from: Element = element; from.children.length === 1;) {
+	for (let from: Element = element; !run && from.children.length === 1;) {
 		const only = from.firstElementChild!
 		// a heading or paragraph that holds the text's own blocks is a wrapper, like `<h1 class="title">`
 		// round the paragraphs, so it's copied for the styles it scopes; one that doesn't is the text
@@ -1446,8 +1452,8 @@ export function edit_in_place(
 	// `:first-child` and `:last-child` margins, so they keep the margins they had
 	const edge = (block: Element | null, side: "Top" | "Bottom") =>
 		block ? getComputedStyle(block)[`margin${side}`] : ""
-	const first = edge(source.firstElementChild, "Top")
-	const last = edge(source.lastElementChild, "Bottom")
+	const first = edge(run ? run[0] : source.firstElementChild, "Top")
+	const last = edge(run ? run[run.length - 1] : source.lastElementChild, "Bottom")
 	const shows = {
 		colour: !!source.querySelector("[style*='color']"),
 		classes: classes_in(source),
@@ -1464,9 +1470,10 @@ export function edit_in_place(
 			img.getBoundingClientRect(),
 		])
 	)
-	const display = element.style.display
-	element.after(host)
-	element.style.display = "none"
+	const hidden = run ?? [element]
+	const displays = hidden.map((el) => el.style.display)
+	hidden[hidden.length - 1].after(host)
+	for (const el of hidden) el.style.display = "none"
 
 	const rich = rich_editor({ element: mount, doc, together, shows, field, inserts })
 	const area = rich.editor.view.dom as HTMLElement
@@ -1502,7 +1509,7 @@ export function edit_in_place(
 		const next = rich.editor.getJSON()
 		rich.destroy()
 		host.remove()
-		element.style.display = display
+		hidden.forEach((el, i) => (el.style.display = displays[i]))
 		end?.()
 		if (after !== before && !together) save(next)
 	}

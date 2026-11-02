@@ -9,6 +9,7 @@ import {
 	on_navigate,
 	page_blok,
 	editor,
+	kit,
 	last_problem,
 	on_editing,
 	on_saved,
@@ -511,10 +512,9 @@ function by_tab(owners: Array<Rich>, block: HTMLElement) {
 }
 
 /** Which rich field an element shows, as the page is now: the only one, or the active of several the same */
-async function rich_now(node: HTMLElement, block: HTMLElement) {
+async function rich_now(node: HTMLElement, block: HTMLElement, text = compact_text(node)) {
 	const blok = await blok_for(block)
 	if (!blok) return
-	const text = (node.textContent ?? "").replace(/\s+/g, "")
 	const found = rich_fields(blok).filter(({ value }) => shows_rich(text, rich_compact(value)))
 	return found.length === 1 ? found[0] : found.length > 1 ? active_of(found, block) : undefined
 }
@@ -746,7 +746,8 @@ const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-r
 [data-storyloco-hover]{outline:1px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:-1px}
 [data-storyloco-selected]{outline:2px solid var(--editor-accent,#05807f)!important;outline-offset:-2px}
 [data-blok-c][data-storyloco-empty]{min-block-size:3.5rem;background:repeating-linear-gradient(-45deg,transparent 0 8px,color-mix(in srgb,var(--editor-accent,#05807f) 6%,transparent) 8px 16px)}
-[data-blok-c]:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:-2px}`
+[data-blok-c]:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:-2px}
+[data-storyloco-follow] a[href],[data-storyloco-follow] a[href] *{cursor:pointer}`
 
 /* Outside the layer, so a site's reset can't unpin our own bits */
 const OURS = `[data-storyloco=image]{position:fixed;z-index:2147483000;animation:storyloco-in .16s ease-out}
@@ -1265,6 +1266,61 @@ function wire_all(block: HTMLElement) {
 	mark_riches(block)
 }
 
+/** Whether an element shows nothing, like an empty wrapper, so taking it in with some text hides nothing */
+function blank(el: Element) {
+	const box = el.getBoundingClientRect()
+	return !box.width || !box.height
+}
+
+/**
+ * Where richtext is edited from this element showing it: the outermost wrapper round it that shows
+ * nothing more, so the editor takes the site's richtext container, but never an image beside the
+ * text that has no words of its own to tell it apart
+ */
+function rich_wrapper(node: Element, block: Element) {
+	const text = compact_text(node)
+	let outer = node
+	while (
+		outer.parentElement &&
+		outer.parentElement !== block &&
+		compact_text(outer.parentElement) === text &&
+		[...outer.parentElement.children].every((child) => child === outer || blank(child))
+	)
+		outer = outer.parentElement
+	return outer as HTMLElement
+}
+
+/** The innermost element showing all of this one's text */
+function innermost(el: HTMLElement) {
+	const text = compact_text(el)
+	for (;;) {
+		const holding = [...el.children].filter((child) => compact_text(child) === text)
+		if (holding.length !== 1) return el
+		el = holding[0] as HTMLElement
+	}
+}
+
+/** Each element of a run that shows a richtext field together, with the rest of the run */
+const runs = new WeakMap<Element, Array<HTMLElement>>()
+
+/**
+ * The run of an element's children showing just this richtext, when no one element does, like a
+ * body rendered straight into the container its title is in
+ */
+function run_showing(parent: Element, want: string) {
+	const children = [...parent.children] as Array<HTMLElement>
+	const texts = children.map(compact_text)
+	for (let i = 0; i < children.length; i++) {
+		if (!texts[i] || !want.startsWith(texts[i])) continue
+		let joined = ""
+		for (let j = i; j < children.length; j++) {
+			joined += texts[j]
+			if (joined === want) return j > i ? children.slice(i, j + 1) : undefined
+			if (!want.startsWith(joined)) break
+		}
+	}
+}
+
 /**
  * The block's richtext, found from the outside in: the first element whose text, spaces aside,
  * is a richtext field's is the outermost wrapper showing it, and nothing inside needs a look
@@ -1285,8 +1341,25 @@ async function mark_riches(block: HTMLElement) {
 		if (!text || holds_blok(el, embedded)) continue
 		const compact = wanted.find(([want]) => shows_rich(text, want))?.[0]
 		if (compact === undefined) continue
-		shown.set(compact, [...(shown.get(compact) ?? []), el])
+		shown.set(compact, [...(shown.get(compact) ?? []), rich_wrapper(innermost(el), block)])
 		inside = el
+	}
+	// shown by no one element: a run of them, like a body beside its title, when only one field holds it
+	for (const [want, rich] of wanted) {
+		if (!want || want.includes("\0") || shown.has(want)) continue
+		if (wanted.filter(([other]) => other === want).length > 1) continue
+		for (const el of block.querySelectorAll<HTMLElement>("*")) {
+			if (block_of(el) !== block) continue
+			const run = run_showing(el, want)
+			// a blok beside the run, like the title of the blok it's from, isn't in the way; one in it is
+			if (!run || run.some((part) => holds_blok(part, embedded))) continue
+			for (const part of run) {
+				riches.set(part, rich)
+				runs.set(part, run)
+				part.dataset.rich = rich.field
+			}
+			break
+		}
 	}
 	for (const [compact, els] of shown) {
 		const owners = wanted.filter(([want]) => want === compact).map(([, rich]) => rich)
@@ -1660,14 +1733,7 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 		const pick =
 			found.length === 1 ? found[0] : found.length > 1 ? active_of(found, block) : undefined
 		if (pick) {
-			// the outermost wrapper showing just this text, so the editor takes the site's richtext container
-			let outer = node
-			while (
-				outer.parentElement &&
-				outer.parentElement !== block &&
-				(outer.parentElement.textContent ?? "").replace(/\s+/g, "") === text
-			)
-				outer = outer.parentElement
+			const outer = rich_wrapper(node, block)
 			const { blok: owner, field } = pick
 			riches.set(outer, { blok: owner, field })
 			;(outer as HTMLElement).dataset.rich = field
@@ -1687,8 +1753,11 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	// which of several identical bodies, like tabs', is the one showing can change as they switch,
 	// and one element can show each in turn: what it was found showing, only while it still does
 	const was = riches.get(node)
-	const still = was && shows_rich(compact_text(node), rich_compact(was.blok[was.field]))
-	const { blok, field } = (block && (await rich_now(node, block))) ?? (still ? was : {})
+	// a run shows the field between them, so it's their text together that's the field's
+	const run = runs.get(node)
+	const text = run ? run.map(compact_text).join("") : compact_text(node)
+	const still = was && shows_rich(text, rich_compact(was.blok[was.field]))
+	const { blok, field } = (block && (await rich_now(node, block, text))) ?? (still ? was : {})
 	if (!field || !block || !blok?._uid) return void (editing_rich = null)
 	const source = { story: Number(meta(block).id), uid: blok._uid, field }
 	bar.hide()
@@ -1735,10 +1804,12 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 		const ok = await send(change, together ? "shared" : "change", { again: !open })
 		if (ok && open) behind = true
 		delete node.dataset.edit
-		if (ok) {
-			riches.delete(node)
-			delete node.dataset.rich
-		} else
+		if (ok)
+			for (const el of run ?? [node]) {
+				riches.delete(el)
+				delete el.dataset.rich
+			}
+		else
 			toast(last_problem() ?? "Couldn’t save that", {
 				label: "Retry",
 				run: () => send(change, together ? "shared" : "change"),
@@ -1749,7 +1820,8 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	room.save = save
 
 	tell({ uid: source.uid, field })
-	editing_rich = edit_in_place(node, doc, {
+	editing_rich = edit_in_place(run ? run[0].parentElement! : node, doc, {
+		run,
 		at,
 		field: schema as RichField | undefined,
 		inserts,
@@ -2022,6 +2094,21 @@ function over(event: PointerEvent) {
 		requestAnimationFrame(() => node.focus())
 }
 
+/** Go where a link goes, in this tab unless it opens another: through SvelteKit when it's this site */
+function follow_link(link: HTMLAnchorElement) {
+	const url = new URL(link.href, location.href)
+	if (link.target === "_blank") return void open(url, "_blank", "noopener")
+	if (url.origin !== location.origin || link.hasAttribute("download")) return location.assign(url)
+	void kit().goto(url.pathname + url.search + url.hash)
+}
+
+/** ⌘ or Ctrl held, which a click on a link follows: the pointer says so */
+function held(event: KeyboardEvent | FocusEvent) {
+	const on =
+		"metaKey" in event && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
+	document.documentElement.toggleAttribute("data-storyloco-follow", active && on)
+}
+
 function click(event: MouseEvent) {
 	if (!active) return
 	// a slider that captured the pointer to drag gets the click itself, not what was under it
@@ -2041,8 +2128,14 @@ function click(event: MouseEvent) {
 			(!!field && control.contains(field))
 		)
 	}
-	// in edit mode a link inside content picks what it shows; held keys still follow it
+	// in edit mode a link inside content picks what it shows; ⌘ or Ctrl follows it, here, as a
+	// visitor's click would, and with ⇧ or ⌥ too the browser does as it always does, like a new tab
 	if (link && block.contains(link)) {
+		if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey) {
+			event.preventDefault()
+			event.stopPropagation()
+			return follow_link(link as HTMLAnchorElement)
+		}
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
 		event.preventDefault()
 		// nor does the site's own click run on text being typed in, like closing the menu it's in
@@ -2483,6 +2576,9 @@ export function install() {
 	document.addEventListener("drop", dropped)
 	document.addEventListener("click", click, true)
 	document.addEventListener("keydown", keydown)
+	addEventListener("keydown", held, true)
+	addEventListener("keyup", held, true)
+	addEventListener("blur", held)
 	addEventListener("pointerleave", stay, true)
 	addEventListener("mouseleave", stay, true)
 	// a blok embedded in richtext, clicked in the text: its own fields, as the block it belongs to's story
