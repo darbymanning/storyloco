@@ -131,8 +131,8 @@
 			} catch {
 				// storage blocked: it lasts until the page reloads
 			}
-			if (expanded) selection && load(selection, false)
-			else flush()
+			if (!expanded) flush()
+			else if (selection) load(selection, false)
 		}
 		await tick()
 		if (!folded && keyboard) title_el?.focus()
