@@ -5,7 +5,7 @@ import { resolve_entry } from "./entry.js"
 import { cli_version } from "./migrate.js"
 import { run_cli } from "./run.js"
 import { createInterface } from "node:readline/promises"
-import { folders, in_scope, management, owner_tag, scoped, type Space } from "./scope.js"
+import { folders, in_scope, management, scoped, type Space } from "./scope.js"
 
 interface Options {
 	entry?: string
@@ -34,12 +34,11 @@ async function load(options: Options) {
  * validation runs, not a diff or push.
  */
 async function write_flat(root: string, local: Awaited<ReturnType<typeof load_local>>) {
-	const { schema, scope } = local
+	const { schema, tag } = local
 	const flat = path.join(root, "node_modules/.cache/storyloco/schema.mjs")
 	await mkdir(path.dirname(flat), { recursive: true })
 	// Keyed by name: a globbed entry keys its blocks by file path. A scoped schema's blocks carry
 	// its owner tag, beside any tags of their own, so `push --delete` knows what it pushed.
-	const tag = scope && owner_tag(scope)
 	const blocks = Object.fromEntries(
 		Object.values(schema.blocks).map((b) => [
 			b.name,
@@ -157,7 +156,7 @@ export async function push_schema(
 
 	if (options.delete) {
 		const { components } = folders(held)
-		const tag = owner_tag(local.scope)
+		const { tag } = local
 		const leftover = held.components.filter(
 			(c) => !names.components.includes(c.name) && in_scope(components.get(c.name), local.scope!)
 		)

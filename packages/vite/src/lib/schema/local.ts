@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises"
 import { validateSchema, type SchemaLike } from "@storyblok/schema"
 import path from "node:path"
 import { plugin_types } from "./plugins.js"
-import { in_scope, type Scope } from "./scope.js"
+import { in_scope, owner_tag, type Scope } from "./scope.js"
 
 /**
  * A space's schema defined in code with `@storyblok/schema` (`defineSchema`, `defineBlock`,
@@ -179,6 +179,7 @@ export async function load_local(
 		schema?: LocalSchema
 		default?: LocalSchema
 		scope?: Folder | ReadonlyArray<Folder>
+		tag?: string
 	}>(entry, {
 		resolve: { alias },
 		plugins: [
@@ -253,6 +254,11 @@ export async function load_local(
 			)
 	}
 
+	if (module.tag !== undefined && (!scope || typeof module.tag !== "string" || !module.tag.trim()))
+		throw new Error(
+			`${entry} exports \`tag\`, which names a scope's owner tag: export \`scope\` too, and make the tag a name`
+		)
+
 	const validation = validateSchema(schema as SchemaLike)
 	const errors = validation.issues.filter((issue) => issue.severity === "error")
 	if (errors.length)
@@ -262,6 +268,8 @@ export async function load_local(
 	return {
 		schema,
 		scope,
+		// the block tag that marks what this schema pushed: `</> <scope>`, or `</> <tag>`
+		tag: scope && owner_tag(scope, module.tag?.trim()),
 		named: !!module.schema,
 		components: to_components(schema),
 		dependencies: dependencies ?? [],
