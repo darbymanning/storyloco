@@ -30,6 +30,21 @@ export function set_text(blok: Node, field: string, value: string) {
 	return true
 }
 
+/** A blank line between them, as a site splits a longer text field into paragraphs */
+const BLANK_LINE = /\n[^\S\n]*\n\s*/
+
+/** A longer text field's paragraphs, as a site shows them: split at blank lines, empty ones left out */
+export const paragraphs = (value: string) => value.split(BLANK_LINE).filter((part) => part.trim())
+
+/** The field's text with its `index`th paragraph, as `paragraphs` counts them, replaced */
+export function with_paragraph(value: string, index: number, next: string) {
+	let at = -1
+	return value
+		.split(BLANK_LINE)
+		.map((part) => (part.trim() && ++at === index ? next : part))
+		.join("\n\n")
+}
+
 const is_asset = (value: unknown): value is Node =>
 	!!value && typeof value === "object" && (value as Node).fieldtype === "asset"
 
