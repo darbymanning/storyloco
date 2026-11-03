@@ -1799,7 +1799,10 @@
 	}
 
 	.review {
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border-radius: 0.875rem;
 		box-shadow:
 			var(--shadow),

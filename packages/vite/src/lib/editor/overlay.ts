@@ -2037,7 +2037,7 @@ async function selection_at(el: Element): Promise<Selection | undefined> {
 
 // --- a word after a change, with a way back
 
-const TOAST = `[data-storyloco=toast]{position:fixed;left:50%;bottom:1.25rem;translate:-50% 0;z-index:2147483003;display:flex;align-items:center;gap:.75rem;max-inline-size:calc(100vw - 2rem);padding:.5rem .5rem .5rem .875rem;border-radius:999px;background:var(--editor-pill,var(--editor-ink,#1b243f));color:#fff;font:500 .8125rem/1.25 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .2s,translate .2s}
+const TOAST = `[data-storyloco=toast]{position:fixed;left:50%;bottom:1.25rem;translate:-50% 0;z-index:2147483003;display:flex;align-items:center;gap:.75rem;max-inline-size:calc(100vw - 2rem);padding:.5rem .5rem .5rem .875rem;border-radius:999px;backdrop-filter:blur(20px) saturate(1.8);background:color-mix(in srgb,var(--editor-pill,var(--editor-ink,#1b243f)) 82%,transparent);color:#fff;font:500 .8125rem/1.25 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .2s,translate .2s}
 [data-storyloco=toast][hidden]{display:flex;opacity:0;translate:-50% .75rem;pointer-events:none}
 [data-storyloco=toast]:not(:has(button)){padding-inline-end:.875rem}
 [data-storyloco=toast] button{all:unset;cursor:pointer;padding:.3rem .75rem;border-radius:999px;background:rgb(255 255 255/.14);white-space:nowrap}

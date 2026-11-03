@@ -954,7 +954,10 @@
 	}
 
 	.card {
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border-radius: 0.875rem;
 		box-shadow:
 			0 0 0 1px var(--line),
@@ -1064,7 +1067,10 @@
 	}
 
 	.mentions {
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border-radius: 0.625rem;
 		box-shadow:
 			0 0 0 1px var(--line),
@@ -1213,7 +1219,10 @@
 	}
 
 	.panel {
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border-radius: 0.875rem;
 		box-shadow:
 			0 0 0 1px var(--line),
@@ -1400,7 +1409,8 @@
 	}
 
 	.hint {
-		background: var(--editor-pill, #1b243f);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background: color-mix(in srgb, var(--editor-pill, #1b243f) 82%, transparent);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
 		border-radius: 999px;
 		bottom: 1rem;

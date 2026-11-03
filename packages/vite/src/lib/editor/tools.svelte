@@ -1257,7 +1257,10 @@
 	.sheet {
 		--w: 30rem;
 
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border-radius: 1rem;
 		box-shadow:
 			0 0 0 1px var(--line),
@@ -2223,7 +2226,10 @@
 
 	.device-bar {
 		align-items: center;
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border-radius: 0.875rem;
 		box-shadow:
 			0 0 0 1px var(--line),
