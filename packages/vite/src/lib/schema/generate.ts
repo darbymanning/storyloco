@@ -99,6 +99,9 @@ export function generate_types(
 		"",
 		"export type PluginValue<K extends string, Known = unknown> = K extends keyof StoryblokCustomPlugins ? StoryblokCustomPlugins[K] : Known",
 		"export type Blok<T> = T & { component?: string; _uid?: string; _editable?: string }",
+		'/** A link, with the story it points to once links are resolved (`resolve_links: "url"`); the schema\'s own allows only strings beside its fields */',
+		"type StoryRef = { name?: string; uuid?: string; slug?: string; full_slug?: string; url?: string; [key: string]: unknown }",
+		'export type StoryblokLink = import("storyloco/schema").MultilinkFieldValue extends infer L ? L extends unknown ? { [K in keyof L as string extends K ? never : K]: L[K] } & { story?: StoryRef } : never : never',
 		'export type { AssetFieldValue as StoryblokAsset, MultilinkFieldValue as StoryblokMultilink, RichTextFieldValue as StoryblokRichtext, TableFieldValue as StoryblokTable } from "storyloco/schema"'
 	)
 
@@ -124,6 +127,19 @@ export function generate_types(
 					field.type === "bloks"
 						? `(${types.join(" | ") || "never"})[]`
 						: `Richtext<RichTextFieldValue, ${types.join(" | ") || "never"}>`
+			} else if (field.type === "multilink") {
+				value = "StoryblokLink"
+			} else if (
+				(field.type === "options" || field.type === "option") &&
+				field.source === "internal_stories"
+			) {
+				// stories it picks: their uuids, or the stories themselves once relations are resolved
+				const types = [field.filter_content_type ?? []]
+					.flat()
+					.map((name) => names.get(String(name)))
+					.filter(Boolean)
+				const story = `import("storyloco").Story<${types.join(" | ") || "unknown"}> | string`
+				value = field.type === "options" ? `(${story})[]` : story
 			} else if (field.type === "custom") {
 				// A registered field plugin wins; Storyloco's own plugins are typed without one
 				const plugin = String(field.field_type ?? "")
@@ -131,8 +147,15 @@ export function generate_types(
 					? plugin_types[plugin as keyof typeof plugin_types]
 					: undefined
 				value = `PluginValue<${JSON.stringify(plugin)}${known ? `, ${known}` : ""}>`
-			} else
-				value = `FieldValue<Extract<Field, { type: ${JSON.stringify(field.type)} }> & ${JSON.stringify(field)}>`
+			} else {
+				// only what types its value: the rest (its id, limits, appearance) is the space's own, as
+				// the Management API spells it, and one that isn't as the schema types say, like a number
+				// for `max_options`, would make the field `never`
+				const typing = Object.fromEntries(
+					Object.entries(field).filter(([name]) => ["type", "source", "options"].includes(name))
+				)
+				value = `FieldValue<Extract<Field, { type: ${JSON.stringify(field.type)} }> & ${JSON.stringify(typing)}>`
+			}
 			lines.push(`${JSON.stringify(key)}${field.required ? "" : "?"}: ${value}`)
 		}
 		lines.push("}")

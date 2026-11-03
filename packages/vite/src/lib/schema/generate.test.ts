@@ -22,7 +22,10 @@ test("generated interfaces compile with inferred plugins, recursive blocks, and 
 				exports: { ".": "./root.d.ts", "./schema": "./schema.ts" },
 			})
 		)
-		await writeFile(path.join(pkg, "root.d.ts"), "export interface Registry {}")
+		await writeFile(
+			path.join(pkg, "root.d.ts"),
+			"export interface Registry {}\nexport type Story<T> = { uuid: string; content: T }"
+		)
 		await writeFile(
 			path.join(pkg, "schema.ts"),
 			`export * from ${JSON.stringify(path.join(import.meta.dir, "index.ts"))}`
@@ -156,4 +159,56 @@ test("a blocks field takes its components by folder or tag, as well as by name",
 	expect(types).toContain('"by_folder"?: (Title | Image)[]')
 	expect(types).toContain('"by_tag"?: (Image)[]')
 	expect(types).toContain('"by_name"?: (Title)[]')
+})
+
+test("a field's type takes only what types its value, not settings the space spells its own way", () => {
+	const types = generate_types(
+		[
+			{
+				name: "filters",
+				schema: {
+					regions: {
+						type: "options",
+						pos: 2,
+						id: "zDv7",
+						source: "internal",
+						datasource_slug: "regions",
+						// a number from the Management API, where the schema types a string: `never` if kept
+						max_options: 3,
+					},
+				},
+			},
+		],
+		"/types.ts",
+		"/"
+	).replace(/\s+/g, " ")
+	expect(types).toContain(
+		'"regions"?: FieldValue<Extract<Field, { type: "options" }> & {"type":"options","source":"internal"}>'
+	)
+	expect(types).not.toContain("max_options")
+})
+
+test("stories a field picks are their uuids, or the stories once resolved; a link may carry its story", () => {
+	const types = generate_types(
+		[
+			{
+				name: "cases",
+				schema: {
+					items: {
+						type: "options",
+						source: "internal_stories",
+						filter_content_type: ["case_study"],
+					},
+					lead: { type: "option", source: "internal_stories" },
+					link: { type: "multilink" },
+				},
+			},
+			{ name: "case_study", is_root: true, schema: {} },
+		],
+		"/types.ts",
+		"/"
+	).replace(/\s+/g, " ")
+	expect(types).toContain('"items"?: (import("storyloco").Story<CaseStudy> | string)[]')
+	expect(types).toContain('"lead"?: import("storyloco").Story<unknown> | string')
+	expect(types).toContain('"link"?: StoryblokLink')
 })
