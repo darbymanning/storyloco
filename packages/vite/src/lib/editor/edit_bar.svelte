@@ -991,10 +991,18 @@
 		}
 	}
 
-	/* holding the settings' name, the bar is a pill of its own, which morphs whole as it opens */
+	/*
+	 * holding the settings' name, the bar is a pill of its own, which morphs whole as it opens: glass,
+	 * the page blurred through it, a wash of the accent from the top and a catch of light on its edge
+	 */
 	.bar:has(.settings:not(:empty)) {
-		background-color: var(--bg);
-		box-shadow: var(--shadow);
+		--sheen: inset 0 1px 0 rgb(255 255 255 / 0.1);
+
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
+		box-shadow: var(--sheen), var(--shadow);
 
 		& :is(.panel, .inner) {
 			transition: none;
@@ -1022,6 +1030,7 @@
 		block-size: calc(100dvh - 2 * var(--o) - var(--clear));
 		border-radius: 1rem;
 		box-shadow:
+			var(--sheen),
 			var(--shadow),
 			0 16px 48px rgb(0 0 0 / 0.16);
 		display: grid;

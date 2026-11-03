@@ -154,7 +154,9 @@
 					{
 						clipPath: `inset(${a.top - b.top}px ${b.right - a.right}px ${b.bottom - a.bottom}px ${a.left - b.left}px round ${from.radius}px)`,
 					},
-					{ clipPath: `inset(0 round ${to.radius}px)` },
+					{ clipPath: `inset(0 round ${to.radius}px)`, offset: 0.8 },
+					// then on past its edges, uncovering its shadow too rather than it landing at the end
+					{ clipPath: `inset(-80px round ${to.radius + 80}px)` },
 				]
 			: // the pill's row waits in its corner, not the middle of the box closing on it, still
 				// centred on itself
