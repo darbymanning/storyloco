@@ -491,12 +491,14 @@ function create({
 		const response = await resolve(event, {
 			// after `resolve`, so a later hook has set the version: previews get the bar too, signed in or not
 			transformPageChunk: async ({ html }) => {
-				// previews show drafts; so does development, where the badge is always there to sign in from
-				const draft = dev || (event.locals as { version?: string }).version === "draft"
-				// staging gets it too, published or not, so a visitor can switch between the two; development
-				// shows drafts whatever's asked, so there's nothing to switch
-				const staged = !editor && !dev && (await staging(event.url))
-				if (!editor && !draft && !staged) return html
+				const { version, switchable } = event.locals as { version?: string; switchable?: boolean }
+				const draft = version === "draft"
+				// staging gets it too, published or not, so a visitor can switch between the two, where the
+				// site's version is storyloco's `version` hook, which follows the switch; development is
+				// staging wherever it's served
+				const staged = !editor && !!switchable && (dev || (await staging(event.url)))
+				// development, where the badge is always there to sign in from
+				if (!editor && !draft && !staged && !dev) return html
 				// the site's client may only have been made while this request rendered
 				const known = space ?? (await own_space(configured).catch(() => null))
 				const shared = guest && {

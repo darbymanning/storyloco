@@ -57,7 +57,7 @@
 
 	// the editor's own badge, for previews and whoever's signed in or was shared the draft; derived, as
 	// every change to the editor's state would otherwise mount it again
-	const wanted = $derived(!!(editor.draft || editor.user || editor.guest))
+	const wanted = $derived(!!(editor.draft || editor.staging || editor.user || editor.guest))
 	$effect(() => {
 		if (!target || window.self !== window.top || !wanted) return
 		let gone = false

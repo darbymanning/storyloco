@@ -383,12 +383,23 @@
 		if (user_id) load_inbox()
 	})
 
-	/** On staging, the page again with its drafts or with what's live, which the server remembers */
-	function view(draft: boolean) {
-		if (draft === editor.draft) return
-		const url = new URL(location.href)
-		url.searchParams.set("_storyblok", draft ? "" : "off")
-		location.assign(url)
+	/** Staging's switch, shown as soon as it's pressed: what the page will show once it's loaded again */
+	let switching = $state<boolean | null>(null)
+	const showing_draft = $derived(switching ?? editor.draft)
+
+	/**
+	 * On staging, the page again with its drafts or with what's live: the server remembers which on a
+	 * cookie, and the content is the server's, so the page loads again, at its own address
+	 */
+	async function view(draft: boolean) {
+		if (draft === showing_draft) return
+		switching = draft
+		const asking = new URL(location.href)
+		asking.searchParams.set("_storyblok", draft ? "" : "off")
+		await fetch(asking, { method: "HEAD", credentials: "same-origin" }).catch(() => {})
+		const clean = new URL(location.href)
+		clean.searchParams.delete("_storyblok")
+		location.replace(clean)
 	}
 
 	function show_inbox() {
@@ -562,6 +573,21 @@
 						+{here.people.length - 4}
 					</span>
 				{/if}
+			</span>
+		{/if}
+
+		{#if editor.staging && !editor.user && !editor.guest}
+			<!-- staging's drafts or what's live, beside the badge so it always says which -->
+			<span
+				class="versions"
+				role="group"
+				aria-label="Content to show"
+				aria-busy={switching !== null}
+			>
+				<button type="button" aria-pressed={showing_draft} onclick={() => view(true)}>Draft</button>
+				<button type="button" aria-pressed={!showing_draft} onclick={() => view(false)}
+					>Published</button
+				>
 			</span>
 		{/if}
 
@@ -781,16 +807,6 @@
 						<span class="tip" aria-hidden="true">Leave: see the site as visitors do</span>
 					</span>
 				{:else}
-					{#if editor.staging}
-						<span class="versions" role="group" aria-label="Content to show">
-							<button type="button" aria-pressed={editor.draft} onclick={() => view(true)}
-								>Draft</button
-							>
-							<button type="button" aria-pressed={!editor.draft} onclick={() => view(false)}
-								>Published</button
-							>
-						</span>
-					{/if}
 					<button class="action" type="button" onclick={signin}>
 						<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
 							<path
@@ -1427,7 +1443,20 @@
 		background: color-mix(in srgb, var(--ink) 6%, transparent);
 		border-radius: 999px;
 		display: flex;
+		flex: none;
+		margin-inline: 0.375rem;
 		padding: 0.125rem;
+
+		&[aria-busy="true"] {
+			cursor: progress;
+		}
+
+		/* on its own beside the folded badge, on the bar's glass, so it reads on any page */
+		.bar:not(.open) & {
+			backdrop-filter: blur(20px) saturate(1.8);
+			background: color-mix(in srgb, var(--bg) 82%, transparent);
+			box-shadow: var(--shadow);
+		}
 
 		& button {
 			background: none;
