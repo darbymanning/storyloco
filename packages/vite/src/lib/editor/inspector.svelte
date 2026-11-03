@@ -771,8 +771,8 @@
 	const link = (v: unknown) => (v && typeof v === "object" ? (v as Link) : {})
 	const kids = (v: unknown) => (Array.isArray(v) ? (v as Array<Blok>) : [])
 	const IMAGE = /\.(jpe?g|png|gif|webp|avif|svg)$/i
-	const thumb = (filename: string) =>
-		/\.(jpe?g|png|gif|webp|avif)$/i.test(filename) ? `${filename}/m/160x0` : filename
+	const thumb = (filename: string, width = 160) =>
+		/\.(jpe?g|png|gif|webp|avif)$/i.test(filename) ? `${filename}/m/${width}x0` : filename
 	const file_name = (filename?: string | null) => filename?.split("/").pop() ?? ""
 	const only_images = (field: Field) =>
 		!field.filetypes?.length || field.filetypes.every((t) => t === "images")
@@ -1316,35 +1316,58 @@
 
 {#snippet Asset_(key: string, field: Field, id: string)}
 	{@const value = asset(values[key])}
+	{@const choose = () =>
+		picker({
+			current: value,
+			images: only_images(field),
+			save: async (choice) => {
+				change(key, { id: choice.asset, alt: choice.alt, focus: choice.focus })
+				return null
+			},
+		})}
 	{@render Label(key, field, id)}
-	<div class="asset">
-		{#if value.filename}
+	{#if value.filename}
+		<!-- the whole width, with what changes it over its corner -->
+		<div class="picture">
 			{#if IMAGE.test(value.filename)}
-				<img src={thumb(value.filename)} alt={value.alt ?? ""} />
+				<img src={thumb(value.filename, 640)} alt={value.alt ?? ""} />
 			{:else}
 				<span class="file">{file_name(value.filename)}</span>
 			{/if}
-		{/if}
-		<div class="asset-actions">
-			<button
-				{id}
-				type="button"
-				class="button"
-				onclick={() =>
-					picker({
-						current: value,
-						images: only_images(field),
-						save: async (choice) => {
-							change(key, { id: choice.asset, alt: choice.alt, focus: choice.focus })
-							return null
-						},
-					})}>{value.filename ? "Replace" : "Choose"}</button
-			>
-			{#if value.filename}
-				<button type="button" class="button quiet" onclick={() => change(key, null)}>Remove</button>
-			{/if}
+			<span class="over">
+				<button {id} type="button" aria-label="Replace" title="Replace" onclick={choose}
+					><svg viewBox="0 0 24 24" aria-hidden="true"
+						><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path
+							d="M21 3v5h-5"
+						/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path
+							d="M8 16H3v5"
+						/></svg
+					></button
+				>
+				<button type="button" aria-label="Remove" title="Remove" onclick={() => change(key, null)}
+					><svg viewBox="0 0 24 24" aria-hidden="true"
+						><path
+							d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+						/></svg
+					></button
+				>
+			</span>
 		</div>
-	</div>
+		{#if IMAGE.test(value.filename)}
+			<input
+				class="alt"
+				aria-label="Alt text"
+				placeholder="Alt text: what it shows"
+				value={value.alt ?? ""}
+				oninput={(e) => change(key, { ...value, alt: e.currentTarget.value }, 700)}
+				onblur={flush}
+			/>
+		{/if}
+	{:else}
+		<div class="asset-actions">
+			<button {id} type="button" class="button" onclick={choose}>Choose</button>
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet Multiasset(key: string, field: Field, id: string)}
@@ -2989,6 +3012,84 @@
 	.asset-actions {
 		display: flex;
 		gap: 0.375rem;
+	}
+
+	/* an asset field's image, the panel's width, its buttons over the corner on hover or focus */
+	.picture {
+		border-radius: 0.5rem;
+		overflow: hidden;
+		position: relative;
+
+		& img {
+			background: repeating-conic-gradient(rgb(0 0 0 / 0.05) 0 25%, transparent 0 50%) 0 0 / 12px
+				12px;
+			block-size: auto;
+			display: block;
+			inline-size: 100%;
+			max-block-size: 16rem;
+			object-fit: contain;
+		}
+
+		& .file {
+			background: var(--field);
+			display: block;
+			padding: 0.75rem 5.5rem 0.75rem 0.75rem;
+		}
+
+		& .over {
+			display: flex;
+			gap: 0.25rem;
+			inset: 0.5rem 0.5rem auto auto;
+			opacity: 0;
+			position: absolute;
+			transition: opacity 0.15s;
+		}
+
+		&:is(:hover, :focus-within) .over {
+			opacity: 1;
+		}
+
+		/* no hover to bring them out on touch */
+		@media (hover: none) {
+			& .over {
+				opacity: 1;
+			}
+		}
+
+		& .over button {
+			backdrop-filter: blur(12px) saturate(1.6);
+			background: color-mix(in srgb, var(--bg) 72%, transparent);
+			block-size: 2rem;
+			border: 0;
+			border-radius: 50%;
+			box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+			color: var(--ink);
+			cursor: pointer;
+			display: grid;
+			inline-size: 2rem;
+			padding: 0;
+			place-items: center;
+			transition: background-color 0.15s;
+
+			&:hover {
+				background: color-mix(in srgb, var(--bg) 92%, transparent);
+			}
+
+			& svg {
+				block-size: 1rem;
+				fill: none;
+				inline-size: 1rem;
+				stroke: currentColor;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				stroke-width: 2;
+			}
+		}
+	}
+
+	.alt {
+		font-size: 0.8125rem;
+		margin-block-start: 0.375rem;
 	}
 
 	/* a theme's colours beside its name */
