@@ -220,6 +220,21 @@ export default schema({ blocks: { hero: block("hero", {}) } })`,
 		})
 	})
 
+	test("a scoped push never asks, as its output is captured", async () => {
+		await project(brochure, async (root) => {
+			let given: Array<string> = []
+			await push_schema(
+				{ root, env, space: "1" },
+				async (args) => {
+					given = args
+					return ""
+				},
+				api([])
+			)
+			expect(given).toContain("--no-migrations")
+		})
+	})
+
 	test("a schema can name its own owner tag", async () => {
 		const named = brochure.replace(
 			"export const scope",

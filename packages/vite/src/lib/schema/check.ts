@@ -149,7 +149,9 @@ export async function push_schema(
 	}
 
 	const api = await management(space, env, options.region, request)
-	const output = await run(args, { cwd: root, env, capture: true })
+	// its output is captured to be scoped, so a prompt (offering migration scaffolds for a changed
+	// field) would wait unseen
+	const output = await run([...args, "--no-migrations"], { cwd: root, env, capture: true })
 	const held = await api.read()
 	const names = own(local)
 	report(output, local, held)
