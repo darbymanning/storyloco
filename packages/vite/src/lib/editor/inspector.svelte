@@ -154,7 +154,11 @@
 						},
 						{ clipPath: `inset(0 round ${to.radius}px)` },
 					]
-				: [frame(from), frame(to)]
+				: // the pill's contents wait in its corner, not the middle of the box closing on them
+					[frame(from), frame(to)].map((f) => ({
+						...f,
+						alignItems: bar.dataset.corner?.startsWith("t") ? "flex-start" : "flex-end",
+					}))
 		// ponytail: turned back mid-grow, it starts from the whole box, not the uncovered part
 		morphing = bar.animate(keyframes, {
 			duration: 340,
