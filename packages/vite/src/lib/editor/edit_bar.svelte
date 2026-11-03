@@ -1078,20 +1078,24 @@
 			grid-column: 3;
 		}
 
-		/* narrower than the row: it wraps rather than widening the panel */
+		/*
+		 * one line, spread across the panel: the status, saving and any problem are the badge's dot
+		 * and ring, and publishing the row's last button. Narrower still, say with people beside the
+		 * badge, it wraps rather than widening the panel
+		 */
 		& .inner {
+			column-gap: 0.375rem;
 			flex-wrap: wrap;
+			justify-content: space-between;
 			row-gap: 0.375rem;
 			white-space: normal;
 
-			/* the status is the badge's dot, and publishing the row's last button */
-			& :is(.status, .publish) {
+			& :is(.status, .publish, .state) {
 				display: none;
 			}
 
 			& .last {
 				display: flex;
-				margin-inline-start: auto;
 			}
 		}
 
