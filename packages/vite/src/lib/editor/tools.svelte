@@ -1296,8 +1296,12 @@
 		display: grid;
 		gap: 0.875rem;
 
+		/* the search along the top and the keys along the bottom stay put, and the results between scroll */
 		.palette & {
+			display: flex;
+			flex-direction: column;
 			gap: 0;
+			max-block-size: min(76vh, 36rem);
 		}
 	}
 
@@ -1351,15 +1355,12 @@
 
 	.search {
 		align-items: center;
-		background: var(--bg);
 		border-block-end: 1px solid var(--line);
 		color: var(--muted);
 		display: flex;
+		flex: none;
 		gap: 0.625rem;
-		inset-block-start: 0;
 		padding: 0.875rem 1rem;
-		position: sticky;
-		z-index: 2;
 
 		& .icon {
 			block-size: 1.25rem;
@@ -1399,6 +1400,12 @@
 	[role="listbox"] {
 		padding: 0.375rem;
 		position: relative;
+
+		.palette & {
+			min-block-size: 0;
+			overflow: auto;
+			overscroll-behavior: contain;
+		}
 	}
 
 	.glow {
@@ -1516,17 +1523,14 @@
 	}
 
 	.keys {
-		background: color-mix(in oklab, var(--bg) 92%, var(--ink));
 		border-block-start: 1px solid var(--line);
 		color: var(--muted);
 		display: flex;
+		flex: none;
 		font-size: 0.75rem;
 		gap: 1rem;
-		inset-block-end: 0;
 		justify-content: flex-end;
 		padding: 0.5rem 1rem;
-		position: sticky;
-		z-index: 2;
 
 		& span {
 			align-items: center;
@@ -2326,7 +2330,8 @@
 			padding: max(0.5rem, env(safe-area-inset-top)) 0.5rem 0.5rem;
 		}
 
-		.sheet {
+		.sheet,
+		.palette .view {
 			max-block-size: 80dvh;
 		}
 

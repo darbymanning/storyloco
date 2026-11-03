@@ -2411,12 +2411,17 @@ export async function comment() {
 // --- the field being changed in the settings, marked where the page shows it
 
 /** Where the page shows a field: text typed in place, or rich text */
-function shown_at(uid: string, field: string) {
+function shown_at(uid: string, field: string, part?: string) {
 	const found: Array<HTMLElement> = []
-	// the field whole, or a part of it shown in a place of its own: a paragraph, a plan's names and sizes
+	// the field whole, or the parts of it shown in places of their own: a paragraph, a plan's names and
+	// sizes; given one part, that one, or those within it
 	const at = `:${uid}:${field}`
-	for (const [node, { key }] of shareable)
-		if (node.isConnected && (key.endsWith(at) || key.includes(`${at}#`))) found.push(node)
+	const shows = (key: string) =>
+		part === undefined
+			? key.endsWith(at) || key.includes(`${at}#`)
+			: key.endsWith(`${at}#${part}`) || key.includes(`${at}#${part}.`)
+	for (const [node, { key }] of shareable) if (node.isConnected && shows(key)) found.push(node)
+	if (part !== undefined) return found
 	for (const node of document.querySelectorAll<HTMLElement>("[data-rich]")) {
 		const rich = riches.get(node)
 		if (rich?.blok._uid === uid && rich.field === field) found.push(node)
@@ -2474,7 +2479,7 @@ function reveal(el: Element) {
 
 let marking = 0
 function mark_field(event: Event) {
-	const at = (event as CustomEvent<{ uid: string; field: string } | null>).detail
+	const at = (event as CustomEvent<{ uid: string; field: string; part?: string } | null>).detail
 	const mark = ++marking
 	for (const node of document.querySelectorAll("[data-storyloco-field]"))
 		node.removeAttribute("data-storyloco-field")
@@ -2485,7 +2490,7 @@ function mark_field(event: Event) {
 	if (block) wire_all(block)
 	setTimeout(() => {
 		if (mark !== marking) return
-		const found = shown_at(at.uid, at.field)
+		const found = shown_at(at.uid, at.field, at.part)
 		for (const node of found) node.setAttribute("data-storyloco-field", "")
 		// the first that shows: a plan's other house types are on the page, hidden
 		const shows = found.find((node) => node.getClientRects().length) ?? found[0]

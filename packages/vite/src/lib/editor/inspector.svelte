@@ -241,8 +241,11 @@
 		on_page = at
 	}
 	/** The field being changed here, which the page marks where it shows it */
-	const on_panel = (at: { uid: string; field: string } | null) =>
+	const on_panel = (at: { uid: string; field: string; part?: string } | null) =>
 		dispatchEvent(new CustomEvent("storyloco:panel-field", { detail: at }))
+	/** Which piece of the field an input changes, where the page shows it a piece at a time */
+	const part_of = (target: EventTarget | null) =>
+		(target as HTMLElement | null)?.closest<HTMLElement>("[data-part]")?.dataset.part
 	const typed_here = (key: string) => on_page?.uid === selection?.uid && on_page?.field === key
 
 	const label = (name: string) => {
@@ -2110,6 +2113,7 @@
 		<div class="row">
 			<select
 				aria-label="House type"
+				data-part="types.{t}"
 				value={String(t)}
 				onchange={(e) => (plan_type[key] = Number(e.currentTarget.value))}
 			>
@@ -2134,6 +2138,7 @@
 				<span>Name</span>
 				<input
 					value={type.name ?? ""}
+					data-part="types.{t}.name"
 					{...typing}
 					oninput={(e) => {
 						const name = e.currentTarget.value
@@ -2150,6 +2155,7 @@
 						<input
 							aria-label="Floor name"
 							placeholder="Floor"
+							data-part="types.{t}.floors.{f}.name"
 							value={floor.name}
 							{...typing}
 							oninput={(e) => {
@@ -2203,6 +2209,7 @@
 								<input
 									aria-label={name}
 									placeholder={name}
+									data-part="types.{t}.floors.{f}.dimensions.{d}.rooms.{r}.{part}"
 									value={room[part as keyof Room]}
 									{...typing}
 									oninput={(e) => {
@@ -2289,9 +2296,11 @@
 		class="sl-field"
 		class:on-page={typed_here(key)}
 		data-type={field.type}
-		onfocusin={() => selection && on_panel({ uid: selection.uid, field: key })}
+		onfocusin={(e) =>
+			selection && on_panel({ uid: selection.uid, field: key, part: part_of(e.target) })}
 		// a field that kept its focus as the page scrolled away brings it back when clicked again
-		onpointerdown={() => selection && on_panel({ uid: selection.uid, field: key })}
+		onpointerdown={(e) =>
+			selection && on_panel({ uid: selection.uid, field: key, part: part_of(e.target) })}
 		onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && on_panel(null)}
 		{@attach (node) => {
 			if (typed_here(key)) node.scrollIntoView({ block: "nearest", behavior: "smooth" })
