@@ -148,24 +148,39 @@
 		const [a, b] = [from.rect, to.rect]
 		// growing, it's laid out whole at once and uncovered from the old shape, so nothing inside
 		// reflows or wraps on the way; shrinking to the pill, whose name fits any size it passes
-		const keyframes =
-			b.width >= a.width && b.height >= a.height
-				? [
-						{
-							clipPath: `inset(${a.top - b.top}px ${b.right - a.right}px ${b.bottom - a.bottom}px ${a.left - b.left}px round ${from.radius}px)`,
-						},
-						{ clipPath: `inset(0 round ${to.radius}px)` },
-					]
-				: // the pill's row waits in its corner, not the middle of the box closing on it, still
-					// centred on itself
-					[frame(from), frame(to)].map((f) => ({
-						...f,
-						flexWrap: "wrap",
-						alignContent: bar.dataset.corner?.startsWith("t") ? "flex-start" : "flex-end",
-					}))
+		const grows = b.width >= a.width && b.height >= a.height
+		const keyframes = grows
+			? [
+					{
+						clipPath: `inset(${a.top - b.top}px ${b.right - a.right}px ${b.bottom - a.bottom}px ${a.left - b.left}px round ${from.radius}px)`,
+					},
+					{ clipPath: `inset(0 round ${to.radius}px)` },
+				]
+			: // the pill's row waits in its corner, not the middle of the box closing on it, still
+				// centred on itself
+				[frame(from), frame(to)].map((f) => ({
+					...f,
+					flexWrap: "wrap",
+					alignContent: bar.dataset.corner?.startsWith("t") ? "flex-start" : "flex-end",
+				}))
 		// ponytail: turned back mid-grow, it starts from the whole box, not the uncovered part
 		const timing = { duration: 340, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
 		morphing = bar.animate(keyframes, timing)
+		// what the new shape adds arrives after it: opening, the bar's buttons one after another,
+		// and folding, the name once the pill has nearly closed, each rising from the edge it's on
+		const top = bar.dataset.corner?.startsWith("t")
+		const arriving = grows
+			? [...bar.querySelectorAll<HTMLElement>(".panel .inner > *")]
+			: [title_el, fold_el].filter((el) => !!el)
+		arriving.forEach((el, i) =>
+			el.animate(
+				[
+					{ opacity: 0, translate: `0 ${top ? -6 : 6}px` },
+					{ opacity: 1, translate: "0 0" },
+				],
+				{ duration: 240, delay: grows ? 120 + i * 35 : 160, easing: "ease-out", fill: "backwards" }
+			)
+		)
 		// the face glides to where it sits in the new shape, rather than stepping there
 		const now = badge?.getBoundingClientRect()
 		if (badge && was && now && (was.left !== now.left || was.top !== now.top))

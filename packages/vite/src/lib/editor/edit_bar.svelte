@@ -1027,18 +1027,20 @@
 		display: grid;
 		grid-template: minmax(0, 1fr) auto / auto auto minmax(0, 1fr);
 		inline-size: min(22rem, 100% - 2 * var(--o));
-		overflow: hidden;
 		padding: 0 0.375rem 0.375rem;
 
 		& > * {
 			grid-row: 2;
 		}
 
+		/* the settings keep to the rounded corners they're in; the row's tips may stand past the edge */
 		& .settings {
 			align-self: stretch;
 			border-block-end: 1px solid var(--line);
+			border-radius: 1rem 1rem 0 0;
 			grid-area: 1 / 1 / 2 / -1;
 			margin: 0 -0.375rem 0.375rem;
+			overflow: hidden;
 		}
 
 		& .people {
@@ -1072,6 +1074,7 @@
 
 			& .settings {
 				border-block: 1px solid var(--line) 0;
+				border-radius: 0 0 1rem 1rem;
 				grid-row: 2;
 				margin: 0.375rem -0.375rem 0;
 			}
