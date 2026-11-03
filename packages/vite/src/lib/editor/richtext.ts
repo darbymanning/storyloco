@@ -812,7 +812,8 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 		bar.replaceChildren()
 		buttons.clear()
 		bar.append(...marks.map((t) => button(t)))
-		if (levels.length || lists.length || (few && extra.length)) bar.append(sep())
+		// between the marks and what follows: none when the field allows no marks to come before it
+		if (marks.length && (levels.length || lists.length || (few && extra.length))) bar.append(sep())
 		kind_button = null
 		if (levels.length) {
 			kind_button = document.createElement("button")

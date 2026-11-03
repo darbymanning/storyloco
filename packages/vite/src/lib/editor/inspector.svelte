@@ -114,6 +114,8 @@
 	/** Fields with a save on its way, and why the last one failed */
 	let saving = $state<Record<string, boolean>>({})
 	let failed = $state<Record<string, string>>({})
+	/** Asset fields whose alt text AI is writing */
+	let describing = $state<Record<string, boolean>>({})
 	/** The field being typed in, which a reload mustn't overwrite */
 	let focused: string | null = null
 
@@ -410,6 +412,20 @@
 				setTimeout(() => save(key), wait)
 			)
 		else save(key)
+	}
+
+	/** Alt text for an asset field's image, from AI, as the picker suggests it */
+	async function describe(key: string, value: Asset) {
+		describing[key] = true
+		delete failed[key]
+		try {
+			const { alt } = await call<{ alt: string }>({ op: "ai", do: "alt", url: value.filename })
+			change(key, { ...value, alt })
+		} catch (e) {
+			failed[key] = (e as Error).message
+		} finally {
+			describing[key] = false
+		}
 	}
 
 	function flush() {
@@ -1335,33 +1351,51 @@
 				<span class="file">{file_name(value.filename)}</span>
 			{/if}
 			<span class="over">
-				<button {id} type="button" aria-label="Replace" title="Replace" onclick={choose}
+				<button {id} type="button" aria-label="Replace" onclick={choose}
 					><svg viewBox="0 0 24 24" aria-hidden="true"
 						><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path
 							d="M21 3v5h-5"
 						/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path
 							d="M8 16H3v5"
 						/></svg
-					></button
+					><span class="tip" aria-hidden="true">Replace</span></button
 				>
-				<button type="button" aria-label="Remove" title="Remove" onclick={() => change(key, null)}
+				<button type="button" aria-label="Remove" onclick={() => change(key, null)}
 					><svg viewBox="0 0 24 24" aria-hidden="true"
 						><path
 							d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
 						/></svg
-					></button
+					><span class="tip" aria-hidden="true">Remove</span></button
 				>
 			</span>
 		</div>
 		{#if IMAGE.test(value.filename)}
-			<input
-				class="alt"
-				aria-label="Alt text"
-				placeholder="Alt text: what it shows"
-				value={value.alt ?? ""}
-				oninput={(e) => change(key, { ...value, alt: e.currentTarget.value }, 700)}
-				onblur={flush}
-			/>
+			<div class="alt">
+				<input
+					aria-label="Alt text"
+					placeholder="Alt text: what it shows"
+					value={value.alt ?? ""}
+					disabled={describing[key]}
+					oninput={(e) => change(key, { ...value, alt: e.currentTarget.value }, 700)}
+					onblur={flush}
+				/>
+				<!-- the image service can't describe a vector -->
+				{#if !/\.svg$/i.test(value.filename)}
+					<button
+						type="button"
+						class="ai"
+						class:busy={describing[key]}
+						aria-label="Write it with AI"
+						disabled={describing[key]}
+						onclick={() => describe(key, value)}
+						><svg viewBox="0 0 24 24" aria-hidden="true"
+							><path
+								d="M9.94 14.06 4 20M14 4l1.1 2.9L18 8l-2.9 1.1L14 12l-1.1-2.9L10 8l2.9-1.1zM19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"
+							/></svg
+						><span class="tip" aria-hidden="true">Write it with AI</span></button
+					>
+				{/if}
+			</div>
 		{/if}
 	{:else}
 		<div class="asset-actions">
@@ -3016,14 +3050,13 @@
 
 	/* an asset field's image, the panel's width, its buttons over the corner on hover or focus */
 	.picture {
-		border-radius: 0.5rem;
-		overflow: hidden;
 		position: relative;
 
 		& img {
 			background: repeating-conic-gradient(rgb(0 0 0 / 0.05) 0 25%, transparent 0 50%) 0 0 / 12px
 				12px;
 			block-size: auto;
+			border-radius: 0.5rem;
 			display: block;
 			inline-size: 100%;
 			max-block-size: 16rem;
@@ -3032,6 +3065,7 @@
 
 		& .file {
 			background: var(--field);
+			border-radius: 0.5rem;
 			display: block;
 			padding: 0.75rem 5.5rem 0.75rem 0.75rem;
 		}
@@ -3069,10 +3103,46 @@
 			inline-size: 2rem;
 			padding: 0;
 			place-items: center;
+			position: relative;
 			transition: background-color 0.15s;
 
 			&:hover {
 				background: color-mix(in srgb, var(--bg) 92%, transparent);
+			}
+
+			/* the edit bar's tooltip, beneath the button */
+			& .tip {
+				background-color: var(--ink);
+				border-radius: 0.5rem;
+				color: var(--bg);
+				font-size: 0.75rem;
+				font-weight: 500;
+				inset: calc(100% + 0.5rem) auto auto 50%;
+				opacity: 0;
+				padding: 0.375rem 0.5rem;
+				pointer-events: none;
+				position: absolute;
+				transition:
+					opacity 0.2s ease,
+					translate 0.2s ease;
+				translate: -50% -0.25rem;
+				white-space: nowrap;
+				z-index: 1;
+
+				&::after {
+					background-color: inherit;
+					block-size: 0.3125rem;
+					clip-path: polygon(50% 0, 100% 100%, 0 100%);
+					content: "";
+					inline-size: 0.625rem;
+					inset: auto auto 100% calc(50% - 0.3125rem);
+					position: absolute;
+				}
+			}
+
+			&:is(:hover, :focus-visible) .tip {
+				opacity: 1;
+				translate: -50% 0;
 			}
 
 			& svg {
@@ -3087,9 +3157,89 @@
 		}
 	}
 
+	/* the image's alt text, and AI to write it */
 	.alt {
-		font-size: 0.8125rem;
 		margin-block-start: 0.375rem;
+		position: relative;
+
+		& input {
+			font-size: 0.8125rem;
+			padding-inline-end: 2.5rem;
+		}
+
+		& .ai {
+			background: none;
+			block-size: 1.75rem;
+			border: 0;
+			border-radius: 0.375rem;
+			color: var(--muted);
+			cursor: pointer;
+			display: grid;
+			inline-size: 1.75rem;
+			inset: 50% 0.3125rem auto auto;
+			padding: 0;
+			place-items: center;
+			position: absolute;
+			translate: 0 -50%;
+			transition:
+				background-color 0.15s,
+				color 0.15s;
+
+			&:hover:not(:disabled) {
+				background: color-mix(in srgb, var(--ink) 10%, transparent);
+				color: var(--accent);
+			}
+
+			&.busy {
+				animation: pulse 1.4s ease-in-out infinite;
+				color: var(--accent);
+				cursor: wait;
+			}
+
+			& svg {
+				block-size: 1rem;
+				fill: none;
+				inline-size: 1rem;
+				stroke: currentColor;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				stroke-width: 2;
+			}
+
+			& .tip {
+				background-color: var(--ink);
+				border-radius: 0.5rem;
+				color: var(--bg);
+				font-size: 0.75rem;
+				font-weight: 500;
+				inset: auto 0 calc(100% + 0.5rem) auto;
+				opacity: 0;
+				padding: 0.375rem 0.5rem;
+				pointer-events: none;
+				position: absolute;
+				transition:
+					opacity 0.2s ease,
+					translate 0.2s ease;
+				translate: 0 0.25rem;
+				white-space: nowrap;
+				z-index: 1;
+
+				&::after {
+					background-color: inherit;
+					block-size: 0.3125rem;
+					clip-path: polygon(0 0, 100% 0, 50% 100%);
+					content: "";
+					inline-size: 0.625rem;
+					inset: 100% 0.5625rem auto auto;
+					position: absolute;
+				}
+			}
+
+			&:is(:hover, :focus-visible) .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
+		}
 	}
 
 	/* a theme's colours beside its name */

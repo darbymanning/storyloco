@@ -1794,9 +1794,25 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 			return outer as HTMLElement
 		}
 	}
+	// shown by no one element but a run of them, like a body beside its title, as `mark_riches` finds
+	// on hover: pressed after its marks have gone (a save clears them), the run it's pressed in
+	for (let node = el.parentElement; node && block.contains(node); node = node.parentElement)
+		for (const { value, ...rich } of fields) {
+			const run = run_showing(node, rich_compact(value))
+			const part = run?.find((each) => each.contains(el))
+			if (!run || !part || run.some((each) => holds_blok(each, embedded))) continue
+			for (const each of run) {
+				riches.set(each, rich)
+				runs.set(each, run)
+				each.dataset.rich = rich.field
+			}
+			return part
+		}
 }
 
 let editing_rich: (() => void) | null = null
+/** The richtext the last press is in, as it's found */
+let finding_rich: Promise<HTMLElement | undefined> | undefined
 
 async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	// taken before anything is awaited: one click arrives twice (pointer and click), and both would
@@ -2154,7 +2170,7 @@ function over(event: PointerEvent) {
 		return
 	}
 
-	if (!editing_rich) rich_at(el)
+	if (!editing_rich) finding_rich = rich_at(el)
 
 	// a held key means press what's there, as it follows a link
 	const held = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
@@ -2232,6 +2248,10 @@ function click(event: MouseEvent) {
 	if (rich && riches.has(rich)) {
 		event.preventDefault()
 		edit_rich(rich, { x: event.clientX, y: event.clientY })
+	} else {
+		// the press is still finding what's there, as it can when the text has to be looked for: once it has
+		const at = { x: event.clientX, y: event.clientY }
+		finding_rich?.then((found) => found?.contains(el) && riches.has(found) && edit_rich(found, at))
 	}
 	const pending = loosening
 	selection_at(el).then(async (s) => {
