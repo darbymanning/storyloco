@@ -1,6 +1,9 @@
 import {
 	allowed,
 	assets_in,
+	date_entry,
+	plugin_of,
+	theme_choices,
 	copy_blok,
 	differences,
 	fresh_blok,
@@ -18,6 +21,7 @@ import {
 	type Path,
 	type Place,
 } from "./content.js"
+import { format_currency } from "../currency.js"
 
 /*
  * What the Site Editor can do to a space, as the person signed in: read and change stories, assets
@@ -433,6 +437,14 @@ async function content_of(editor: Editor, story: number) {
 
 // --- fields, as the inspector edits them
 
+/** A theme's names and colours, and a currency's codes: the only plugin options that aren't secrets */
+const open_options = (field: Field) =>
+	plugin_of(field) === "theme"
+		? field.options
+		: plugin_of(field) === "currency"
+			? field.options?.filter(({ name }) => ["currencies", "default_currency"].includes(name))
+			: undefined
+
 /** What the page may see of the schema: plugin options hold moxy secrets, so they stay here */
 function public_schema(components: Array<Component>) {
 	return components.map(
@@ -446,7 +458,7 @@ function public_schema(components: Array<Component>) {
 			schema: Object.fromEntries(
 				Object.entries(schema).map(([key, field]) => [
 					key,
-					field.type === "custom" ? { ...field, options: undefined } : field,
+					field.type === "custom" ? { ...field, options: open_options(field) } : field,
 				])
 			),
 		})
@@ -460,6 +472,194 @@ const PLUGINS = (field: { field_type?: string | null }) =>
 const LINKS = new Set(["url", "story", "email", "asset"])
 
 type Resolve = (id: number) => Promise<Asset>
+type FindStory = (id: number) => Promise<Summary>
+
+const TARGETS = new Set(["_self", "_blank", "_parent", "_top", "_new"])
+const RELS = new Set([
+	"noopener",
+	"noreferrer",
+	"nofollow",
+	"noopener noreferrer",
+	"noopener noreferrer nofollow",
+])
+
+/**
+ * A storyloco plugin's value, as its own plugin would have written it: only the shape it stores,
+ * what it works out for itself (a price's display, a date's UTC) worked out here, and whatever
+ * else the stored value held kept. An image or a page in it comes from Storyblok, not the page.
+ */
+async function plugin_value(
+	field: Field,
+	value: unknown,
+	existing: unknown,
+	resolve: Resolve,
+	find_story: FindStory,
+	bad: (why?: string) => never
+): Promise<unknown> {
+	const object = (v: unknown): v is Node => !!v && typeof v === "object" && !Array.isArray(v)
+	const was = object(existing) ? existing : { plugin: field.field_type }
+	const str = (v: unknown, max = 200) =>
+		v === undefined || v === null ? "" : typeof v === "string" && v.length <= max ? v : bad()
+	const list = (v: unknown, max = 100) =>
+		v === undefined ? [] : Array.isArray(v) && v.length <= max ? (v as Array<unknown>) : bad()
+	const key = (v: unknown) =>
+		typeof v === "string" && /^[\w-]{1,64}$/.test(v) ? v : (crypto.randomUUID() as string)
+
+	switch (plugin_of(field)) {
+		case "theme": {
+			if (value === null || value === "") return null
+			const choices = theme_choices(field.options as Array<{ name: string; value: string }>)
+			if (!choices.some((choice) => choice.value === value)) bad("needs one of its themes")
+			return value
+		}
+		case "time":
+			if (value === null || value === "") return ""
+			if (typeof value !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) bad("needs a time")
+			return value
+		case "currency": {
+			if (!object(value)) bad()
+			const { currency, amount } = value as Node
+			if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency)) bad("needs a currency")
+			if (
+				amount !== null &&
+				!(typeof amount === "number" && Number.isFinite(amount) && amount >= 0)
+			)
+				bad("needs an amount")
+			const number = amount as number | null
+			return {
+				...was,
+				currency,
+				amount: number,
+				formatted: number === null ? null : format_currency(number, currency as string),
+			}
+		}
+		case "blok_select": {
+			if (!object(value) || typeof value.id !== "string" || !/^[\w-]{0,64}$/.test(value.id)) bad()
+			return { ...was, id: (value as Node).id }
+		}
+		case "dates": {
+			if (!object(value)) bad()
+			const zone = str(value.timezone, 100)
+			try {
+				new Intl.DateTimeFormat("en", { timeZone: zone })
+			} catch {
+				bad("needs a timezone")
+			}
+			const day = /^\d{4}-\d{2}-\d{2}$/
+			const time = /^([01]\d|2[0-3]):[0-5]\d$/
+			const dates = list(value.dates, 500).map((row) => {
+				if (!object(row) || typeof row.start_date !== "string" || !day.test(row.start_date))
+					bad("needs a start date on each")
+				const { start_time, end_date, end_time } = row as Node
+				if (start_time && !time.test(String(start_time))) bad("needs times as HH:MM")
+				if (end_time && !time.test(String(end_time))) bad("needs times as HH:MM")
+				if (end_date && !day.test(String(end_date))) bad("needs dates as YYYY-MM-DD")
+				return date_entry(row as Parameters<typeof date_entry>[0], zone)
+			})
+			return { ...was, timezone: zone, dates }
+		}
+		case "link": {
+			if (!object(value)) bad()
+			const type = value.type
+			const target =
+				value.target === undefined || TARGETS.has(String(value.target)) ? value.target : bad()
+			const base = { ...was, type, text: str(value.text, 500), target }
+			if (type === "external") {
+				const url = str(value.url, 2000)
+				// a link a page renders as its href: never one that runs script
+				if (/^\s*(javascript|data|vbscript):/i.test(url)) bad("needs a web address")
+				const rel = value.rel === undefined || RELS.has(String(value.rel)) ? value.rel : bad()
+				return { ...base, url, rel }
+			}
+			if (type === "email")
+				return {
+					...base,
+					email: str(value.email, 320),
+					subject: str(value.subject, 500),
+					body: str(value.body, 5000),
+					cc: str(value.cc, 1000),
+					bcc: str(value.bcc, 1000),
+				}
+			if (type === "internal") {
+				const chosen = object(value.story) && id(value.story.id) ? value.story.id : undefined
+				// the page it was already, or else one Storyblok has
+				const story =
+					chosen === undefined
+						? undefined
+						: object(was.story) && was.story.id === chosen
+							? was.story
+							: await find_story(chosen).then(({ id, uuid, name, published_at }) => ({
+									id,
+									uuid,
+									name,
+									published_at,
+								}))
+				return { ...base, suffix: str(value.suffix, 500), story }
+			}
+			// an asset link's file is chosen in Storyblok; its words and target are editable here
+			if (type === "asset" && was.type === "asset") return { ...base, asset: was.asset }
+			return bad()
+		}
+		case "plans": {
+			if (!object(value)) bad()
+			// an image the field had already, by its id, without asking Storyblok for each
+			const known = new Map(assets_in(existing).map(({ asset }) => [asset.id, asset]))
+			const plan = async (v: unknown) => {
+				if (v === undefined) return undefined
+				if (!object(v) || !id(v.id))
+					return { fieldtype: "asset", id: null, filename: "", alt: "", focus: "" }
+				const kept = known.get(v.id)
+				const alt = typeof v.alt === "string" ? v.alt.slice(0, 1000) : undefined
+				const focus =
+					typeof v.focus === "string" && /^(\d+x\d+:\d+x\d+)?$/.test(v.focus) ? v.focus : undefined
+				if (kept)
+					return {
+						...kept,
+						...(alt === undefined ? {} : { alt }),
+						...(focus === undefined ? {} : { focus }),
+					}
+				return normalise({ type: "asset" }, { id: v.id, alt, focus }, undefined, resolve)
+			}
+			const types = await Promise.all(
+				list(value.types, 50).map(async (type) => {
+					if (!object(type)) bad()
+					return {
+						id: key(type.id),
+						name: str(type.name),
+						floors: await Promise.all(
+							list(type.floors, 50).map(async (floor) => {
+								if (!object(floor)) bad()
+								return {
+									id: key(floor.id),
+									name: str(floor.name),
+									plan: await plan(floor.plan),
+									dimensions: list(floor.dimensions, 50).map((dimension) => {
+										if (!object(dimension)) bad()
+										return {
+											id: key(dimension.id),
+											name: str(dimension.name),
+											rooms: list(dimension.rooms, 100).map((room) => {
+												if (!object(room)) bad()
+												return {
+													id: key(room.id),
+													name: str(room.name),
+													area_m: str(room.area_m, 40),
+													area_ft: str(room.area_ft, 40),
+												}
+											}),
+										}
+									}),
+								}
+							})
+						),
+					}
+				})
+			)
+			return { ...was, types }
+		}
+	}
+	return bad("is edited in Storyblok")
+}
 
 /**
  * A value as the field's type stores it, checked and tidied, or an `EditorError` saying why
@@ -469,7 +669,8 @@ export async function normalise(
 	field: Field,
 	value: unknown,
 	existing: unknown,
-	resolve: Resolve
+	resolve: Resolve,
+	find_story: FindStory = () => Promise.reject(new EditorError(400, "Unknown change"))
 ): Promise<unknown> {
 	const bad = (why = "isn’t a value this field can hold") => {
 		throw new EditorError(400, `${field.display_name || "That field"} ${why}`)
@@ -612,6 +813,7 @@ export async function normalise(
 				)
 				return { ...(existing as Node), ...settings }
 			}
+			if (plugin_of(field)) return plugin_value(field, value, existing, resolve, find_story, bad)
 			if (!PLUGINS(field) || !object(value)) bad("is edited in Storyblok")
 			for (const v of Object.values(value as Node))
 				if (v !== null && typeof v !== "string" && typeof v !== "number") bad()
@@ -646,6 +848,8 @@ export function input_of(field: Field | undefined, stored: unknown): unknown {
 		case "table":
 			return object(stored) ? stored : { fieldtype: "table", thead: [], tbody: [] }
 		case "custom":
+			// a theme's or a time's is a string, as its plugin stores it
+			if (typeof stored === "string" && plugin_of(field)) return stored
 			return object(stored) ? stored : is_video(field) ? null : {}
 		default:
 			return stored ?? ""
@@ -1178,7 +1382,9 @@ export async function operate(
 			const field = schema[key]
 			if (!field || !field_name(key) || ["bloks", "tab", "section"].includes(field.type))
 				throw new EditorError(400, `${key} can’t be changed here`)
-			blok[key] = await normalise(field, value, blok[key], resolve)
+			blok[key] = await normalise(field, value, blok[key], resolve, async (id) =>
+				summary((await editor.mapi<{ story: Summary }>(`/stories/${id}`)).story)
+			)
 		}
 		if (JSON.stringify(current.content) === was) return { ok: true, blok }
 		await editor.mapi(`/stories/${body.story}`, { method: "PUT", body: { story: current } })
