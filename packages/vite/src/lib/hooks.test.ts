@@ -18,7 +18,7 @@ function from_editor(timestamp = now(), token = TOKEN, space = "123") {
 	})
 }
 
-type Input = Parameters<typeof version>[0]
+type Input = Parameters<ReturnType<typeof version>>[0]
 
 /** Stand-in for `event.cookies`, whose `get` sees a pending `set` or `delete` as SvelteKit's does */
 function jar(initial: Record<string, string> = {}) {
@@ -72,6 +72,45 @@ describe("version", () => {
 		const { version, cookies } = await run(`${SITE}/about`, { storyblok_preview: kept.join(":") })
 		expect(version).toBe("draft")
 		expect(cookies.storyblok_preview).toStartWith(`123:${now()}:`)
+	})
+
+	test("a site serving several spaces checks a preview with the token it says", async () => {
+		const other = version({ token: () => "space-two-token" })
+		const event = {
+			url: new URL(`${SITE}/?${from_editor(now(), "space-two-token")}`),
+			cookies: jar(),
+			locals: {} as { version?: string },
+		}
+		await other({ event, resolve: () => new Response("ok") } as unknown as Input)
+		expect(event.locals.version).toBe("draft")
+		expect((await run(`${SITE}/?${from_editor(now(), "space-two-token")}`)).version).toBe(
+			"published"
+		)
+	})
+
+	describe("on staging", () => {
+		const STAGING = "https://next.example.com"
+
+		test("a bare ?_storyblok shows drafts, on a session of its own", async () => {
+			const { version, cookies } = await run(`${STAGING}/about?_storyblok`)
+			expect(version).toBe("draft")
+			expect(cookies.storyblok_preview).toMatch(/^staging:\d+:[0-9a-f]{40}$/)
+			expect((await run(`http://localhost:5173/?_storyblok`)).version).toBe("draft")
+		})
+
+		test("which lasts on the cookie alone, until ?_storyblok=off", async () => {
+			const { cookies } = await run(`${STAGING}/?_storyblok`)
+			expect((await run(`${STAGING}/about`, cookies)).version).toBe("draft")
+			expect(await run(`${STAGING}/about?_storyblok=off`, cookies)).toEqual({
+				version: "published",
+				cookies: {},
+			})
+		})
+
+		test("but never on the live site", async () => {
+			const { cookies } = await run(`${STAGING}/?_storyblok`)
+			expect(await run(`${SITE}/about`, cookies)).toEqual({ version: "published", cookies: {} })
+		})
 	})
 
 	test("a link a few seconds ahead of the server's clock", async () => {

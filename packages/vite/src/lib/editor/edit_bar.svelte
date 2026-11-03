@@ -119,7 +119,7 @@
 	let clear = $state(0)
 	let bar = $state<HTMLElement>()
 
-	const shown = $derived(!framed && (editor.draft || Boolean(editor.user)))
+	const shown = $derived(!framed && (editor.draft || editor.staging || Boolean(editor.user)))
 	/* Editing, the badge opens the block settings, which the bar holds, and the bar's row with them */
 	const settings = $derived(editor.editing && Boolean(editor.user))
 	const card = $derived(settings && editor.settings_open)
@@ -385,6 +385,25 @@
 		if (user_id) load_inbox()
 	})
 
+	/** Staging's switch, shown as soon as it's pressed: what the page will show once it's loaded again */
+	let switching = $state<boolean | null>(null)
+	const showing_draft = $derived(switching ?? editor.draft)
+
+	/**
+	 * On staging, the page again with its drafts or with what's live: the server remembers which on a
+	 * cookie, and the content is the server's, so the page loads again, at its own address
+	 */
+	async function view(draft: boolean) {
+		if (draft === showing_draft) return
+		switching = draft
+		const asking = new URL(location.href)
+		asking.searchParams.set("_storyblok", draft ? "" : "off")
+		await fetch(asking, { method: "HEAD", credentials: "same-origin" }).catch(() => {})
+		const clean = new URL(location.href)
+		clean.searchParams.delete("_storyblok")
+		location.replace(clean)
+	}
+
 	function show_inbox() {
 		inbox_open = !inbox_open
 		reviewing = null
@@ -556,6 +575,21 @@
 						+{here.people.length - faces}
 					</span>
 				{/if}
+			</span>
+		{/if}
+
+		{#if editor.staging && !editor.user && !editor.guest}
+			<!-- staging's drafts or what's live, beside the badge so it always says which -->
+			<span
+				class="versions"
+				role="group"
+				aria-label="Content to show"
+				aria-busy={switching !== null}
+			>
+				<button type="button" aria-pressed={showing_draft} onclick={() => view(true)}>Draft</button>
+				<button type="button" aria-pressed={!showing_draft} onclick={() => view(false)}
+					>Published</button
+				>
 			</span>
 		{/if}
 
@@ -1438,6 +1472,50 @@
 
 		&:hover {
 			color: var(--accent);
+		}
+	}
+
+	/* staging's switch between its drafts and what's live */
+	.versions {
+		background: color-mix(in srgb, var(--ink) 6%, transparent);
+		border-radius: 999px;
+		display: flex;
+		flex: none;
+		margin-inline: 0.375rem;
+		padding: 0.125rem;
+
+		&[aria-busy="true"] {
+			cursor: progress;
+		}
+
+		/* on its own beside the folded badge, on the bar's glass, so it reads on any page */
+		.bar:not(.open) & {
+			backdrop-filter: blur(20px) saturate(1.8);
+			background: color-mix(in srgb, var(--bg) 82%, transparent);
+			box-shadow: var(--shadow);
+		}
+
+		& button {
+			background: none;
+			border: 0;
+			border-radius: 999px;
+			color: var(--muted);
+			cursor: pointer;
+			font: inherit;
+			padding: 0.1875rem 0.625rem;
+			transition:
+				background-color 0.2s,
+				color 0.2s;
+
+			&:hover {
+				color: var(--ink);
+			}
+
+			&[aria-pressed="true"] {
+				background: color-mix(in srgb, var(--ink) 12%, transparent);
+				color: var(--ink);
+				cursor: default;
+			}
 		}
 	}
 

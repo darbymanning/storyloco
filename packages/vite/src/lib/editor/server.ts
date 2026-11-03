@@ -1,6 +1,6 @@
 import { redirect, type RequestEvent } from "@sveltejs/kit"
 import type { Handle } from "../kit.js"
-import { env, setting, site_token } from "../settings.js"
+import { env, setting, site_token, staging } from "../settings.js"
 import { LIVE, editor_version } from "./version.js"
 import { allowed } from "./content.js"
 import {
@@ -389,6 +389,8 @@ const script = (value: {
 	user: EditorUser | null
 	space: string | null
 	draft: boolean
+	/** A staging site, where anyone may switch between drafts and what's live */
+	staging: boolean
 	guest: { name: string | null; role: Guest["role"]; named: boolean; by: string | null } | null
 	/** Turn edit mode on, as the sign-in that brought them here asked */
 	edit?: boolean
@@ -415,7 +417,7 @@ interface EditorOptions {
 function create({
 	moxy,
 	space: configured,
-	entry = "/admin",
+	entry = ["/admin", "/a"],
 	app: chosen,
 }: EditorOptions = {}): Handle {
 	const ways = [entry].flat()
@@ -489,9 +491,14 @@ function create({
 		const response = await resolve(event, {
 			// after `resolve`, so a later hook has set the version: previews get the bar too, signed in or not
 			transformPageChunk: async ({ html }) => {
-				// previews show drafts; so does development, where the badge is always there to sign in from
-				const draft = dev || (event.locals as { version?: string }).version === "draft"
-				if (!editor && !draft) return html
+				const { version, switchable } = event.locals as { version?: string; switchable?: boolean }
+				const draft = version === "draft"
+				// staging gets it too, published or not, so a visitor can switch between the two, where the
+				// site's version is storyloco's `version` hook, which follows the switch; development is
+				// staging wherever it's served
+				const staged = !editor && !!switchable && (dev || (await staging(event.url)))
+				// development, where the badge is always there to sign in from
+				if (!editor && !draft && !staged && !dev) return html
 				// the site's client may only have been made while this request rendered
 				const known = space ?? (await own_space(configured).catch(() => null))
 				const shared = guest && {
@@ -502,7 +509,7 @@ function create({
 				}
 				return html.replace(
 					"</head>",
-					`${script({ user: editor?.user ?? null, space: known, draft, guest: shared || null, edit, app })}</head>`
+					`${script({ user: editor?.user ?? null, space: known, draft, staging: staged, guest: shared || null, edit, app })}</head>`
 				)
 			},
 		})

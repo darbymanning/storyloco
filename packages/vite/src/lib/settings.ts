@@ -22,3 +22,21 @@ export async function site_token() {
 		StoryblokClient.current?.token
 	)
 }
+
+/**
+ * Whether this is a site's staging rather than its live site, where anyone may look at its drafts:
+ * localhost, a Vercel preview deployment, or a `next.` or `staging.` subdomain. `STORYLOCO_STAGING`
+ * (`true` or `false`) says so either way, for a staging site that's none of those
+ */
+export async function staging(url: URL) {
+	const said = await setting("STORYLOCO_STAGING")
+	if (said) return said === "true" || said === "1"
+	const host = url.hostname
+	return (
+		host === "localhost" ||
+		host === "127.0.0.1" ||
+		host.endsWith(".localhost") ||
+		/^(next|staging)\./.test(host) ||
+		(await setting("VERCEL_ENV")) === "preview"
+	)
+}

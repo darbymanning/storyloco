@@ -37,6 +37,12 @@ test("/admin, where the site has no page, signs in to the home page in edit mode
 	expect(response.headers.get("set-cookie")).toStartWith("sl_edit_on=1")
 })
 
+test("/a, as short, does the same", async () => {
+	const response = await visit("/a", 404)
+	expect(response.status).toBe(303)
+	expect(response.headers.get("location")).toBe("/__storyloco/signin?return=%2F")
+})
+
 test("a site's own /admin is left alone", async () => {
 	const response = await visit("/admin", 200)
 	expect(response.status).toBe(200)
