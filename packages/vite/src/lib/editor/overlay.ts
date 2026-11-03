@@ -2463,6 +2463,13 @@ function unring() {
 	ring = null
 }
 
+/** Into view: to the middle of the window from off it, or just enough when it's partly there */
+function reveal(el: Element) {
+	const box = el.getBoundingClientRect()
+	const away = box.bottom < 0 || box.top > innerHeight
+	el.scrollIntoView({ block: away ? "center" : "nearest", behavior: "smooth" })
+}
+
 let marking = 0
 function mark_field(event: Event) {
 	const at = (event as CustomEvent<{ uid: string; field: string } | null>).detail
@@ -2478,10 +2485,10 @@ function mark_field(event: Event) {
 		if (mark !== marking) return
 		const found = shown_at(at.uid, at.field)
 		for (const node of found) node.setAttribute("data-storyloco-field", "")
-		if (found[0]) return found[0].scrollIntoView({ block: "nearest", behavior: "smooth" })
+		if (found[0]) return reveal(found[0])
 		const text = loose_text(at.uid, at.field)
 		if (!text) return
-		text.parentElement!.scrollIntoView({ block: "nearest", behavior: "smooth" })
+		reveal(text.parentElement!)
 		ring_round(text)
 	}, 150)
 }

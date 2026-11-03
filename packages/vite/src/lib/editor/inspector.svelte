@@ -38,7 +38,12 @@
 		options?: Array<{ name: string; value: string }> | null
 		source?: string | null
 	}
-	type Component = { name: string; display_name: string | null; schema: Record<string, Field> }
+	type Component = {
+		name: string
+		display_name: string | null
+		preview_field?: string | null
+		schema: Record<string, Field>
+	}
 	type Blok = Record<string, unknown> & { _uid: string; component: string }
 	type Story = {
 		id: number
@@ -245,6 +250,12 @@
 		return words.charAt(0).toUpperCase() + words.slice(1)
 	}
 	const component_label = (name: string) => components.get(name)?.display_name || label(name)
+	/** What a block in a list shows of itself beside its kind, as Storyblok's own list does */
+	const preview_of = (blok: Record<string, unknown> & { component: string }) => {
+		const field = components.get(blok.component)?.preview_field
+		const value = field ? blok[field] : undefined
+		return typeof value === "string" ? value.trim() : ""
+	}
 	const field_label = (key: string, field: Field) => field.display_name || label(key)
 
 	const component = $derived(loaded ? components.get(loaded.blok.component) : undefined)
@@ -1583,7 +1594,10 @@
 					class="kid"
 					onclick={() => selection && select({ story: selection.story, uid: kid._uid })}
 				>
-					<span>{component_label(kid.component)}</span>
+					<span
+						>{component_label(kid.component)}{#if preview_of(kid)}<small>{preview_of(kid)}</small
+							>{/if}</span
+					>
 					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
 				</button>
 				<span class="tools">
@@ -2261,11 +2275,15 @@
 
 {#snippet Control(key: string, field: Field)}
 	{@const id = `storyloco-field-${key}`}
+	<!-- the pointer's own way back to the field on the page: the keyboard has focusin -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="sl-field"
 		class:on-page={typed_here(key)}
 		data-type={field.type}
 		onfocusin={() => selection && on_panel({ uid: selection.uid, field: key })}
+		// a field that kept its focus as the page scrolled away brings it back when clicked again
+		onpointerdown={() => selection && on_panel({ uid: selection.uid, field: key })}
 		onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && on_panel(null)}
 		{@attach (node) => {
 			if (typed_here(key)) node.scrollIntoView({ block: "nearest", behavior: "smooth" })
@@ -3514,9 +3532,17 @@
 			/* a long name stops short of the tools rather than running under them */
 			padding-inline-end: 7rem;
 
+			/* gone at once: fading, it would show as it jumps clear of the tools */
 			& svg {
 				opacity: 0;
+				transition: none;
 			}
+		}
+
+		& .kid small {
+			color: var(--muted);
+			font: inherit;
+			margin-inline-start: 0.375rem;
 		}
 
 		& .kid span {

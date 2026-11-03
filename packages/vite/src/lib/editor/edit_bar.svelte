@@ -123,6 +123,8 @@
 	/* Editing, the badge opens the block settings, which the bar holds, and the bar's row with them */
 	const settings = $derived(editor.editing && Boolean(editor.user))
 	const card = $derived(settings && editor.settings_open)
+	/* how many of the others here show by face; the panel's row has room for fewer */
+	const faces = $derived(card ? 2 : 4)
 	const opened = $derived(settings ? card : open)
 
 	/* Badge, S key and the settings' own button alike */
@@ -524,7 +526,7 @@
 
 		{#if here.people.length}
 			<span class="people" role="group" aria-label="Also editing this page">
-				{#each here.people.slice(0, 4) as person (person.id)}
+				{#each here.people.slice(0, faces) as person (person.id)}
 					{@const name = person.user.name ?? "Someone"}
 					{@const followed = editor.following === person.id}
 					<button
@@ -549,9 +551,9 @@
 						<span class="sr">{followed ? `Stop following ${name}` : `Follow ${name}`}</span>
 					</button>
 				{/each}
-				{#if here.people.length > 4}
-					<span class="person more" aria-label="and {here.people.length - 4} more">
-						+{here.people.length - 4}
+				{#if here.people.length > faces}
+					<span class="person more" aria-label="and {here.people.length - faces} more">
+						+{here.people.length - faces}
 					</span>
 				{/if}
 			</span>
@@ -604,7 +606,7 @@
 							checked={editor.editing}
 							onchange={(event) => set_editing(event.currentTarget.checked)}
 						/>
-						Edit
+						<span class="label">Edit</span>
 						<span class="tip" aria-hidden="true">Edit mode · press E</span>
 					</label>
 					<span class="state" aria-live="polite">
@@ -1064,8 +1066,34 @@
 			overflow: hidden;
 		}
 
+		/* the people here tuck under the badge's edge, smaller, so they don't push the row onto two lines */
+		& .badge {
+			z-index: 1;
+		}
+
 		& .people {
 			grid-column: 2;
+			margin-inline: -0.5rem 0.25rem;
+		}
+
+		& .person {
+			block-size: 1.5rem;
+			font-size: 0.5625rem;
+			inline-size: 1.5rem;
+
+			& + .person {
+				margin-inline-start: -0.625rem;
+			}
+		}
+
+		/* open is editing, so the switch says it in its tip and to a screen reader */
+		& .mode .label {
+			block-size: 1px;
+			clip-path: inset(50%);
+			inline-size: 1px;
+			overflow: hidden;
+			position: absolute;
+			white-space: nowrap;
 		}
 
 		& .panel {
@@ -1124,6 +1152,15 @@
 
 			& .badge {
 				grid-column: 3;
+			}
+
+			& .people {
+				margin-inline: 0.25rem -0.5rem;
+			}
+
+			/* they run right to left here, so each overlaps the one on its right */
+			& .person + .person {
+				margin-inline: 0 -0.625rem;
 			}
 
 			& .panel {
@@ -1972,7 +2009,7 @@
 
 	.hint,
 	.note,
-	.more {
+	li.more {
 		color: var(--muted);
 	}
 
@@ -1984,7 +2021,8 @@
 		margin: 0;
 	}
 
-	.more {
+	/* the changes past those listed; not the faces' +N */
+	li.more {
 		padding-inline-start: 4.75rem;
 	}
 

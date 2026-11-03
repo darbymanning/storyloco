@@ -32,6 +32,7 @@
 	let bar = $state<HTMLElement>()
 	let top = $state(0)
 	let left = $state(0)
+	let stuck = $state(false)
 	let busy = $state(false)
 	let problem = $state<string | null>(null)
 
@@ -73,18 +74,34 @@
 		return Math.min(bottom, innerHeight / 3)
 	}
 
-	/** Just above the block's top edge, like a tab; inside it when that's off screen */
+	/**
+	 * Inside the block's top corner. It's placed on the page rather than the window, so it scrolls
+	 * with the block as the page does, and is only fixed, below any header, while the block's top
+	 * has scrolled past and the rest is still in view: a sticky header of its own
+	 */
 	function place() {
 		if (!target) return
 		const box = target.node.getBoundingClientRect()
 		const height = bar?.offsetHeight ?? 36
 		const floor = header_bottom() + 8
-		const outside = box.top - height - 6
-		top =
-			outside >= floor
-				? outside
-				: Math.max(Math.min(Math.max(box.top + 8, floor), box.bottom - height - 8), floor)
-		left = Math.min(Math.max(box.left, 8), innerWidth - (bar?.offsetWidth ?? 240) - 8)
+		const inside = box.top + 8
+		const last = box.bottom - height - 8
+		stuck = inside < floor && last > floor
+		// the page's origin, which the body is unless the site positions it
+		const body = document.body
+		const origin =
+			getComputedStyle(body).position === "static"
+				? { top: -scrollY, left: -scrollX }
+				: body.getBoundingClientRect()
+		const width = bar?.offsetWidth ?? 240
+		const y = stuck ? floor : inside >= floor ? inside : Math.max(inside, last)
+		let x = Math.min(Math.max(box.left + 8, 8), innerWidth - width - 8)
+		// beside the edit bar's panel rather than under it, as a full-width block's corner is
+		const edit = document.querySelector("[data-storyloco=bar]")?.getBoundingClientRect()
+		if (edit && y < edit.bottom && y + height > edit.top && x < edit.right && x + width > edit.left)
+			x = edit.right + 8
+		top = stuck ? y : y - origin.top
+		left = stuck ? x : x - origin.left
 	}
 
 	/** Pin to a selected block; `null` lets it go */
@@ -321,6 +338,7 @@
 		role="toolbar"
 		tabindex="-1"
 		aria-label="{label(target.name)} block"
+		style:position={stuck ? "fixed" : "absolute"}
 		style:top="{top}px"
 		style:left="{left}px"
 		onkeydown={keydown}
@@ -334,7 +352,7 @@
 					onclick={() => above && select(above)}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
-						><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg
+						><path d="M14 9 9 4 4 9" /><path d="M20 20h-7a4 4 0 0 1-4-4V4" /></svg
 					>
 				</button>
 			{/if}
@@ -344,7 +362,18 @@
 				class="name"
 				class:grip={!busy}
 				title="Drag to move {label(target.name)}"
-				onpointerdown={drag}>{label(target.name)}</span
+				onpointerdown={drag}
+				>{#if !busy}<svg class="dots" viewBox="0 0 24 24" aria-hidden="true"
+						><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle
+							cx="9"
+							cy="12"
+							r="1"
+						/><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle
+							cx="15"
+							cy="18"
+							r="1"
+						/></svg
+					>{/if}{label(target.name)}</span
 			>
 			<button
 				type="button"
@@ -516,6 +545,15 @@
 		&:active {
 			cursor: grabbing;
 		}
+	}
+
+	.row .dots {
+		block-size: 1rem;
+		color: var(--muted);
+		fill: currentColor;
+		inline-size: 1rem;
+		margin-inline: -0.25rem 0.125rem;
+		vertical-align: -0.1875rem;
 	}
 
 	.row .name {

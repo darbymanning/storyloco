@@ -354,6 +354,7 @@ type Component = {
 	is_root?: boolean
 	component_group_uuid: string | null
 	internal_tag_ids?: Array<string | number> | null
+	preview_field?: string | null
 	schema: Record<string, Field>
 }
 
@@ -448,9 +449,19 @@ const open_options = (field: Field) =>
 /** What the page may see of the schema: plugin options hold moxy secrets, so they stay here */
 function public_schema(components: Array<Component>) {
 	return components.map(
-		({ name, display_name, is_nestable, component_group_uuid, internal_tag_ids, schema }) => ({
+		({
+			name,
+			display_name,
+			is_nestable,
+			component_group_uuid,
+			internal_tag_ids,
+			preview_field,
+			schema,
+		}) => ({
 			name,
 			display_name: display_name || null,
+			// the field a list of these shows each by
+			preview_field: preview_field || null,
 			is_nestable,
 			// what a field's restrictions go by, so the page can offer only the bloks it allows
 			component_group_uuid,
