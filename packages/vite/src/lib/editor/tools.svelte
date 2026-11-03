@@ -1649,11 +1649,12 @@
 		grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
 	}
 
+	/* the glass's own fields, as the settings' are: a faint wash, a little deeper once focused */
 	form input:not([type="checkbox"]),
 	select,
 	textarea,
 	.joined {
-		background: var(--bg);
+		background: color-mix(in srgb, var(--ink) 4%, transparent);
 		border: 1px solid var(--line);
 		border-radius: 0.5625rem;
 		color: var(--ink);
@@ -1662,11 +1663,13 @@
 		outline: none;
 		padding: 0.5rem 0.625rem;
 		transition:
-			border-color 0.15s,
+			background-color 0.2s,
+			border-color 0.2s,
 			box-shadow 0.2s;
 
 		&:focus,
 		&:focus-within {
+			background-color: color-mix(in srgb, var(--bg) 55%, transparent);
 			border-color: var(--accent);
 			box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent);
 		}
@@ -1687,6 +1690,8 @@
 
 		& input:not([type="checkbox"]),
 		& input:not([type="checkbox"]):focus {
+			/* the row has the fill */
+			background: none;
 			border: 0;
 			box-shadow: none;
 			flex: 1;
