@@ -107,6 +107,17 @@ describe("version", () => {
 			})
 		})
 
+		test("and says so, apart from the visual editor's", async () => {
+			const preview = async (url: string) => {
+				const event = { url: new URL(url), cookies: jar(), locals: {} as { preview?: string } }
+				await version({ event, resolve: () => new Response("ok") } as unknown as Input)
+				return event.locals.preview
+			}
+			expect(await preview(`${STAGING}/?_storyblok`)).toBe("staging")
+			expect(await preview(`${STAGING}/?${from_editor()}`)).toBe("signed")
+			expect(await preview(`${SITE}/`)).toBeUndefined()
+		})
+
 		test("but never on the live site", async () => {
 			const { cookies } = await run(`${STAGING}/?_storyblok`)
 			expect(await run(`${SITE}/about`, cookies)).toEqual({ version: "published", cookies: {} })
