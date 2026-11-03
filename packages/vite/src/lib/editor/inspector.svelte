@@ -104,9 +104,7 @@
 
 	// --- folded to its name in the edit bar, or open as the bar's panel
 
-	/** Open, but stepped aside while text it would cover is typed in on the page */
-	let aside = $state(false)
-	const folded = $derived(!editor.settings_open || aside)
+	const folded = $derived(!editor.settings_open)
 
 	let panel_el = $state<HTMLElement>()
 	let fold_el = $state<HTMLElement>()
@@ -196,8 +194,6 @@
 	export async function toggle(keyboard = false) {
 		const inside = panel_el?.contains(document.activeElement)
 		await morph(() => {
-			// stepped aside, it's still open, so it only comes back
-			if (aside) return void (aside = false)
 			set_settings_open(!editor.settings_open)
 			if (!editor.settings_open) flush()
 			else if (selection) load(selection, false)
@@ -222,18 +218,9 @@
 
 	/** The field typed in on the page, which the settings mark so it's clear what's changing */
 	let on_page = $state<{ uid: string; field: string } | null>(null)
+	// ponytail: it stays open over text typed in on the page; scroll that clear of it if a sheet on a phone hides it
 	export function typing(at: { uid: string; field: string } | null) {
 		on_page = at
-		if (!at) return void (aside && morph(() => (aside = false)))
-		// open over the text being typed in, say as a sheet on a phone, it folds until that's done
-		requestAnimationFrame(() => {
-			const text = document.activeElement
-			if (!on_page || folded || !panel_el || !text || panel_el.contains(text)) return
-			const a = panel_el.getBoundingClientRect()
-			const b = text.getBoundingClientRect()
-			if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)
-				morph(() => (aside = true))
-		})
 	}
 	/** The field being changed here, which the page marks where it shows it */
 	const on_panel = (at: { uid: string; field: string } | null) =>

@@ -1029,18 +1029,23 @@ export async function operate(
 					story: Summary & { content: Node; unpublished_changes?: boolean; updated_at?: string }
 				}>(`/stories/${story}`)
 				if (draft.published_at && !draft.unpublished_changes) return null
-				let live: Node | undefined
+				let live: { content: Node; name?: string } | undefined
 				if (draft.published_at && token) {
 					const query = new URLSearchParams({ version: "published", token, cv: String(Date.now()) })
 					const res = await fetch(`${editor.cdn}/v2/cdn/stories/${story}?${query}`).catch(
 						() => null
 					)
-					if (res?.ok) live = ((await res.json()) as { story: { content: Node } }).story.content
+					if (res?.ok) live = ((await res.json()) as { story: typeof live }).story
 				}
+				// its name goes live with it too, which isn't in its content
+				const renamed =
+					live?.name && live.name !== draft.name
+						? [{ uid: "name", component: "story_name", kind: "renamed", hint: draft.name }]
+						: []
 				return {
 					...summary(draft),
 					// without the live copy there's nothing to compare, so it says its changes in general
-					changes: live ? differences(live, draft.content) : null,
+					changes: live ? [...renamed, ...differences(live.content, draft.content)] : null,
 				}
 			})
 		)
@@ -1130,6 +1135,9 @@ export async function operate(
 		const { story } = await editor.mapi<{ story: Node }>(`/stories/${body.story}`)
 		const before = story.name
 		story.name = body.value.trim()
+		// a story's name goes live with Publish, as Storyblok's own rename marks it; sent back as it was
+		// read, the flag would say there's nothing to publish
+		story.unpublished_changes = true
 		await editor.mapi(`/stories/${body.story}`, { method: "PUT", body: { story } })
 		return { ok: true, undo: { op: "name", story: body.story, value: before } }
 	}

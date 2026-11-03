@@ -432,7 +432,13 @@
 		setTimeout(() => (published = false), 2400)
 	}
 
-	const KINDS = { added: "Added", removed: "Removed", edited: "Edited", reordered: "Reordered" }
+	const KINDS = {
+		added: "Added",
+		removed: "Removed",
+		edited: "Edited",
+		reordered: "Reordered",
+		renamed: "Renamed",
+	}
 
 	/* Unpublished changes show beside the badge too, so publishing doesn't mean opening it first */
 	const waiting = $derived(Boolean(editor.user && unpublished()))
@@ -1024,18 +1030,6 @@
 
 		& :is(.panel, .inner) {
 			transition: none;
-		}
-	}
-
-	/* stepped aside while text under it is typed in, the row folds away with the settings */
-	.bar.open:has(:global(.inspector.folded)) {
-		& .panel {
-			grid-template-columns: 0fr;
-		}
-
-		& .inner {
-			clip-path: inset(-10rem 100% -10rem 0);
-			padding-inline: 0;
 		}
 	}
 
