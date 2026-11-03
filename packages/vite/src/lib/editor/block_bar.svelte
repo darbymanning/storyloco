@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from "svelte"
+	import { editor } from "./client.js"
 
 	type Target = { node: HTMLElement; story: number; uid: string; name: string }
 	type Choice = { name: string; display_name: string }
@@ -32,6 +33,9 @@
 	let bar = $state<HTMLElement>()
 	let top = $state(0)
 	let left = $state(0)
+	let stuck = $state(false)
+	/* with the settings open, their header moves, duplicates and deletes the block; this keeps to the rest */
+	const docked = $derived(editor.settings_open)
 	let busy = $state(false)
 	let problem = $state<string | null>(null)
 
@@ -73,19 +77,44 @@
 		return Math.min(bottom, innerHeight / 3)
 	}
 
-	/** Just above the block's top edge, like a tab; inside it when that's off screen */
+	/**
+	 * Inside the block's top corner. It's placed on the page rather than the window, so it scrolls
+	 * with the block as the page does, and is only fixed, below any header, while the block's top
+	 * has scrolled past and the rest is still in view: a sticky header of its own
+	 */
 	function place() {
 		if (!target) return
 		const box = target.node.getBoundingClientRect()
 		const height = bar?.offsetHeight ?? 36
 		const floor = header_bottom() + 8
-		const outside = box.top - height - 6
-		top =
-			outside >= floor
-				? outside
-				: Math.max(Math.min(Math.max(box.top + 8, floor), box.bottom - height - 8), floor)
-		left = Math.min(Math.max(box.left, 8), innerWidth - (bar?.offsetWidth ?? 240) - 8)
+		const inside = box.top + 8
+		const last = box.bottom - height - 8
+		stuck = inside < floor && last > floor
+		// the page's origin, which the body is unless the site positions it
+		const body = document.body
+		const origin =
+			getComputedStyle(body).position === "static"
+				? { top: -scrollY, left: -scrollX }
+				: body.getBoundingClientRect()
+		const width = bar?.offsetWidth ?? 240
+		const y = stuck ? floor : inside >= floor ? inside : Math.max(inside, last)
+		let x = Math.min(Math.max(box.left + 8, 8), innerWidth - width - 8)
+		// beside the edit bar's panel rather than under it, as a full-width block's corner is
+		const edit = document.querySelector("[data-storyloco=bar]")?.getBoundingClientRect()
+		if (edit && y < edit.bottom && y + height > edit.top && x < edit.right && x + width > edit.left)
+			x = edit.right + 8
+		top = stuck ? y : y - origin.top
+		left = stuck ? x : x - origin.left
 	}
+
+	// placed afresh as the edit bar's panel opens or folds, so it's beside the panel only while it's there
+	$effect(() => {
+		const edit = target && document.querySelector("[data-storyloco=bar]")
+		if (!edit) return
+		const watch = new ResizeObserver(() => place())
+		watch.observe(edit)
+		return () => watch.disconnect()
+	})
 
 	/** Pin to a selected block; `null` lets it go */
 	export function show(next: Target | null) {
@@ -321,6 +350,7 @@
 		role="toolbar"
 		tabindex="-1"
 		aria-label="{label(target.name)} block"
+		style:position={stuck ? "fixed" : "absolute"}
 		style:top="{top}px"
 		style:left="{left}px"
 		onkeydown={keydown}
@@ -334,49 +364,62 @@
 					onclick={() => above && select(above)}
 				>
 					<svg viewBox="0 0 24 24" aria-hidden="true"
-						><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg
+						><path d="M14 9 9 4 4 9" /><path d="M20 20h-7a4 4 0 0 1-4-4V4" /></svg
 					>
 				</button>
 			{/if}
-			<!-- dragging is for the pointer: Move up and down do the same from the keyboard -->
+			<!-- dragging is for the pointer: Move up and down, here or in the settings, do it from the keyboard -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<span
 				class="name"
 				class:grip={!busy}
 				title="Drag to move {label(target.name)}"
-				onpointerdown={drag}>{label(target.name)}</span
+				onpointerdown={drag}
+				>{#if !busy}<svg class="dots" viewBox="0 0 24 24" aria-hidden="true"
+						><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle
+							cx="9"
+							cy="12"
+							r="1"
+						/><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle
+							cx="15"
+							cy="18"
+							r="1"
+						/></svg
+					>{/if}{label(target.name)}</span
 			>
-			<button
-				type="button"
-				aria-label="Move up"
-				title="Move up"
-				disabled={busy}
-				onclick={() => run({ op: "move", by: -1 })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
-			</button>
-			<button
-				type="button"
-				aria-label="Move down"
-				title="Move down"
-				disabled={busy}
-				onclick={() => run({ op: "move", by: 1 })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-			</button>
-			<button
-				type="button"
-				aria-label="Duplicate"
-				title="Duplicate"
-				disabled={busy}
-				onclick={() => run({ op: "duplicate" })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"
-					><rect x="8" y="8" width="13" height="13" rx="2" /><path
-						d="M4 16V5a1 1 0 0 1 1-1h11"
-					/></svg
+			{#if !docked}
+				<button
+					type="button"
+					aria-label="Move up"
+					title="Move up"
+					disabled={busy}
+					onclick={() => run({ op: "move", by: -1 })}
 				>
-			</button>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+				</button>
+				<button
+					type="button"
+					aria-label="Move down"
+					title="Move down"
+					disabled={busy}
+					onclick={() => run({ op: "move", by: 1 })}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+				</button>
+				<button
+					type="button"
+					aria-label="Duplicate"
+					title="Duplicate"
+					disabled={busy}
+					onclick={() => run({ op: "duplicate" })}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><rect x="8" y="8" width="13" height="13" rx="2" /><path
+							d="M4 16V5a1 1 0 0 1 1-1h11"
+						/></svg
+					>
+				</button>
+			{/if}
 			<button
 				type="button"
 				aria-label="Add a block after this one"
@@ -387,20 +430,22 @@
 			>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 			</button>
-			<button
-				type="button"
-				class="danger"
-				aria-label="Delete"
-				title="Delete"
-				disabled={busy}
-				onclick={() => run({ op: "remove" })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"
-					><path
-						d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
-					/></svg
+			{#if !docked}
+				<button
+					type="button"
+					class="danger"
+					aria-label="Delete"
+					title="Delete"
+					disabled={busy}
+					onclick={() => run({ op: "remove" })}
 				>
-			</button>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><path
+							d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+						/></svg
+					>
+				</button>
+			{/if}
 		</div>
 
 		{#if problem}<p class="problem" role="alert">{problem}</p>{/if}
@@ -516,6 +561,17 @@
 		&:active {
 			cursor: grabbing;
 		}
+	}
+
+	.row .dots {
+		block-size: 1rem;
+		color: var(--muted);
+		/* in line with the name, whatever a site's reset makes an svg */
+		display: inline-block;
+		fill: currentColor;
+		inline-size: 1rem;
+		margin-inline: -0.25rem 0.125rem;
+		vertical-align: -0.1875rem;
 	}
 
 	.row .name {

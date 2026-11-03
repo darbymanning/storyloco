@@ -38,7 +38,12 @@
 		options?: Array<{ name: string; value: string }> | null
 		source?: string | null
 	}
-	type Component = { name: string; display_name: string | null; schema: Record<string, Field> }
+	type Component = {
+		name: string
+		display_name: string | null
+		preview_field?: string | null
+		schema: Record<string, Field>
+	}
 	type Blok = Record<string, unknown> & { _uid: string; component: string }
 	type Story = {
 		id: number
@@ -109,6 +114,8 @@
 	/** Fields with a save on its way, and why the last one failed */
 	let saving = $state<Record<string, boolean>>({})
 	let failed = $state<Record<string, string>>({})
+	/** Asset fields whose alt text AI is writing */
+	let describing = $state<Record<string, boolean>>({})
 	/** The field being typed in, which a reload mustn't overwrite */
 	let focused: string | null = null
 
@@ -236,8 +243,11 @@
 		on_page = at
 	}
 	/** The field being changed here, which the page marks where it shows it */
-	const on_panel = (at: { uid: string; field: string } | null) =>
+	const on_panel = (at: { uid: string; field: string; part?: string } | null) =>
 		dispatchEvent(new CustomEvent("storyloco:panel-field", { detail: at }))
+	/** Which piece of the field an input changes, where the page shows it a piece at a time */
+	const part_of = (target: EventTarget | null) =>
+		(target as HTMLElement | null)?.closest<HTMLElement>("[data-part]")?.dataset.part
 	const typed_here = (key: string) => on_page?.uid === selection?.uid && on_page?.field === key
 
 	const label = (name: string) => {
@@ -245,6 +255,12 @@
 		return words.charAt(0).toUpperCase() + words.slice(1)
 	}
 	const component_label = (name: string) => components.get(name)?.display_name || label(name)
+	/** What a block in a list shows of itself beside its kind, as Storyblok's own list does */
+	const preview_of = (blok: Record<string, unknown> & { component: string }) => {
+		const field = components.get(blok.component)?.preview_field
+		const value = field ? blok[field] : undefined
+		return typeof value === "string" ? value.trim() : ""
+	}
 	const field_label = (key: string, field: Field) => field.display_name || label(key)
 
 	const component = $derived(loaded ? components.get(loaded.blok.component) : undefined)
@@ -396,6 +412,20 @@
 				setTimeout(() => save(key), wait)
 			)
 		else save(key)
+	}
+
+	/** Alt text for an asset field's image, from AI, as the picker suggests it */
+	async function describe(key: string, value: Asset) {
+		describing[key] = true
+		delete failed[key]
+		try {
+			const { alt } = await call<{ alt: string }>({ op: "ai", do: "alt", url: value.filename })
+			change(key, { ...value, alt })
+		} catch (e) {
+			failed[key] = (e as Error).message
+		} finally {
+			describing[key] = false
+		}
 	}
 
 	function flush() {
@@ -757,8 +787,8 @@
 	const link = (v: unknown) => (v && typeof v === "object" ? (v as Link) : {})
 	const kids = (v: unknown) => (Array.isArray(v) ? (v as Array<Blok>) : [])
 	const IMAGE = /\.(jpe?g|png|gif|webp|avif|svg)$/i
-	const thumb = (filename: string) =>
-		/\.(jpe?g|png|gif|webp|avif)$/i.test(filename) ? `${filename}/m/160x0` : filename
+	const thumb = (filename: string, width = 160) =>
+		/\.(jpe?g|png|gif|webp|avif)$/i.test(filename) ? `${filename}/m/${width}x0` : filename
 	const file_name = (filename?: string | null) => filename?.split("/").pop() ?? ""
 	const only_images = (field: Field) =>
 		!field.filetypes?.length || field.filetypes.every((t) => t === "images")
@@ -879,7 +909,15 @@
 			// its words straight away, as plain paragraphs, while the editor joins whoever else has it open
 			type Part = { text?: string; content?: Array<Part> }
 			const words = (part: Part): string => part.text ?? (part.content ?? []).map(words).join("")
-			node.textContent = ((doc as Part).content ?? []).map(words).join("\n\n")
+			// and where its format bar will be, as it will look once it's there
+			const bar = document.createElement("div")
+			bar.className = "format-bones"
+			bar.setAttribute("aria-hidden", "true")
+			bar.innerHTML = "<span></span><span></span><span class=wide></span><span></span>"
+			const text = document.createElement("div")
+			text.className = "words"
+			text.textContent = ((doc as Part).content ?? []).map(words).join("\n\n")
+			node.replaceChildren(bar, text)
 			node.dataset.waiting = ""
 			import("./richtext.js").then(async ({ holds, rich_editor, shared_doc }) => {
 				if (gone) return
@@ -1294,35 +1332,76 @@
 
 {#snippet Asset_(key: string, field: Field, id: string)}
 	{@const value = asset(values[key])}
+	{@const choose = () =>
+		picker({
+			current: value,
+			images: only_images(field),
+			save: async (choice) => {
+				change(key, { id: choice.asset, alt: choice.alt, focus: choice.focus })
+				return null
+			},
+		})}
 	{@render Label(key, field, id)}
-	<div class="asset">
-		{#if value.filename}
+	{#if value.filename}
+		<!-- the whole width, with what changes it over its corner -->
+		<div class="picture">
 			{#if IMAGE.test(value.filename)}
-				<img src={thumb(value.filename)} alt={value.alt ?? ""} />
+				<img src={thumb(value.filename, 640)} alt={value.alt ?? ""} />
 			{:else}
 				<span class="file">{file_name(value.filename)}</span>
 			{/if}
-		{/if}
-		<div class="asset-actions">
-			<button
-				{id}
-				type="button"
-				class="button"
-				onclick={() =>
-					picker({
-						current: value,
-						images: only_images(field),
-						save: async (choice) => {
-							change(key, { id: choice.asset, alt: choice.alt, focus: choice.focus })
-							return null
-						},
-					})}>{value.filename ? "Replace" : "Choose"}</button
-			>
-			{#if value.filename}
-				<button type="button" class="button quiet" onclick={() => change(key, null)}>Remove</button>
-			{/if}
+			<span class="over">
+				<button {id} type="button" aria-label="Replace" onclick={choose}
+					><svg viewBox="0 0 24 24" aria-hidden="true"
+						><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path
+							d="M21 3v5h-5"
+						/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path
+							d="M8 16H3v5"
+						/></svg
+					><span class="tip" aria-hidden="true">Replace</span></button
+				>
+				<button type="button" aria-label="Remove" onclick={() => change(key, null)}
+					><svg viewBox="0 0 24 24" aria-hidden="true"
+						><path
+							d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+						/></svg
+					><span class="tip" aria-hidden="true">Remove</span></button
+				>
+			</span>
 		</div>
-	</div>
+		{#if IMAGE.test(value.filename)}
+			<div class="alt">
+				<input
+					aria-label="Alt text"
+					placeholder="Alt text: what it shows"
+					value={value.alt ?? ""}
+					disabled={describing[key]}
+					oninput={(e) => change(key, { ...value, alt: e.currentTarget.value }, 700)}
+					onblur={flush}
+				/>
+				<!-- the image service can't describe a vector -->
+				{#if !/\.svg$/i.test(value.filename)}
+					<button
+						type="button"
+						class="ai"
+						class:busy={describing[key]}
+						aria-label="Write it with AI"
+						disabled={describing[key]}
+						onclick={() => describe(key, value)}
+						><svg viewBox="0 0 24 24" aria-hidden="true"
+							><path
+								d="M9.94 14.06 4 20M14 4l1.1 2.9L18 8l-2.9 1.1L14 12l-1.1-2.9L10 8l2.9-1.1zM19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"
+							/></svg
+						><span class="tip" aria-hidden="true">Write it with AI</span></button
+					>
+				{/if}
+			</div>
+		{/if}
+	{:else}
+		<div class="asset-actions">
+			<button {id} type="button" class="button" onclick={choose}>Choose</button>
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet Multiasset(key: string, field: Field, id: string)}
@@ -1583,7 +1662,10 @@
 					class="kid"
 					onclick={() => selection && select({ story: selection.story, uid: kid._uid })}
 				>
-					<span>{component_label(kid.component)}</span>
+					<span
+						>{component_label(kid.component)}{#if preview_of(kid)}<small>{preview_of(kid)}</small
+							>{/if}</span
+					>
 					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
 				</button>
 				<span class="tools">
@@ -2088,6 +2170,7 @@
 		<div class="row">
 			<select
 				aria-label="House type"
+				data-part="types.{t}"
 				value={String(t)}
 				onchange={(e) => (plan_type[key] = Number(e.currentTarget.value))}
 			>
@@ -2112,6 +2195,7 @@
 				<span>Name</span>
 				<input
 					value={type.name ?? ""}
+					data-part="types.{t}.name"
 					{...typing}
 					oninput={(e) => {
 						const name = e.currentTarget.value
@@ -2128,6 +2212,7 @@
 						<input
 							aria-label="Floor name"
 							placeholder="Floor"
+							data-part="types.{t}.floors.{f}.name"
 							value={floor.name}
 							{...typing}
 							oninput={(e) => {
@@ -2181,6 +2266,7 @@
 								<input
 									aria-label={name}
 									placeholder={name}
+									data-part="types.{t}.floors.{f}.dimensions.{d}.rooms.{r}.{part}"
 									value={room[part as keyof Room]}
 									{...typing}
 									oninput={(e) => {
@@ -2261,11 +2347,17 @@
 
 {#snippet Control(key: string, field: Field)}
 	{@const id = `storyloco-field-${key}`}
+	<!-- the pointer's own way back to the field on the page: the keyboard has focusin -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="sl-field"
 		class:on-page={typed_here(key)}
 		data-type={field.type}
-		onfocusin={() => selection && on_panel({ uid: selection.uid, field: key })}
+		onfocusin={(e) =>
+			selection && on_panel({ uid: selection.uid, field: key, part: part_of(e.target) })}
+		// a field that kept its focus as the page scrolled away brings it back when clicked again
+		onpointerdown={(e) =>
+			selection && on_panel({ uid: selection.uid, field: key, part: part_of(e.target) })}
 		onfocusout={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && on_panel(null)}
 		{@attach (node) => {
 			if (typed_here(key)) node.scrollIntoView({ block: "nearest", behavior: "smooth" })
@@ -2789,10 +2881,12 @@
 		color: inherit;
 		font: inherit;
 		inline-size: 100%;
+		outline: 3px solid transparent;
 		padding: 0.5rem 0.625rem;
 		transition:
-			border-color 0.15s,
-			background-color 0.15s;
+			border-color 0.2s,
+			background-color 0.2s,
+			outline-color 0.2s;
 
 		&:hover {
 			border-color: var(--line);
@@ -2952,6 +3046,200 @@
 	.asset-actions {
 		display: flex;
 		gap: 0.375rem;
+	}
+
+	/* an asset field's image, the panel's width, its buttons over the corner on hover or focus */
+	.picture {
+		position: relative;
+
+		& img {
+			background: repeating-conic-gradient(rgb(0 0 0 / 0.05) 0 25%, transparent 0 50%) 0 0 / 12px
+				12px;
+			block-size: auto;
+			border-radius: 0.5rem;
+			display: block;
+			inline-size: 100%;
+			max-block-size: 16rem;
+			object-fit: contain;
+		}
+
+		& .file {
+			background: var(--field);
+			border-radius: 0.5rem;
+			display: block;
+			padding: 0.75rem 5.5rem 0.75rem 0.75rem;
+		}
+
+		& .over {
+			display: flex;
+			gap: 0.25rem;
+			inset: 0.5rem 0.5rem auto auto;
+			opacity: 0;
+			position: absolute;
+			transition: opacity 0.15s;
+		}
+
+		&:is(:hover, :focus-within) .over {
+			opacity: 1;
+		}
+
+		/* no hover to bring them out on touch */
+		@media (hover: none) {
+			& .over {
+				opacity: 1;
+			}
+		}
+
+		& .over button {
+			backdrop-filter: blur(12px) saturate(1.6);
+			background: color-mix(in srgb, var(--bg) 72%, transparent);
+			block-size: 2rem;
+			border: 0;
+			border-radius: 50%;
+			box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+			color: var(--ink);
+			cursor: pointer;
+			display: grid;
+			inline-size: 2rem;
+			padding: 0;
+			place-items: center;
+			position: relative;
+			transition: background-color 0.15s;
+
+			&:hover {
+				background: color-mix(in srgb, var(--bg) 92%, transparent);
+			}
+
+			/* the edit bar's tooltip, beneath the button */
+			& .tip {
+				background-color: var(--ink);
+				border-radius: 0.5rem;
+				color: var(--bg);
+				font-size: 0.75rem;
+				font-weight: 500;
+				inset: calc(100% + 0.5rem) auto auto 50%;
+				opacity: 0;
+				padding: 0.375rem 0.5rem;
+				pointer-events: none;
+				position: absolute;
+				transition:
+					opacity 0.2s ease,
+					translate 0.2s ease;
+				translate: -50% -0.25rem;
+				white-space: nowrap;
+				z-index: 1;
+
+				&::after {
+					background-color: inherit;
+					block-size: 0.3125rem;
+					clip-path: polygon(50% 0, 100% 100%, 0 100%);
+					content: "";
+					inline-size: 0.625rem;
+					inset: auto auto 100% calc(50% - 0.3125rem);
+					position: absolute;
+				}
+			}
+
+			&:is(:hover, :focus-visible) .tip {
+				opacity: 1;
+				translate: -50% 0;
+			}
+
+			& svg {
+				block-size: 1rem;
+				fill: none;
+				inline-size: 1rem;
+				stroke: currentColor;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				stroke-width: 2;
+			}
+		}
+	}
+
+	/* the image's alt text, and AI to write it */
+	.alt {
+		margin-block-start: 0.375rem;
+		position: relative;
+
+		& input {
+			font-size: 0.8125rem;
+			padding-inline-end: 2.5rem;
+		}
+
+		& .ai {
+			background: none;
+			block-size: 1.75rem;
+			border: 0;
+			border-radius: 0.375rem;
+			color: var(--muted);
+			cursor: pointer;
+			display: grid;
+			inline-size: 1.75rem;
+			inset: 50% 0.3125rem auto auto;
+			padding: 0;
+			place-items: center;
+			position: absolute;
+			translate: 0 -50%;
+			transition:
+				background-color 0.15s,
+				color 0.15s;
+
+			&:hover:not(:disabled) {
+				background: color-mix(in srgb, var(--ink) 10%, transparent);
+				color: var(--accent);
+			}
+
+			&.busy {
+				animation: pulse 1.4s ease-in-out infinite;
+				color: var(--accent);
+				cursor: wait;
+			}
+
+			& svg {
+				block-size: 1rem;
+				fill: none;
+				inline-size: 1rem;
+				stroke: currentColor;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				stroke-width: 2;
+			}
+
+			& .tip {
+				background-color: var(--ink);
+				border-radius: 0.5rem;
+				color: var(--bg);
+				font-size: 0.75rem;
+				font-weight: 500;
+				inset: auto 0 calc(100% + 0.5rem) auto;
+				opacity: 0;
+				padding: 0.375rem 0.5rem;
+				pointer-events: none;
+				position: absolute;
+				transition:
+					opacity 0.2s ease,
+					translate 0.2s ease;
+				translate: 0 0.25rem;
+				white-space: nowrap;
+				z-index: 1;
+
+				&::after {
+					background-color: inherit;
+					block-size: 0.3125rem;
+					clip-path: polygon(0 0, 100% 0, 50% 100%);
+					content: "";
+					inline-size: 0.625rem;
+					inset: 100% 0.5625rem auto auto;
+					position: absolute;
+				}
+			}
+
+			&:is(:hover, :focus-visible) .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
+		}
 	}
 
 	/* a theme's colours beside its name */
@@ -3239,24 +3527,63 @@
 	.rich {
 		&[data-waiting] {
 			color: var(--muted);
+			cursor: wait;
 			white-space: pre-line;
+		}
+
+		/* the format bar to come, its buttons pulsing until the editor is ready */
+		& :global(.format-bones) {
+			border-block-end: 1px solid var(--line);
+			display: flex;
+			flex: none;
+			gap: 2px;
+			margin: -0.375rem -0.625rem 0.25rem;
+			padding: 4px 6px;
+		}
+
+		& :global(.format-bones span) {
+			animation: pulse 1.4s ease-in-out infinite;
+			background: color-mix(in srgb, currentColor 16%, transparent);
+			block-size: 0.875rem;
+			border-radius: 0.25rem;
+			inline-size: 1rem;
+			margin: 0.4375rem 0.375rem;
+		}
+
+		& :global(.format-bones .wide) {
+			inline-size: 3rem;
+		}
+
+		& :global(.words) {
+			margin-block: 0.5em;
+			min-block-size: 3.5rem;
 		}
 
 		background: var(--field);
 		border: 1px solid var(--line);
 		border-radius: 0.5rem;
+		/* the format bar stays along the top, and only the text beneath it scrolls */
+		display: flex;
+		flex-direction: column;
 		max-block-size: 22rem;
-		overflow: auto;
+		outline: 3px solid transparent;
+		overflow: hidden;
 		padding: 0.375rem 0.625rem 0.5rem;
+		/* into focus gently, as the inputs do, rather than snapping darker */
+		transition:
+			border-color 0.2s,
+			background-color 0.2s,
+			outline-color 0.2s;
 
 		&:focus-within {
-			background: var(--field-focus);
+			background-color: var(--field-focus);
 			border-color: var(--accent);
 			outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent);
 		}
 
 		& :global(.ProseMirror) {
 			min-block-size: 4.5rem;
+			overflow: auto;
 		}
 
 		& :global(:is(p, h2, h3, ul, ol, blockquote)) {
@@ -3514,9 +3841,17 @@
 			/* a long name stops short of the tools rather than running under them */
 			padding-inline-end: 7rem;
 
+			/* gone at once: fading, it would show as it jumps clear of the tools */
 			& svg {
 				opacity: 0;
+				transition: none;
 			}
+		}
+
+		& .kid small {
+			color: var(--muted);
+			font: inherit;
+			margin-inline-start: 0.375rem;
 		}
 
 		& .kid span {

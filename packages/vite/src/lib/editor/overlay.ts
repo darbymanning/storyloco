@@ -1794,9 +1794,25 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 			return outer as HTMLElement
 		}
 	}
+	// shown by no one element but a run of them, like a body beside its title, as `mark_riches` finds
+	// on hover: pressed after its marks have gone (a save clears them), the run it's pressed in
+	for (let node = el.parentElement; node && block.contains(node); node = node.parentElement)
+		for (const { value, ...rich } of fields) {
+			const run = run_showing(node, rich_compact(value))
+			const part = run?.find((each) => each.contains(el))
+			if (!run || !part || run.some((each) => holds_blok(each, embedded))) continue
+			for (const each of run) {
+				riches.set(each, rich)
+				runs.set(each, run)
+				each.dataset.rich = rich.field
+			}
+			return part
+		}
 }
 
 let editing_rich: (() => void) | null = null
+/** The richtext the last press is in, as it's found */
+let finding_rich: Promise<HTMLElement | undefined> | undefined
 
 async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	// taken before anything is awaited: one click arrives twice (pointer and click), and both would
@@ -2154,7 +2170,7 @@ function over(event: PointerEvent) {
 		return
 	}
 
-	if (!editing_rich) rich_at(el)
+	if (!editing_rich) finding_rich = rich_at(el)
 
 	// a held key means press what's there, as it follows a link
 	const held = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
@@ -2232,6 +2248,10 @@ function click(event: MouseEvent) {
 	if (rich && riches.has(rich)) {
 		event.preventDefault()
 		edit_rich(rich, { x: event.clientX, y: event.clientY })
+	} else {
+		// the press is still finding what's there, as it can when the text has to be looked for: once it has
+		const at = { x: event.clientX, y: event.clientY }
+		finding_rich?.then((found) => found?.contains(el) && riches.has(found) && edit_rich(found, at))
 	}
 	const pending = loosening
 	selection_at(el).then(async (s) => {
@@ -2411,10 +2431,17 @@ export async function comment() {
 // --- the field being changed in the settings, marked where the page shows it
 
 /** Where the page shows a field: text typed in place, or rich text */
-function shown_at(uid: string, field: string) {
+function shown_at(uid: string, field: string, part?: string) {
 	const found: Array<HTMLElement> = []
-	for (const [node, { key }] of shareable)
-		if (node.isConnected && key.endsWith(`:${uid}:${field}`)) found.push(node)
+	// the field whole, or the parts of it shown in places of their own: a paragraph, a plan's names and
+	// sizes; given one part, that one, or those within it
+	const at = `:${uid}:${field}`
+	const shows = (key: string) =>
+		part === undefined
+			? key.endsWith(at) || key.includes(`${at}#`)
+			: key.endsWith(`${at}#${part}`) || key.includes(`${at}#${part}.`)
+	for (const [node, { key }] of shareable) if (node.isConnected && shows(key)) found.push(node)
+	if (part !== undefined) return found
 	for (const node of document.querySelectorAll<HTMLElement>("[data-rich]")) {
 		const rich = riches.get(node)
 		if (rich?.blok._uid === uid && rich.field === field) found.push(node)
@@ -2463,9 +2490,16 @@ function unring() {
 	ring = null
 }
 
+/** Into view: to the middle of the window from off it, or just enough when it's partly there */
+function reveal(el: Element) {
+	const box = el.getBoundingClientRect()
+	const away = box.bottom < 0 || box.top > innerHeight
+	el.scrollIntoView({ block: away ? "center" : "nearest", behavior: "smooth" })
+}
+
 let marking = 0
 function mark_field(event: Event) {
-	const at = (event as CustomEvent<{ uid: string; field: string } | null>).detail
+	const at = (event as CustomEvent<{ uid: string; field: string; part?: string } | null>).detail
 	const mark = ++marking
 	for (const node of document.querySelectorAll("[data-storyloco-field]"))
 		node.removeAttribute("data-storyloco-field")
@@ -2476,12 +2510,14 @@ function mark_field(event: Event) {
 	if (block) wire_all(block)
 	setTimeout(() => {
 		if (mark !== marking) return
-		const found = shown_at(at.uid, at.field)
+		const found = shown_at(at.uid, at.field, at.part)
 		for (const node of found) node.setAttribute("data-storyloco-field", "")
-		if (found[0]) return found[0].scrollIntoView({ block: "nearest", behavior: "smooth" })
+		// the first that shows: a plan's other house types are on the page, hidden
+		const shows = found.find((node) => node.getClientRects().length) ?? found[0]
+		if (shows) return reveal(shows)
 		const text = loose_text(at.uid, at.field)
 		if (!text) return
-		text.parentElement!.scrollIntoView({ block: "nearest", behavior: "smooth" })
+		reveal(text.parentElement!)
 		ring_round(text)
 	}, 150)
 }
