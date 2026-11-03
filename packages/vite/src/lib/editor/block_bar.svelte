@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from "svelte"
+	import { editor } from "./client.js"
 
 	type Target = { node: HTMLElement; story: number; uid: string; name: string }
 	type Choice = { name: string; display_name: string }
@@ -33,6 +34,8 @@
 	let top = $state(0)
 	let left = $state(0)
 	let stuck = $state(false)
+	/* with the settings open, their header moves, duplicates and deletes the block; this keeps to the rest */
+	const docked = $derived(editor.settings_open)
 	let busy = $state(false)
 	let problem = $state<string | null>(null)
 
@@ -103,6 +106,15 @@
 		top = stuck ? y : y - origin.top
 		left = stuck ? x : x - origin.left
 	}
+
+	// placed afresh as the edit bar's panel opens or folds, so it's beside the panel only while it's there
+	$effect(() => {
+		const edit = target && document.querySelector("[data-storyloco=bar]")
+		if (!edit) return
+		const watch = new ResizeObserver(() => place())
+		watch.observe(edit)
+		return () => watch.disconnect()
+	})
 
 	/** Pin to a selected block; `null` lets it go */
 	export function show(next: Target | null) {
@@ -356,7 +368,7 @@
 					>
 				</button>
 			{/if}
-			<!-- dragging is for the pointer: Move up and down do the same from the keyboard -->
+			<!-- dragging is for the pointer: Move up and down, here or in the settings, do it from the keyboard -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<span
 				class="name"
@@ -375,37 +387,39 @@
 						/></svg
 					>{/if}{label(target.name)}</span
 			>
-			<button
-				type="button"
-				aria-label="Move up"
-				title="Move up"
-				disabled={busy}
-				onclick={() => run({ op: "move", by: -1 })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
-			</button>
-			<button
-				type="button"
-				aria-label="Move down"
-				title="Move down"
-				disabled={busy}
-				onclick={() => run({ op: "move", by: 1 })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-			</button>
-			<button
-				type="button"
-				aria-label="Duplicate"
-				title="Duplicate"
-				disabled={busy}
-				onclick={() => run({ op: "duplicate" })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"
-					><rect x="8" y="8" width="13" height="13" rx="2" /><path
-						d="M4 16V5a1 1 0 0 1 1-1h11"
-					/></svg
+			{#if !docked}
+				<button
+					type="button"
+					aria-label="Move up"
+					title="Move up"
+					disabled={busy}
+					onclick={() => run({ op: "move", by: -1 })}
 				>
-			</button>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
+				</button>
+				<button
+					type="button"
+					aria-label="Move down"
+					title="Move down"
+					disabled={busy}
+					onclick={() => run({ op: "move", by: 1 })}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+				</button>
+				<button
+					type="button"
+					aria-label="Duplicate"
+					title="Duplicate"
+					disabled={busy}
+					onclick={() => run({ op: "duplicate" })}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><rect x="8" y="8" width="13" height="13" rx="2" /><path
+							d="M4 16V5a1 1 0 0 1 1-1h11"
+						/></svg
+					>
+				</button>
+			{/if}
 			<button
 				type="button"
 				aria-label="Add a block after this one"
@@ -416,20 +430,22 @@
 			>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 			</button>
-			<button
-				type="button"
-				class="danger"
-				aria-label="Delete"
-				title="Delete"
-				disabled={busy}
-				onclick={() => run({ op: "remove" })}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"
-					><path
-						d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
-					/></svg
+			{#if !docked}
+				<button
+					type="button"
+					class="danger"
+					aria-label="Delete"
+					title="Delete"
+					disabled={busy}
+					onclick={() => run({ op: "remove" })}
 				>
-			</button>
+					<svg viewBox="0 0 24 24" aria-hidden="true"
+						><path
+							d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+						/></svg
+					>
+				</button>
+			{/if}
 		</div>
 
 		{#if problem}<p class="problem" role="alert">{problem}</p>{/if}
@@ -550,6 +566,8 @@
 	.row .dots {
 		block-size: 1rem;
 		color: var(--muted);
+		/* in line with the name, whatever a site's reset makes an svg */
+		display: inline-block;
 		fill: currentColor;
 		inline-size: 1rem;
 		margin-inline: -0.25rem 0.125rem;
