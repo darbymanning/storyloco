@@ -16,6 +16,12 @@ import {
 	shows_rich,
 	rich_supported,
 	same,
+	assets_in,
+	blok_choices,
+	dash,
+	date_entry,
+	plugin_of,
+	theme_choices,
 	set_asset,
 	set_text,
 	string_at,
@@ -69,6 +75,22 @@ describe("editor content", () => {
 		expect(set_asset(blok, "logos", 4, { id: 3 })).toBe(false)
 		expect(set_asset(blok, "title", undefined, { id: 3 })).toBe(false)
 		expect(blok.title).toBe("Hi")
+	})
+
+	test("an image inside a plugin's value is found by its path, and only replaced where one is", () => {
+		const plan = { fieldtype: "asset", id: 1, filename: "plan.jpg", alt: "" }
+		const blok = {
+			plans: { types: [{ name: "A", floors: [{ name: "Ground", plan: { ...plan } }] }] },
+		}
+		const path = ["types", 0, "floors", 0, "plan"]
+		expect(assets_in(blok.plans)).toEqual([{ path, asset: plan }])
+		expect(set_asset(blok, "plans", undefined, { id: 2, filename: "new.jpg" }, path)).toBe(true)
+		expect(blok.plans.types[0].floors[0].plan).toEqual({ ...plan, id: 2, filename: "new.jpg" })
+		expect(set_asset(blok, "plans", undefined, { id: 3 }, ["types", 0, "name"])).toBe(false)
+		expect(set_asset(blok, "plans", undefined, { id: 3 }, ["types", 5, "floors", 0, "plan"])).toBe(
+			false
+		)
+		expect(blok.plans.types[0].name).toBe("A")
 	})
 
 	test("locate finds a blok's list in bloks fields and richtext embeds", () => {
@@ -349,5 +371,60 @@ describe("a plugin's strings", () => {
 		// by the name a space deployed it under before
 		expect(is_plans({ field_type: "plans" })).toBe(true)
 		expect(is_plans({ field_type: "uiloco-heading" })).toBe(false)
+	})
+})
+
+describe("storyloco's plugins in the panel", () => {
+	test("plugin_of names each by what its space deployed it as", () => {
+		expect(plugin_of({ field_type: "plans" })).toBe("plans")
+		expect(plugin_of({ field_type: "uiloco-time" })).toBe("time")
+		expect(plugin_of({ field_type: "link-field" })).toBe("link")
+		expect(plugin_of({ field_type: "uiloco-hubspot-form" })).toBeUndefined()
+	})
+
+	test("theme choices are keyed as the theme plugin keys them", () => {
+		expect(["Dark Green", "darkGreen", "NAVY", "sky_blue"].map(dash)).toEqual([
+			"dark-green",
+			"dark-green",
+			"navy",
+			"sky-blue",
+		])
+		expect(theme_choices([{ name: "Dark Green", value: "#0a3, #fff" }])).toEqual([
+			{ name: "Dark Green", value: "theme-dark-green", colors: ["#0a3", "#fff"] },
+		])
+	})
+
+	test("a dates entry gets its UTC instants, across a clock change, and blanks as null", () => {
+		expect(date_entry({ start_date: "2026-09-15", start_time: "11:00" }, "Europe/London")).toEqual({
+			start_date: "2026-09-15",
+			start_time: "11:00",
+			end_date: null,
+			end_time: null,
+			utc_start: "2026-09-15T10:00:00.000Z",
+			utc_end: null,
+		})
+		const winter = date_entry(
+			{ start_date: "2026-12-01", start_time: "09:00", end_time: "17:30", end_date: "" },
+			"Europe/London"
+		)
+		expect([winter.utc_start, winter.utc_end]).toEqual([
+			"2026-12-01T09:00:00.000Z",
+			"2026-12-01T17:30:00.000Z",
+		])
+		// an end time means nothing without a start time
+		expect(date_entry({ start_date: "2026-12-01", end_time: "10:00" }, "UTC").end_time).toBeNull()
+	})
+
+	test("a blok select's choices are the story's blocks and those nested in them", () => {
+		const content = {
+			blocks: [
+				{ _uid: "a", component: "area", title: "Top", blocks: [{ _uid: "b", component: "card" }] },
+				{ component: "no uid" },
+			],
+		}
+		expect(blok_choices(content)).toEqual([
+			{ id: "a", label: "area · Top", depth: 0 },
+			{ id: "b", label: "card", depth: 1 },
+		])
 	})
 })

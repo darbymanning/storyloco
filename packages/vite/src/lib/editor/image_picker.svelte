@@ -478,7 +478,10 @@
 		--danger: var(--editor-danger, #e5484d);
 		--font: var(--editor-font, 500 0.8125rem/1.25 system-ui, sans-serif);
 
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border: 0;
 		border-radius: 1rem;
 		box-shadow:

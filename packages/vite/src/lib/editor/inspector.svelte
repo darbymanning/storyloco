@@ -9,8 +9,16 @@
 	import { SvelteMap } from "svelte/reactivity"
 	import { tick, untrack } from "svelte"
 	import type { Attachment } from "svelte/attachments"
-	import { call, editor, last_problem, send } from "./client.js"
-	import { is_heading, is_video, rich_supported, same } from "./content.js"
+	import { call, editor, last_problem, send, set_settings_open } from "./client.js"
+	import {
+		blok_choices,
+		is_heading,
+		is_video,
+		plugin_of,
+		rich_supported,
+		same,
+		theme_choices,
+	} from "./content.js"
 	import type { Inserts, RichDoc, RichField } from "./richtext.js"
 	import type { Selection } from "./overlay.js"
 	import { enter, leave, quietly, select as live_select, shared } from "./live.js"
@@ -70,7 +78,12 @@
 		picker: (options: {
 			current: Asset
 			images?: boolean
-			save: (choice: { asset: number; alt: string; focus: string }) => Promise<string | null>
+			save: (choice: {
+				asset: number
+				alt: string
+				focus: string
+				filename?: string
+			}) => Promise<string | null>
 		}) => void
 		/** What a richtext field can have put into it */
 		inserts: (field: Field) => Promise<Inserts>
@@ -102,30 +115,19 @@
 	/** Whether a blok is showing, for the overlay */
 	export const showing = () => selection !== null
 
-	// --- folded to its name, or open
+	// --- folded to its name in the edit bar, or open as the bar's panel
 
-	const OPEN = "storyloco-settings"
-	/** Open, rather than folded to its name; each browser remembers which */
-	let expanded = $state(false)
-	try {
-		expanded = localStorage.getItem(OPEN) === "open"
-	} catch {
-		// storage blocked: folded until it's opened
-	}
-	/** Open, but stepped aside while text it would cover is typed in on the page */
-	let aside = $state(false)
-	const folded = $derived(!expanded || aside)
+	const folded = $derived(!editor.settings_open)
 
 	let panel_el = $state<HTMLElement>()
 	let fold_el = $state<HTMLElement>()
 
 	/**
-	 * Folding or opening morphs one shape into the other: its box before the change, measured before
-	 * the DOM updates, grows or shrinks into the one after. Placed by its corner for the animation,
-	 * since open on a phone it's pinned to both sides.
+	 * Folding or opening morphs the edit bar from one shape into the other: its box before the
+	 * change grows or shrinks into the one after. Shrinking, it's placed by its corner for the
+	 * animation, since open on a phone it's pinned to both sides.
 	 */
-	let from: { rect: DOMRect; radius: number } | undefined
-	let morph: Animation | undefined
+	let morphing: Animation | undefined
 	const shape = (el: HTMLElement) => {
 		const rect = el.getBoundingClientRect()
 		return {
@@ -143,39 +145,72 @@
 		maxHeight: "none",
 		borderRadius: `${radius}px`,
 	})
-	$effect.pre(() => {
-		void folded
+	async function morph(change: () => void) {
+		const bar = panel_el?.closest<HTMLElement>("[data-storyloco=bar]")
 		// mid-morph, it measures where it's got to, so a second toggle turns back from there
-		untrack(() => (from = panel_el && shape(panel_el)))
-	})
-	$effect(() => {
-		void folded
-		untrack(() => {
-			if (!panel_el || !from || matchMedia("(prefers-reduced-motion: reduce)").matches) return
-			morph?.cancel()
-			morph = panel_el.animate([frame(from), frame(shape(panel_el))], {
-				duration: 340,
-				easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
-			})
-		})
-	})
+		const from = bar && shape(bar)
+		const badge = bar?.querySelector<HTMLElement>(".badge")
+		const was = badge?.getBoundingClientRect()
+		change()
+		await tick()
+		if (!bar || !from || matchMedia("(prefers-reduced-motion: reduce)").matches) return
+		morphing?.cancel()
+		const to = shape(bar)
+		const [a, b] = [from.rect, to.rect]
+		// growing, it's laid out whole at once and uncovered from the old shape, so nothing inside
+		// reflows or wraps on the way; shrinking to the pill, whose name fits any size it passes
+		const grows = b.width >= a.width && b.height >= a.height
+		const keyframes = grows
+			? [
+					{
+						clipPath: `inset(${a.top - b.top}px ${b.right - a.right}px ${b.bottom - a.bottom}px ${a.left - b.left}px round ${from.radius}px)`,
+					},
+					{ clipPath: `inset(0 round ${to.radius}px)`, offset: 0.8 },
+					// then on past its edges, uncovering its shadow too rather than it landing at the end
+					{ clipPath: `inset(-80px round ${to.radius + 80}px)` },
+				]
+			: // the pill's row waits in its corner, not the middle of the box closing on it, still
+				// centred on itself
+				[frame(from), frame(to)].map((f) => ({
+					...f,
+					flexWrap: "wrap",
+					alignContent: bar.dataset.corner?.startsWith("t") ? "flex-start" : "flex-end",
+				}))
+		// ponytail: turned back mid-grow, it starts from the whole box, not the uncovered part
+		const timing = { duration: 340, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+		morphing = bar.animate(keyframes, timing)
+		// what the new shape adds arrives after it: opening, the bar's buttons one after another,
+		// and folding, the name once the pill has nearly closed, each rising from the edge it's on
+		const top = bar.dataset.corner?.startsWith("t")
+		const arriving = grows
+			? [...bar.querySelectorAll<HTMLElement>(".panel .inner > *")]
+			: [title_el, fold_el].filter((el) => !!el)
+		arriving.forEach((el, i) =>
+			el.animate(
+				[
+					{ opacity: 0, translate: `0 ${top ? -6 : 6}px` },
+					{ opacity: 1, translate: "0 0" },
+				],
+				{ duration: 240, delay: grows ? 120 + i * 35 : 160, easing: "ease-out", fill: "backwards" }
+			)
+		)
+		// the face glides to where it sits in the new shape, rather than stepping there
+		const now = badge?.getBoundingClientRect()
+		if (badge && was && now && (was.left !== now.left || was.top !== now.top))
+			badge.animate(
+				[{ translate: `${was.left - now.left}px ${was.top - now.top}px` }, { translate: "0 0" }],
+				timing
+			)
+	}
 
 	/** Open or fold it; from the keyboard, focus goes with it */
 	export async function toggle(keyboard = false) {
 		const inside = panel_el?.contains(document.activeElement)
-		// stepped aside, it's still open, so it only comes back
-		if (aside) aside = false
-		else {
-			expanded = !expanded
-			try {
-				localStorage.setItem(OPEN, expanded ? "open" : "folded")
-			} catch {
-				// storage blocked: it lasts until the page reloads
-			}
-			if (!expanded) flush()
+		await morph(() => {
+			set_settings_open(!editor.settings_open)
+			if (!editor.settings_open) flush()
 			else if (selection) load(selection, false)
-		}
-		await tick()
+		})
 		if (!folded && keyboard) title_el?.focus()
 		else if (inside && !panel_el?.contains(document.activeElement)) fold_el?.focus()
 	}
@@ -196,17 +231,9 @@
 
 	/** The field typed in on the page, which the settings mark so it's clear what's changing */
 	let on_page = $state<{ uid: string; field: string } | null>(null)
+	// ponytail: it stays open over text typed in on the page; scroll that clear of it if a sheet on a phone hides it
 	export function typing(at: { uid: string; field: string } | null) {
 		on_page = at
-		if (!at) return void (aside = false)
-		// open over the text being typed in, say as a sheet on a phone, it folds until that's done
-		requestAnimationFrame(() => {
-			const text = document.activeElement
-			if (!on_page || folded || !panel_el || !text || panel_el.contains(text)) return
-			const a = panel_el.getBoundingClientRect()
-			const b = text.getBoundingClientRect()
-			aside = a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
-		})
 	}
 	/** The field being changed here, which the page marks where it shows it */
 	const on_panel = (at: { uid: string; field: string } | null) =>
@@ -283,18 +310,6 @@
 
 	let title_el = $state<HTMLElement>()
 
-	/** Away the way it came in: to the side, or down on a narrow screen */
-	function slide_out(_: Element) {
-		if (matchMedia("(prefers-reduced-motion: reduce)").matches) return { duration: 0 }
-		const narrow = innerWidth < 640
-		return {
-			duration: 200,
-			easing: (t: number) => t * t,
-			css: (t: number) =>
-				`opacity: ${t}; translate: ${narrow ? `0 ${(1 - t) * 24}px` : `${(1 - t) * 24}px 0`}`,
-		}
-	}
-
 	/**
 	 * Show the selected blok; from the keyboard, focus moves to the panel's heading so its fields are
 	 * next, or to its name when it's folded
@@ -320,7 +335,7 @@
 			const story = { id: next.story, uuid: "", name: "", full_slug: "", published_at: null }
 			loaded = { story, blok: quick.blok as Blok, trail: quick.trail }
 			tab = groups[0]?.name ?? ""
-			if (expanded) load(next, false)
+			if (editor.settings_open) load(next, false)
 		} else {
 			loaded = null
 			load(next)
@@ -330,7 +345,7 @@
 	/** The page saved something; the blok may have changed under the panel */
 	export function refresh() {
 		// folded, it catches up when it's opened
-		if (!selection || !expanded) return
+		if (!selection || !editor.settings_open) return
 		// mid-save, the reply has the field's own value; anything else changed waits until it lands
 		if (Object.values(saving).some(Boolean)) stale = true
 		else load(selection, false)
@@ -684,6 +699,58 @@
 	// --- helpers for values
 
 	const text = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v))
+
+	// --- storyloco's own plugins, edited as their plugins edit them in Storyblok
+
+	type Value = Record<string, unknown>
+	const object_of = (v: unknown): Value =>
+		v && typeof v === "object" && !Array.isArray(v) ? (v as Value) : {}
+	const list_of = <T>(v: unknown) => (Array.isArray(v) ? (v as Array<T>) : [])
+
+	/** A blok select's choices, from its story's content, fetched once a story */
+	const blok_lists = new SvelteMap<number, ReturnType<typeof blok_choices>>()
+	function bloks_of(story: number) {
+		if (!blok_lists.has(story)) {
+			blok_lists.set(story, [])
+			call<{ content: unknown }>({ op: "content", story })
+				.then(({ content }) => blok_lists.set(story, blok_choices(content)))
+				.catch(() => blok_lists.delete(story))
+		}
+		return blok_lists.get(story)!
+	}
+
+	const zones =
+		typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : []
+	const here = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+	/** A currency field's codes: its options', else the plugin's own, with the stored one kept */
+	function codes_of(field: Field, current: string) {
+		const listed = text(field.options?.find((o) => o.name === "currencies")?.value)
+			.split(",")
+			.map((code) => code.trim().toUpperCase())
+			.filter(Boolean)
+		const codes = listed.length ? listed : ["GBP", "USD", "EUR"]
+		return codes.includes(current) ? codes : [...codes, current]
+	}
+
+	type Room = { id: string; name: string; area_m: string; area_ft: string }
+	type Floor = {
+		id: string
+		name: string
+		plan?: Asset
+		dimensions: Array<{ id: string; name: string; rooms: Array<Room> }>
+	}
+	type PlanType = { id: string; name?: string; floors: Array<Floor> }
+	/** Which house type each plans field is showing */
+	let plan_type = $state<Record<string, number>>({})
+	/** A plans field's types, changed by `edit` on a copy and saved */
+	function plans_edit(key: string, edit: (types: Array<PlanType>) => void, wait = 0) {
+		const next = structuredClone($state.snapshot(object_of(values[key]))) as Value
+		const types = list_of<PlanType>(next.types)
+		edit(types)
+		change(key, { ...next, types }, wait)
+	}
+	const fresh_room = (): Room => ({ id: crypto.randomUUID(), name: "", area_m: "", area_ft: "" })
 	const heading = (v: unknown) =>
 		v && typeof v === "object" ? (v as { text?: string; level?: number | null }) : {}
 	const asset = (v: unknown) => (v && typeof v === "object" ? (v as Asset) : {})
@@ -793,12 +860,27 @@
 	 * with it open, on the page or in their settings; its room saves it after a pause
 	 */
 	function rich(key: string, field: Field): Attachment<HTMLElement> {
+		// the same one while the field is the same, so the schema loading again after a save, as a
+		// new but equal object, doesn't start the editor over, empty until its room is ready
+		const known = `${key}:${JSON.stringify(field)}`
+		let attach = riches.get(known)
+		if (!attach) riches.set(known, (attach = rich_editor_for(key, field)))
+		return attach
+	}
+	const riches = new Map<string, Attachment<HTMLElement>>()
+
+	function rich_editor_for(key: string, field: Field): Attachment<HTMLElement> {
 		return (node) => {
 			let stop: (() => void) | undefined
 			let gone = false
 			const doc = untrack(() => $state.snapshot(values[key])) ?? { type: "doc", content: [] }
 			const target = untrack(() => selection)
 			if (!target) return
+			// its words straight away, as plain paragraphs, while the editor joins whoever else has it open
+			type Part = { text?: string; content?: Array<Part> }
+			const words = (part: Part): string => part.text ?? (part.content ?? []).map(words).join("")
+			node.textContent = ((doc as Part).content ?? []).map(words).join("\n\n")
+			node.dataset.waiting = ""
 			import("./richtext.js").then(async ({ holds, rich_editor, shared_doc }) => {
 				if (gone) return
 				const room = enter(`${target.story}:${target.uid}:${key}`)
@@ -822,6 +904,8 @@
 				room.value = () => shared_doc(room)
 				room.save = (value, shared) => save_shared(target, key, value, shared)
 				together.add(key)
+				node.textContent = ""
+				delete node.dataset.waiting
 				const editor = rich_editor({
 					element: node,
 					doc: (saved ?? doc) as RichDoc,
@@ -1522,8 +1606,8 @@
 						aria-label="Duplicate"
 						onclick={() => child(key, "duplicate", kid._uid)}
 						><svg viewBox="0 0 24 24" aria-hidden="true"
-							><rect x="8" y="8" width="13" height="13" rx="2" /><path
-								d="M4 16V5a1 1 0 0 1 1-1h11"
+							><rect x="9" y="9" width="11" height="11" rx="2" /><path
+								d="M5 15V6a1 1 0 0 1 1-1h9"
 							/></svg
 						></button
 					>
@@ -1748,9 +1832,431 @@
 	</div>
 {/snippet}
 
+{#snippet Theme(key: string, field: Field, id: string)}
+	{@const choices = theme_choices(field.options ?? undefined)}
+	{@const chosen = choices.find((choice) => choice.value === values[key])}
+	{@render Label(key, field, id)}
+	<div class="row">
+		<select
+			{id}
+			value={text(values[key])}
+			onchange={(e) => change(key, e.currentTarget.value || null)}
+		>
+			<option value="">None</option>
+			{#each choices as choice (choice.value)}<option value={choice.value}>{choice.name}</option
+				>{/each}
+		</select>
+		{#if chosen?.colors.length}
+			<span class="swatches" aria-hidden="true">
+				{#each chosen.colors as color, i (i)}<span style:background={color}></span>{/each}
+			</span>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet Time(key: string, field: Field, id: string)}
+	{@render Label(key, field, id)}
+	<input
+		{id}
+		type="time"
+		value={text(values[key])}
+		onchange={(e) => change(key, e.currentTarget.value)}
+	/>
+{/snippet}
+
+{#snippet Currency(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const currency = text(
+		value.currency || field.options?.find((o) => o.name === "default_currency")?.value || "GBP"
+	).toUpperCase()}
+	{@render Label(key, field, id)}
+	<div class="row">
+		<select
+			class="level"
+			aria-label="Currency"
+			value={currency}
+			onchange={(e) =>
+				change(key, { ...value, currency: e.currentTarget.value, amount: value.amount ?? null })}
+		>
+			{#each codes_of(field, currency) as code (code)}<option value={code}>{code}</option>{/each}
+		</select>
+		<input
+			{id}
+			type="number"
+			min="0"
+			step="any"
+			inputmode="decimal"
+			value={value.amount ?? ""}
+			onchange={(e) =>
+				change(key, {
+					...value,
+					currency,
+					amount: e.currentTarget.value === "" ? null : Number(e.currentTarget.value),
+				})}
+		/>
+	</div>
+{/snippet}
+
+{#snippet BlokSelect(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const choices = selection ? bloks_of(selection.story) : []}
+	{@render Label(key, field, id)}
+	<select
+		{id}
+		value={text(value.id)}
+		onchange={(e) => change(key, { ...value, id: e.currentTarget.value })}
+	>
+		<option value="">None</option>
+		{#each choices as choice (choice.id)}<option value={choice.id}
+				>{"— ".repeat(choice.depth)}{choice.label}</option
+			>{/each}
+		{#if text(value.id) && !choices.some((c) => c.id === value.id)}
+			<option value={text(value.id)}>{text(value.id)}</option>
+		{/if}
+	</select>
+{/snippet}
+
+{#snippet Dates(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const zone = text(value.timezone) || here}
+	{@const rows = list_of<Value>(value.dates)}
+	{@const keep = (dates: Array<Value>, timezone = zone) =>
+		change(key, { ...value, timezone, dates })}
+	{@const set = (i: number, part: string, next: string) =>
+		keep(rows.with(i, { ...rows[i], [part]: next || null }))}
+	{@render Label(key, field, id)}
+	<div class="group" {id}>
+		{#each rows as row, i (i)}
+			<div class="dates">
+				<input
+					type="date"
+					aria-label="Starts"
+					value={text(row.start_date)}
+					onchange={(e) => e.currentTarget.value && set(i, "start_date", e.currentTarget.value)}
+				/>
+				<input
+					type="time"
+					aria-label="Start time"
+					value={text(row.start_time)}
+					onchange={(e) => set(i, "start_time", e.currentTarget.value)}
+				/>
+				<button
+					type="button"
+					class="round"
+					aria-label="Remove"
+					onclick={() => keep(rows.toSpliced(i, 1))}
+					><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+					></button
+				>
+				<input
+					type="date"
+					aria-label="Ends"
+					value={text(row.end_date)}
+					onchange={(e) => set(i, "end_date", e.currentTarget.value)}
+				/>
+				<input
+					type="time"
+					aria-label="End time"
+					value={text(row.end_time)}
+					disabled={!row.start_time}
+					onchange={(e) => set(i, "end_time", e.currentTarget.value)}
+				/>
+			</div>
+		{/each}
+		<div class="row">
+			<button
+				type="button"
+				class="button quiet"
+				onclick={() => keep([...rows, { start_date: new Date().toISOString().slice(0, 10) }])}
+				>+ Date</button
+			>
+			<select
+				aria-label="Timezone"
+				value={zone}
+				onchange={(e) => keep(rows, e.currentTarget.value)}
+			>
+				{#each zones.includes(zone) ? zones : [zone, ...zones] as name (name)}<option value={name}
+						>{name.replaceAll("_", " ")}</option
+					>{/each}
+			</select>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet Link_(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const type = text(value.type) || "external"}
+	{@const keep = (patch: Value) => change(key, { ...value, type, ...patch })}
+	{@const story = object_of(value.story)}
+	{@render Label(key, field, id)}
+	{#if type !== "asset"}
+		<div class="segmented" role="radiogroup" aria-label="Link to">
+			{#each [["internal", "Page"], ["external", "URL"], ["email", "Email"]] as [kind, name] (kind)}
+				<button
+					type="button"
+					role="radio"
+					aria-checked={type === kind}
+					class:on={type === kind}
+					onclick={() => type !== kind && (values[key] = { ...value, type: kind })}>{name}</button
+				>
+			{/each}
+		</div>
+	{/if}
+	<input
+		{id}
+		placeholder="Link text"
+		value={text(value.text)}
+		onfocus={() => (focused = key)}
+		onblur={() => {
+			focused = null
+			flush()
+		}}
+		oninput={(e) => change(key, { ...value, type, text: e.currentTarget.value }, 700)}
+	/>
+	{#if type === "internal"}
+		<div class="combo">
+			<input
+				aria-label="Page"
+				placeholder={story.name ? text(story.name) : "Find a page"}
+				value={finding?.key === key ? finding.search : ""}
+				onfocus={() => find_stories(key, "")}
+				oninput={(e) => find_stories(key, e.currentTarget.value)}
+				onblur={() => setTimeout(() => finding?.key === key && (finding = null), 150)}
+			/>
+			{#if story.name && finding?.key !== key}<p class="help">Links to {story.name}</p>{/if}
+			{#if finding?.key === key && finding.results.length}
+				<ul class="results">
+					{#each finding.results as found (found.id)}
+						<li>
+							<button
+								type="button"
+								onmousedown={(e) => e.preventDefault()}
+								onclick={() => {
+									keep({ story: { id: found.id, uuid: found.uuid, name: found.name } })
+									finding = null
+								}}><strong>{found.name}</strong><span>/{found.full_slug}</span></button
+							>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{:else if type === "email"}
+		<input
+			type="email"
+			aria-label="Email"
+			placeholder="name@example.com"
+			value={text(value.email)}
+			onchange={(e) => keep({ email: e.currentTarget.value })}
+		/>
+	{:else if type === "asset"}
+		<p class="help">Links to a file, which is chosen in Storyblok.</p>
+	{:else}
+		<input
+			type="url"
+			aria-label="URL"
+			placeholder="https://"
+			value={text(value.url)}
+			onchange={(e) => keep({ url: e.currentTarget.value })}
+		/>
+	{/if}
+	{#if type !== "email"}
+		<label class="check small">
+			<input
+				type="checkbox"
+				checked={value.target === "_blank"}
+				onchange={(e) => keep({ target: e.currentTarget.checked ? "_blank" : "_self" })}
+			/>
+			Open in a new tab
+		</label>
+	{/if}
+{/snippet}
+
+{#snippet Plans(key: string, field: Field, id: string)}
+	{@const types = list_of<PlanType>(object_of(values[key]).types)}
+	{@const t = Math.min(plan_type[key] ?? 0, Math.max(types.length - 1, 0))}
+	{@const type = types[t]}
+	{@const typing = {
+		onfocus: () => (focused = key),
+		onblur: () => {
+			focused = null
+			flush()
+		},
+	}}
+	{@render Label(key, field, id)}
+	<div class="group" {id}>
+		<div class="row">
+			<select
+				aria-label="House type"
+				value={String(t)}
+				onchange={(e) => (plan_type[key] = Number(e.currentTarget.value))}
+			>
+				{#each types as each, i (each.id)}<option value={String(i)}
+						>{each.name || `Type ${i + 1}`}</option
+					>{/each}
+				{#if !types.length}<option value="0">No types yet</option>{/if}
+			</select>
+			<button
+				type="button"
+				class="button quiet"
+				onclick={() => {
+					plans_edit(key, (list) =>
+						list.push({ id: crypto.randomUUID(), name: `Type ${list.length + 1}`, floors: [] })
+					)
+					plan_type[key] = types.length
+				}}>+ Type</button
+			>
+		</div>
+		{#if type}
+			<label class="sub">
+				<span>Name</span>
+				<input
+					value={type.name ?? ""}
+					{...typing}
+					oninput={(e) => {
+						const name = e.currentTarget.value
+						plans_edit(key, (list) => (list[t].name = name), 700)
+					}}
+				/>
+			</label>
+			{#each type.floors as floor, f (floor.id)}
+				{@const rooms = floor.dimensions.flatMap((dimension, d) =>
+					dimension.rooms.map((room, r) => ({ room, d, r }))
+				)}
+				<div class="floor">
+					<div class="row">
+						<input
+							aria-label="Floor name"
+							placeholder="Floor"
+							value={floor.name}
+							{...typing}
+							oninput={(e) => {
+								const name = e.currentTarget.value
+								plans_edit(key, (list) => (list[t].floors[f].name = name), 700)
+							}}
+						/>
+						<button
+							type="button"
+							class="round"
+							aria-label="Remove {floor.name || 'floor'}"
+							onclick={() => plans_edit(key, (list) => list[t].floors.splice(f, 1))}
+							><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+							></button
+						>
+					</div>
+					<div class="asset">
+						{#if floor.plan?.filename}<img
+								src={thumb(floor.plan.filename)}
+								alt={floor.plan.alt ?? ""}
+							/>{/if}
+						<div class="asset-actions">
+							<button
+								type="button"
+								class="button"
+								onclick={() =>
+									picker({
+										current: floor.plan ?? asset(null),
+										images: true,
+										save: async (choice) => {
+											plans_edit(
+												key,
+												(list) =>
+													(list[t].floors[f].plan = {
+														...list[t].floors[f].plan,
+														id: choice.asset,
+														alt: choice.alt,
+														focus: choice.focus,
+														filename: choice.filename ?? "",
+													} as Asset)
+											)
+											return null
+										},
+									})}>{floor.plan?.filename ? "Replace plan" : "Choose a plan"}</button
+							>
+						</div>
+					</div>
+					{#each rooms as { room, d, r } (room.id)}
+						<div class="room">
+							{#each [["name", "Room"], ["area_m", "m"], ["area_ft", "ft"]] as [part, name] (part)}
+								<input
+									aria-label={name}
+									placeholder={name}
+									value={room[part as keyof Room]}
+									{...typing}
+									oninput={(e) => {
+										const next = e.currentTarget.value
+										plans_edit(
+											key,
+											(list) =>
+												(list[t].floors[f].dimensions[d].rooms[r][part as keyof Room] = next),
+											700
+										)
+									}}
+								/>
+							{/each}
+							<button
+								type="button"
+								class="round"
+								aria-label="Remove {room.name || 'room'}"
+								onclick={() =>
+									plans_edit(key, (list) => list[t].floors[f].dimensions[d].rooms.splice(r, 1))}
+								><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+								></button
+							>
+						</div>
+					{/each}
+					<button
+						type="button"
+						class="button quiet"
+						onclick={() =>
+							plans_edit(key, (list) => {
+								const dimensions = list[t].floors[f].dimensions
+								if (!dimensions.length)
+									dimensions.push({ id: crypto.randomUUID(), name: "", rooms: [] })
+								dimensions.at(-1)!.rooms.push(fresh_room())
+							})}>+ Room</button
+					>
+				</div>
+			{/each}
+			<div class="row">
+				<button
+					type="button"
+					class="button quiet"
+					onclick={() =>
+						plans_edit(key, (list) =>
+							list[t].floors.push({ id: crypto.randomUUID(), name: "", dimensions: [] })
+						)}>+ Floor</button
+				>
+				<button
+					type="button"
+					class="button quiet"
+					onclick={() => {
+						plans_edit(key, (list) => list.splice(t, 1))
+						plan_type[key] = Math.max(t - 1, 0)
+					}}>Remove {type.name || "type"}</button
+				>
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet Unknown(key: string, field: Field, id: string)}
 	{@render Label(key, field, id)}
-	<p class="readonly" {id}>Edited in Storyblok</p>
+	{#if editor.space && selection}
+		<!-- no Storyblok address opens a block, so the story, from where its field's a scroll away -->
+		<a
+			class="readonly out"
+			{id}
+			href="https://app.storyblok.com/#/me/spaces/{editor.space}/stories/0/0/{selection.story}"
+			target="_blank"
+			rel="noopener noreferrer"
+			>Edit in Storyblok<svg viewBox="0 0 24 24" aria-hidden="true"
+				><path d="M7 17 17 7M8 7h9v9" /></svg
+			></a
+		>
+	{:else}
+		<p class="readonly" {id}>Edit in Storyblok</p>
+	{/if}
 {/snippet}
 
 {#snippet Control(key: string, field: Field)}
@@ -1799,6 +2305,20 @@
 			{@render Video_(key, field, id)}
 		{:else if field.type === "table"}
 			{@render Table_(key, field, id)}
+		{:else if plugin_of(field) === "plans"}
+			{@render Plans(key, field, id)}
+		{:else if plugin_of(field) === "theme"}
+			{@render Theme(key, field, id)}
+		{:else if plugin_of(field) === "time"}
+			{@render Time(key, field, id)}
+		{:else if plugin_of(field) === "currency"}
+			{@render Currency(key, field, id)}
+		{:else if plugin_of(field) === "blok_select"}
+			{@render BlokSelect(key, field, id)}
+		{:else if plugin_of(field) === "dates"}
+			{@render Dates(key, field, id)}
+		{:else if plugin_of(field) === "link"}
+			{@render Link_(key, field, id)}
 		{:else}
 			{@render Unknown(key, field, id)}
 		{/if}
@@ -1813,7 +2333,6 @@
 		data-storyloco="inspector"
 		aria-label={is_page ? "Page settings" : "Block settings"}
 		onkeydown={keydown}
-		out:slide_out
 		bind:this={panel_el}
 	>
 		<header>
@@ -1834,15 +2353,6 @@
 				<p class="trail">{component_label(loaded.blok.component)}</p>
 			{/if}
 			<div class="title">
-				{#if folded}
-					<svg class="sliders" viewBox="0 0 24 24" aria-hidden="true"
-						><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" /><circle
-							cx="15"
-							cy="6"
-							r="2"
-						/><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></svg
-					>
-				{/if}
 				<h2 tabindex="-1" bind:this={title_el}>
 					{#if loaded}{is_page && editor.story?.name
 							? editor.story.name
@@ -1902,18 +2412,6 @@
 							>
 						</button>
 					</div>
-				{/if}
-				{#if picked && !is_page}
-					<!-- back to the page's own settings, unless that's what's picked -->
-					<button
-						type="button"
-						class="round deselect"
-						aria-label="Deselect"
-						title="Deselect"
-						onclick={() => select(null)}
-					>
-						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
-					</button>
 				{/if}
 				<button
 					type="button"
@@ -1997,6 +2495,7 @@
 		all: revert;
 	}
 
+	/* In the edit bar's slot: its name there while folded, the bar's panel when open */
 	.inspector {
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;
@@ -2008,43 +2507,19 @@
 		--accent: var(--editor-accent, #05807f);
 		--danger: var(--editor-danger, #e5484d);
 		--field: color-mix(in srgb, var(--ink) 4%, transparent);
+		/* focused, a field deepens a little into the glass, rather than turning solid */
+		--field-focus: color-mix(in srgb, var(--bg) 55%, transparent);
 
-		background: var(--bg);
-		block-size: calc(100dvh - 1.5rem);
-		border-radius: 1rem;
-		box-shadow:
-			0 0 0 1px var(--line),
-			0 16px 48px rgb(0 0 0 / 0.16);
+		block-size: 100%;
 		color: var(--ink);
 		display: grid;
 		font:
 			400 0.8125rem/1.4 system-ui,
 			sans-serif;
+		flex: 1;
 		grid-template-rows: auto minmax(0, 1fr);
-		inline-size: min(22rem, 100vw - 1.5rem);
-		inset: 0.75rem 0.75rem auto auto;
+		min-inline-size: 0;
 		overflow: hidden;
-		position: fixed;
-		transition:
-			opacity 0.22s ease,
-			translate 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-		z-index: 2147483002;
-
-		@starting-style {
-			opacity: 0;
-			translate: 1.5rem 0;
-		}
-
-		@media (width < 40rem) {
-			block-size: auto;
-			inline-size: auto;
-			inset: auto 0.5rem 0.5rem;
-			max-block-size: 65dvh;
-
-			@starting-style {
-				translate: 0 1.5rem;
-			}
-		}
 
 		& * {
 			box-sizing: border-box;
@@ -2064,26 +2539,18 @@
 		}
 	}
 
-	/* Folded: a pill with the name, where the panel's top edge would be, or its bottom on a phone */
+	/* Folded: the block's name and a button to open it, beside the badge */
 	.inspector.folded {
-		block-size: auto;
-		border-radius: 999px;
 		grid-template-rows: auto;
-		inline-size: auto;
-		max-inline-size: min(22rem, 100vw - 1.5rem);
-
-		@media (width < 40rem) {
-			inset: auto 0.5rem 0.5rem auto;
-			max-inline-size: calc(100vw - 1rem);
-		}
+		position: relative;
 
 		& header {
 			border: 0;
-			padding: 0.3125rem 0.3125rem 0.3125rem 0.875rem;
+			padding: 0 0 0 0.625rem;
 		}
 
 		& .title {
-			gap: 0.5rem;
+			gap: 0.375rem;
 		}
 
 		& h2 {
@@ -2094,41 +2561,12 @@
 			white-space: nowrap;
 		}
 
-		/* the whole pill opens it */
+		/* the name opens it too */
 		& .fold::after {
 			content: "";
 			inset: 0;
 			position: absolute;
 		}
-
-		& .deselect {
-			position: relative;
-			z-index: 1;
-		}
-	}
-
-	/* clear of the edit bar when it's in the same corner */
-	:global(body:has([data-storyloco="bar"][data-corner="tr"])) .inspector.folded {
-		@media (width >= 40rem) {
-			inset-block-start: calc(var(--editor-offset, 1rem) + 3.5rem);
-		}
-	}
-
-	:global(body:has([data-storyloco="bar"][data-corner="br"])) .inspector.folded {
-		@media (width < 40rem) {
-			inset-block-end: calc(var(--editor-offset, 1rem) + 3.5rem);
-		}
-	}
-
-	.sliders {
-		block-size: 1rem;
-		color: var(--muted);
-		fill: none;
-		flex: none;
-		inline-size: 1rem;
-		stroke: currentColor;
-		stroke-linecap: round;
-		stroke-width: 2;
 	}
 
 	header {
@@ -2361,7 +2799,7 @@
 		}
 
 		&:focus-visible {
-			background-color: var(--bg);
+			background-color: var(--field-focus);
 			border-color: var(--accent);
 			outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent);
 		}
@@ -2516,6 +2954,89 @@
 		gap: 0.375rem;
 	}
 
+	/* a theme's colours beside its name */
+	.swatches {
+		align-items: center;
+		display: flex;
+		flex: none;
+
+		& span {
+			block-size: 1.25rem;
+			border-radius: 50%;
+			box-shadow: 0 0 0 2px var(--field-focus);
+			inline-size: 1.25rem;
+
+			& + span {
+				margin-inline-start: -0.375rem;
+			}
+		}
+	}
+
+	/* a date: its start, then its end, beside the button that takes it out */
+	.dates {
+		display: grid;
+		gap: 0.25rem;
+		grid-template-columns: 1fr 6rem auto;
+
+		& input[type="date"]:last-of-type {
+			grid-column: 1;
+		}
+	}
+
+	/* a floor of a plan: its name, its plan, its rooms */
+	.floor {
+		border-inline-start: 2px solid var(--line);
+		display: grid;
+		gap: 0.375rem;
+		padding-inline-start: 0.625rem;
+	}
+
+	/* a room's name, then its sizes beneath, wide enough to read whole */
+	.room {
+		display: grid;
+		gap: 0.25rem;
+		grid-template-columns: 1fr 1fr auto;
+
+		& input:first-child {
+			grid-column: 1 / 3;
+		}
+
+		& button {
+			grid-area: 1 / 3;
+		}
+	}
+
+	.floor > .button {
+		justify-self: start;
+	}
+
+	.group > .row > .button {
+		flex: none;
+		white-space: nowrap;
+	}
+
+	.readonly.out {
+		align-items: center;
+		color: var(--ink);
+		display: flex;
+		gap: 0.375rem;
+		justify-content: space-between;
+		text-decoration: none;
+
+		& svg {
+			block-size: 1rem;
+			fill: none;
+			inline-size: 1rem;
+			stroke: currentColor;
+			stroke-linecap: round;
+			stroke-width: 2;
+		}
+
+		&:hover {
+			background: color-mix(in srgb, var(--ink) 8%, transparent);
+		}
+	}
+
 	.file {
 		background: var(--field);
 		border-radius: 0.5rem;
@@ -2606,7 +3127,7 @@
 			padding: 0.25rem;
 
 			&.on {
-				background: var(--bg);
+				background: color-mix(in srgb, var(--ink) 12%, transparent);
 				box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 				color: var(--ink);
 			}
@@ -2619,7 +3140,8 @@
 
 	.results,
 	.adding ul {
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background: color-mix(in srgb, var(--bg) 85%, transparent);
 		border-radius: 0.5rem;
 		box-shadow:
 			0 0 0 1px var(--line),
@@ -2715,6 +3237,11 @@
 	}
 
 	.rich {
+		&[data-waiting] {
+			color: var(--muted);
+			white-space: pre-line;
+		}
+
 		background: var(--field);
 		border: 1px solid var(--line);
 		border-radius: 0.5rem;
@@ -2723,8 +3250,9 @@
 		padding: 0.375rem 0.625rem 0.5rem;
 
 		&:focus-within {
-			background: var(--bg);
+			background: var(--field-focus);
 			border-color: var(--accent);
+			outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent);
 		}
 
 		& :global(.ProseMirror) {
@@ -2954,12 +3482,20 @@
 				border-radius: 0.25rem;
 				color: var(--muted);
 				cursor: pointer;
+				block-size: 1.5rem;
+				display: grid;
 				font: inherit;
-				min-inline-size: 1.5rem;
-				padding: 0.125rem;
+				inline-size: 1.5rem;
+				padding: 0;
+				place-items: center;
+
+				& svg {
+					block-size: 1rem;
+					inline-size: 1rem;
+				}
 
 				&:hover:not(:disabled) {
-					background: var(--bg);
+					background: color-mix(in srgb, var(--ink) 10%, transparent);
 					color: var(--ink);
 				}
 

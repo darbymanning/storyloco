@@ -49,6 +49,93 @@ describe("editor schemas", () => {
 			)
 		).toBeInstanceOf(EditorError)
 
+	test("a storyloco plugin's value is only what its plugin would store", async () => {
+		const plugin = (field_type: string, value: unknown, existing?: unknown, extra = {}) =>
+			check("custom", value, existing, { field_type, ...extra })
+		const themes = { options: [{ name: "Dark Green", value: "#0a3" }] }
+		expect(await plugin("uiloco-theme", "theme-dark-green", null, themes)).toBe("theme-dark-green")
+		expect(await plugin("uiloco-theme", null, "theme-dark-green", themes)).toBeNull()
+		await refused(plugin("uiloco-theme", "theme-red", null, themes))
+		expect(await plugin("uiloco-time", "09:30")).toBe("09:30")
+		await refused(plugin("uiloco-time", "25:00"))
+		expect(
+			await plugin(
+				"uiloco-currency",
+				{ currency: "GBP", amount: 1234.5, formatted: "lies" },
+				{
+					plugin: "uiloco-currency",
+				}
+			)
+		).toEqual({
+			plugin: "uiloco-currency",
+			currency: "GBP",
+			amount: 1234.5,
+			formatted: "£1,234.50",
+		})
+		await refused(plugin("uiloco-currency", { currency: "GBP", amount: -1 }))
+		expect(await plugin("uiloco-blok-select", { id: "abc-1", extra: "<script>" })).toEqual({
+			plugin: "uiloco-blok-select",
+			id: "abc-1",
+		})
+		const dates = await plugin("uiloco-dates", {
+			timezone: "Europe/London",
+			dates: [{ start_date: "2026-09-15", start_time: "11:00", utc_start: "forged" }],
+		})
+		expect((dates as { dates: Array<{ utc_start: string }> }).dates[0].utc_start).toBe(
+			"2026-09-15T10:00:00.000Z"
+		)
+		await refused(plugin("uiloco-dates", { timezone: "Mars/Olympus", dates: [] }))
+		expect(
+			await plugin("uiloco-link", { type: "external", url: "https://x.test", text: "Go" })
+		).toMatchObject({ type: "external", url: "https://x.test", text: "Go" })
+		await refused(plugin("uiloco-link", { type: "external", url: "javascript:alert(1)" }))
+		await refused(plugin("uiloco-link", { type: "asset", text: "A" }, { type: "external" }))
+	})
+
+	test("a floor plans value keeps its images by id, asks Storyblok for new ones, and drops the rest", async () => {
+		const plan = { fieldtype: "asset", id: 1, filename: "old.jpg", alt: "", title: "Kept" }
+		const stored = {
+			plugin: "plans",
+			_active_type: "t",
+			types: [{ id: "t", name: "A", floors: [{ id: "f", name: "Ground", plan, dimensions: [] }] }],
+		}
+		const next = {
+			types: [
+				{
+					id: "t",
+					name: "Apartment A",
+					junk: "dropped",
+					floors: [
+						{ id: "f", name: "Ground", plan: { id: 1, alt: "Plan" }, dimensions: [] },
+						{
+							id: "g",
+							name: "First",
+							plan: { id: 9 },
+							dimensions: [
+								{
+									id: "d",
+									name: "",
+									rooms: [{ id: "r", name: "Bed", area_m: "3 x 4m", area_ft: "" }],
+								},
+							],
+						},
+					],
+				},
+			],
+		}
+		const out = (await check("custom", next, stored, { field_type: "plans" })) as typeof stored
+		expect(out._active_type).toBe("t")
+		expect(out.types[0]).not.toHaveProperty("junk")
+		expect(out.types[0].name).toBe("Apartment A")
+		expect(out.types[0].floors[0].plan).toEqual({ ...plan, alt: "Plan" })
+		expect(out.types[0].floors[1].plan).toMatchObject({
+			id: 9,
+			filename: asset.filename,
+			fieldtype: "asset",
+		})
+		expect(input_of({ type: "custom", field_type: "uiloco-time" }, "09:30")).toBe("09:30")
+	})
+
 	test("normalise keeps each type to what Storyblok stores", async () => {
 		expect(await check("text", "Hi")).toBe("Hi")
 		await refused(check("text", 3))

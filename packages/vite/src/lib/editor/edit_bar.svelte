@@ -120,6 +120,16 @@
 	let bar = $state<HTMLElement>()
 
 	const shown = $derived(!framed && (editor.draft || Boolean(editor.user)))
+	/* Editing, the badge opens the block settings, which the bar holds, and the bar's row with them */
+	const settings = $derived(editor.editing && Boolean(editor.user))
+	const card = $derived(settings && editor.settings_open)
+	const opened = $derived(settings ? card : open)
+
+	/* Badge, S key and the settings' own button alike */
+	function toggle() {
+		if (settings) import("./overlay.js").then((o) => o.toggle_settings())
+		else open = !open
+	}
 
 	const story = $derived(editor.story)
 
@@ -253,10 +263,7 @@
 		if (!drag || event.pointerId !== drag.id) return
 		const moved = drag.moved
 		drag = null
-		if (!moved) {
-			open = !open
-			return
-		}
+		if (!moved) return toggle()
 		// snap to the nearest corner, animating from where it was dropped
 		const from = bar!.getBoundingClientRect()
 		corner = corner_of(from.x + from.width / 2, from.y + from.height / 2)
@@ -425,7 +432,13 @@
 		setTimeout(() => (published = false), 2400)
 	}
 
-	const KINDS = { added: "Added", removed: "Removed", edited: "Edited", reordered: "Reordered" }
+	const KINDS = {
+		added: "Added",
+		removed: "Removed",
+		edited: "Edited",
+		reordered: "Reordered",
+		renamed: "Renamed",
+	}
 
 	/* Unpublished changes show beside the badge too, so publishing doesn't mean opening it first */
 	const waiting = $derived(Boolean(editor.user && unpublished()))
@@ -466,7 +479,7 @@
 {#if shown}
 	<div
 		bind:this={bar}
-		class={["bar", { open, dragging: offset.x || offset.y }]}
+		class={["bar", { open: opened, dragging: offset.x || offset.y }]}
 		data-storyloco="bar"
 		data-corner={corner}
 		style:--clear="{clear}px"
@@ -475,9 +488,9 @@
 		<button
 			class="badge"
 			type="button"
-			aria-label={open ? "Close the site editor" : "Open the site editor"}
+			aria-label={opened ? "Close the site editor" : "Open the site editor"}
 			title={story?.status === "published" ? title : undefined}
-			aria-expanded={open}
+			aria-expanded={opened}
 			onpointerdown={press}
 			onpointermove={move}
 			onpointerup={release}
@@ -485,7 +498,7 @@
 			onkeydown={(event) => {
 				if (event.key === "Enter" || event.key === " ") {
 					event.preventDefault()
-					open = !open
+					toggle()
 				}
 			}}
 		>
@@ -503,7 +516,7 @@
 			{/if}
 			{#if editor.saving}<span class="ring" aria-hidden="true"></span>{/if}
 			<span class="dot" data-signal={signal} aria-hidden="true"></span>
-			{#if inbox.unread && !open}
+			{#if inbox.unread && !opened}
 				<span class="unread" aria-hidden="true">{count(inbox.unread)}</span>
 				<span class="sr">{inbox.unread} unread notifications</span>
 			{/if}
@@ -544,7 +557,15 @@
 			</span>
 		{/if}
 
-		{#if (waiting || published) && !open}
+		{#if editor.user}
+			<!-- the block settings: their name beside the badge, or the panel above the row when open -->
+			<div
+				class="settings"
+				{@attach (el) => void import("./overlay.js").then((o) => o.dock(el))}
+			></div>
+		{/if}
+
+		{#if (waiting || published) && !opened}
 			<button
 				class="publish outside"
 				type="button"
@@ -556,7 +577,7 @@
 			</button>
 		{/if}
 
-		<div class="panel" inert={!open}>
+		<div class="panel" inert={!opened}>
 			<div class="inner">
 				{#if story && LABELS[story.status]}
 					<div class="status" data-status={story.status}>
@@ -695,6 +716,24 @@
 						</button>
 						<span class="tip" aria-hidden="true">More · ⌘K</span>
 					</span>
+					{#if waiting}
+						<!-- in the open panel, publishing is the row's last button, rather than a label and a pill -->
+						<span class="control last">
+							<button
+								class="round go"
+								type="button"
+								aria-label={publishing ? "Publishing" : "Publish changes"}
+								aria-expanded={Boolean(reviewing)}
+								disabled={editor.saving || publishing}
+								onclick={go_live}
+							>
+								<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+									<path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
+								</svg>
+							</button>
+							<span class="tip" aria-hidden="true">Publish changes</span>
+						</span>
+					{/if}
 				{:else if editor.guest}
 					{@const guest = editor.guest}
 					<span class="who">
@@ -963,6 +1002,141 @@
 			@starting-style {
 				scale: 1;
 			}
+		}
+	}
+
+	/* The block settings: their name beside the badge while folded */
+	.settings {
+		display: flex;
+		min-inline-size: 0;
+
+		&:empty {
+			display: none;
+		}
+	}
+
+	/*
+	 * holding the settings' name, the bar is a pill of its own, which morphs whole as it opens: glass,
+	 * the page blurred through it, a wash of the accent from the top and a catch of light on its edge
+	 */
+	.bar:has(.settings:not(:empty)) {
+		--sheen: inset 0 1px 0 rgb(255 255 255 / 0.1);
+
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
+		box-shadow: var(--sheen), var(--shadow);
+
+		& :is(.panel, .inner) {
+			transition: none;
+		}
+	}
+
+	/*
+	 * Open, one panel in the bar's corner: the settings, then the row along the bottom edge, or
+	 * the top in a top corner, so the badge stays put. A sheet across a phone's screen
+	 */
+	.bar:has(:global(.inspector:not(.folded))) {
+		align-items: center;
+		block-size: calc(100dvh - 2 * var(--o) - var(--clear));
+		border-radius: 1rem;
+		box-shadow:
+			var(--sheen),
+			var(--shadow),
+			0 16px 48px rgb(0 0 0 / 0.16);
+		display: grid;
+		grid-template: minmax(0, 1fr) auto / auto auto minmax(0, 1fr);
+		inline-size: min(22rem, 100% - 2 * var(--o));
+		padding: 0 0.375rem 0.375rem;
+
+		& > * {
+			grid-row: 2;
+		}
+
+		/* the settings keep to the rounded corners they're in; the row's tips may stand past the edge */
+		& .settings {
+			align-self: stretch;
+			border-block-end: 1px solid var(--line);
+			border-radius: 1rem 1rem 0 0;
+			grid-area: 1 / 1 / 2 / -1;
+			margin: 0 -0.375rem 0.375rem;
+			overflow: hidden;
+		}
+
+		& .people {
+			grid-column: 2;
+		}
+
+		& .panel {
+			grid-column: 3;
+		}
+
+		/*
+		 * one line, spread across the panel: the status, saving and any problem are the badge's dot
+		 * and ring, and publishing the row's last button. Narrower still, say with people beside the
+		 * badge, it wraps rather than widening the panel
+		 */
+		& .inner {
+			column-gap: 0.375rem;
+			flex-wrap: wrap;
+			justify-content: space-between;
+			row-gap: 0.375rem;
+			white-space: normal;
+
+			& :is(.status, .publish, .state) {
+				display: none;
+			}
+
+			& .last {
+				display: flex;
+			}
+		}
+
+		/* clear of the row, over the settings */
+		& .review {
+			grid-row: auto;
+			inset-block: auto 3rem;
+		}
+
+		&[data-corner^="t"] {
+			grid-template-rows: auto minmax(0, 1fr);
+			padding: 0.375rem 0.375rem 0;
+
+			& > * {
+				grid-row: 1;
+			}
+
+			& .settings {
+				border-block: 1px solid var(--line) 0;
+				border-radius: 0 0 1rem 1rem;
+				grid-row: 2;
+				margin: 0.375rem -0.375rem 0;
+			}
+
+			& .review {
+				inset-block: 3rem auto;
+			}
+		}
+
+		&[data-corner$="r"] {
+			grid-template-columns: minmax(0, 1fr) auto auto;
+
+			& .badge {
+				grid-column: 3;
+			}
+
+			& .panel {
+				grid-column: 1;
+			}
+		}
+
+		@media (width < 40rem) {
+			block-size: auto;
+			inline-size: auto;
+			inset-inline: 0.5rem;
+			max-block-size: 65dvh;
+			max-inline-size: none;
 		}
 	}
 
@@ -1414,6 +1588,20 @@
 		display: flex;
 		position: relative;
 
+		/* only in the open panel */
+		&.last {
+			display: none;
+		}
+
+		/* right at the edge, its tip lines up with it rather than running past */
+		&.last .tip {
+			inset-inline: auto calc(50% - 0.9375rem);
+
+			&::after {
+				inset-inline: auto 0.625rem;
+			}
+		}
+
 		.tip {
 			inset-inline-start: calc(50% - 0.9375rem);
 		}
@@ -1451,6 +1639,21 @@
 		&:hover {
 			background-color: color-mix(in srgb, var(--accent) 15%, transparent);
 			color: var(--accent);
+		}
+
+		/* publishing: the accent, filled, the one thing on the row asking to be pressed */
+		&.go {
+			background-color: var(--accent);
+			color: var(--editor-accent-ink, #fff);
+
+			&:hover {
+				background-color: color-mix(in srgb, var(--accent) 85%, #fff);
+				color: var(--editor-accent-ink, #fff);
+			}
+
+			&:disabled {
+				opacity: 0.5;
+			}
 		}
 	}
 
@@ -1651,7 +1854,10 @@
 	}
 
 	.review {
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background:
+			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+			color-mix(in srgb, var(--bg) 80%, transparent);
 		border-radius: 0.875rem;
 		box-shadow:
 			var(--shadow),

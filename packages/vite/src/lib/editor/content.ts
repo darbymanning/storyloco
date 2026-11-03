@@ -85,12 +85,37 @@ export function with_string(value: unknown, path: Path, next: string) {
 const is_asset = (value: unknown): value is Node =>
 	!!value && typeof value === "object" && (value as Node).fieldtype === "asset"
 
+/** Every image inside a plugin's value, like a floor's plan in a list of floor plans, with where */
+export function assets_in(value: unknown, path: Path = []): Array<{ path: Path; asset: Node }> {
+	if (is_asset(value)) return path.length ? [{ path, asset: value }] : []
+	if (!value || typeof value !== "object") return []
+	return Object.entries(value).flatMap(([key, child]) =>
+		assets_in(child, [...path, Array.isArray(value) ? Number(key) : key])
+	)
+}
+
 /**
  * Put an asset into a blok's asset field, or at `index` in a multiasset, keeping whatever else
  * the field held. Only fields that already hold assets, like `set_text`.
  */
-export function set_asset(blok: Node, field: string, index: number | undefined, asset: Node) {
+export function set_asset(
+	blok: Node,
+	field: string,
+	index: number | undefined,
+	asset: Node,
+	path?: Path
+) {
 	const existing = blok[field]
+	// one inside a plugin's value, like a floor's plan: only where an image already is
+	if (path?.length) {
+		const parent = path
+			.slice(0, -1)
+			.reduce<Node | undefined>((at, key) => at?.[key] as Node | undefined, existing as Node)
+		const at = parent?.[path.at(-1)!]
+		if (!is_asset(at)) return false
+		parent![path.at(-1)!] = { ...at, ...asset }
+		return true
+	}
 	if (index === undefined) {
 		if (!is_asset(existing)) return false
 		blok[field] = { ...existing, ...asset }
@@ -485,3 +510,109 @@ export const is_text = (field: (Plugged & { type?: string }) | null | undefined)
 	(["text", "textarea", "markdown"].includes(field.type ?? "") ||
 		is_heading(field) ||
 		is_link(field))
+
+// --- storyloco's own plugins, edited in the panel as their plugins edit them in Storyblok
+
+/** Which plugin a field is, by the name its space deployed it under */
+export const plugin_of = (field: Plugged) => {
+	const type = field?.field_type ?? ""
+	if (is_plans(field)) return "plans"
+	if (is_link(field)) return "link"
+	return (
+		{
+			"uiloco-theme": "theme",
+			"uiloco-time": "time",
+			"uiloco-currency": "currency",
+			"uiloco-blok-select": "blok_select",
+			"uiloco-dates": "dates",
+		} as Record<string, string>
+	)[type]
+}
+
+/** A name as the theme plugin keys it, the way radashi's `dash` does: `Dark Green` → `dark-green` */
+export function dash(name: string) {
+	const parts = name
+		.replace(/([A-Z])+/g, (caps) => caps[0] + caps.slice(1).toLowerCase())
+		.split(/(?=[A-Z])|[.\-\s_]/)
+		.map((part) => part.toLowerCase())
+	return parts.join("-")
+}
+
+/** A theme field's choices, from its options: each a name, and its colours as `primary,secondary` */
+export const theme_choices = (options: Array<{ name: string; value: string }> | undefined) =>
+	(options ?? []).map(({ name, value }) => ({
+		name,
+		value: `theme-${dash(name)}`,
+		colors: String(value ?? "")
+			.split(",")
+			.map((color) => color.trim())
+			.filter(Boolean),
+	}))
+
+/** How far ahead of UTC `zone` is at `instant`, in ms */
+function offset_at(zone: string, instant: number) {
+	const parts = Object.fromEntries(
+		new Intl.DateTimeFormat("en-US", {
+			timeZone: zone,
+			hourCycle: "h23",
+			year: "numeric",
+			month: "numeric",
+			day: "numeric",
+			hour: "numeric",
+			minute: "numeric",
+		})
+			.formatToParts(instant)
+			.map((part) => [part.type, Number(part.value)])
+	)
+	const wall = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute)
+	return wall - Math.floor(instant / 60_000) * 60_000
+}
+
+/** A wall-clock date and time in `zone` as an ISO instant, as the dates plugin works it out */
+export function to_utc(date: string, time: string, zone: string) {
+	const wall = Date.parse(`${date}T${time}Z`)
+	// the first guess uses the offset at the wrong instant, which can sit across a DST change
+	const guess = wall - offset_at(zone, wall)
+	return new Date(wall - offset_at(zone, guess)).toISOString()
+}
+
+type DateRow = {
+	start_date: string
+	start_time?: string | null
+	end_date?: string | null
+	end_time?: string | null
+}
+
+/** A dates field's entry as the plugin stores it: blanks as `null`, and its UTC instants added */
+export function date_entry({ start_date, ...row }: DateRow, zone: string) {
+	const start_time = row.start_time || null
+	const end_date = row.end_date || null
+	// an end time means nothing without a start time
+	const end_time = (start_time && row.end_time) || null
+	return {
+		start_date,
+		start_time,
+		end_date,
+		end_time,
+		utc_start: start_time ? to_utc(start_date, start_time, zone) : null,
+		utc_end: end_time ? to_utc(end_date ?? start_date, end_time, zone) : null,
+	}
+}
+
+/** The bloks a blok select field picks from: the story's `blocks`, and any nested in theirs */
+export function blok_choices(
+	content: unknown,
+	depth = 0
+): Array<{ id: string; label: string; depth: number }> {
+	const blocks = (content as Node | null)?.blocks
+	if (!Array.isArray(blocks)) return []
+	return (blocks as Array<Node>).flatMap((blok) => {
+		const title = ["title", "headline", "name", "label"]
+			.map((key) => blok[key])
+			.find((v) => typeof v === "string")
+		const label = [String(blok.component ?? ""), title].filter(Boolean).join(" · ")
+		return typeof blok._uid === "string"
+			? [{ id: blok._uid, label, depth }, ...blok_choices(blok, depth + 1)]
+			: []
+	})
+}

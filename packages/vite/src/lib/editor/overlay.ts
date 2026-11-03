@@ -21,6 +21,7 @@ import {
 } from "./client.js"
 import {
 	allowed,
+	assets_in,
 	find_blok,
 	fresh_blok,
 	is_plans,
@@ -1419,6 +1420,8 @@ type Spot = {
 	uid: string
 	field: string
 	index?: number
+	/** an image inside a plugin's value, like a floor's plan, which can be replaced but not taken out */
+	path?: Path
 	asset: Asset
 	/** a multiasset field's images, for taking this one out */
 	list?: Array<Asset>
@@ -1441,6 +1444,11 @@ function image_field(img: HTMLImageElement, candidates: Iterable<Blok>, story: n
 	for (const blok of candidates)
 		for (const [field, value] of Object.entries(blok)) {
 			if (field.startsWith("_")) continue
+			// a plugin's value, holding images of its own
+			if (value && typeof value === "object" && !Array.isArray(value) && !("fieldtype" in value))
+				for (const { path: at, asset } of assets_in(value))
+					if (asset.filename && asset_path(String(asset.filename)) === path)
+						found.push({ story, uid: blok._uid!, field, path: at, asset: asset as Asset })
 			const list: Array<unknown> = Array.isArray(value) ? value : [value]
 			list.forEach((item, i) => {
 				const asset = item as Asset | null
@@ -1477,6 +1485,8 @@ async function spot_of(img: HTMLImageElement): Promise<Spot | undefined> {
 
 let image_tools: HTMLDivElement | undefined
 let offered: HTMLImageElement | undefined
+/** The field the offered image is, so scrolling can keep its menu with it */
+let offered_spot: Spot | undefined
 
 function show_menu(open: boolean) {
 	image_tools!.querySelector("[role=menu]")!.toggleAttribute("hidden", !open)
@@ -1512,8 +1522,9 @@ async function put(file: File, folder?: number) {
 }
 
 async function set_image(spot: Spot, choice: Omit<Choice, "filename">) {
-	const { story, uid, field, index } = spot
-	if (!(await send({ op: "image", story, uid, field, index, ...choice }))) return last_problem()
+	const { story, uid, field, index, path } = spot
+	if (!(await send({ op: "image", story, uid, field, index, path, ...choice })))
+		return last_problem()
 	forget(story)
 	return null
 }
@@ -1554,7 +1565,18 @@ function offer(img: HTMLImageElement, spot: Spot) {
 		)
 		image_tools.addEventListener("keydown", (e) => e.key === "Escape" && withdraw())
 		image_tools.addEventListener("pointerleave", (e) => e.relatedTarget !== offered && withdraw())
-		addEventListener("scroll", withdraw, { passive: true })
+		// scrolling, it keeps to its image, which leaving the pointer takes it away as before; a
+		// pointer still over the image moves without entering it again, so nothing else would bring it back
+		addEventListener(
+			"scroll",
+			() => {
+				if (!offered || !offered_spot) return
+				const box = offered.getBoundingClientRect()
+				if (box.bottom < 0 || box.top > innerHeight) withdraw()
+				else offer(offered, offered_spot)
+			},
+			{ passive: true }
+		)
 		document.body.append(image_tools)
 	}
 	if (offered !== img) {
@@ -1567,11 +1589,12 @@ function offer(img: HTMLImageElement, spot: Spot) {
 			{ once: true }
 		)
 	}
+	offered_spot = spot
 	const box = img.getBoundingClientRect()
 	image_tools.style.top = `${Math.max(box.top, 0) + 8}px`
 	image_tools.style.right = `${Math.max(innerWidth - box.right, 0) + 8}px`
 	const menu = image_tools.lastElementChild as HTMLElement
-	menu.querySelector<HTMLButtonElement>("[data-do=remove]")!.hidden = !spot.asset.id
+	menu.querySelector<HTMLButtonElement>("[data-do=remove]")!.hidden = !spot.asset.id || !!spot.path
 	menu.onclick = (e) => {
 		const chosen = (e.target as HTMLElement).closest<HTMLElement>("[data-do]")?.dataset.do
 		if (!chosen) return
@@ -1760,7 +1783,11 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 		const pick =
 			found.length === 1 ? found[0] : found.length > 1 ? active_of(found, block) : undefined
 		if (pick) {
-			const outer = rich_wrapper(node, block)
+			// from the text itself out, as it's marked on hover: an element holding it beside an image
+			// that has no words, like a row with a picture, shows the same text but isn't it
+			const outer = rich_wrapper(innermost(node as HTMLElement), block)
+			// pressed beside the text rather than on it, it's the block that's meant
+			if (!outer.contains(el)) return
 			const { blok: owner, field } = pick
 			riches.set(outer, { blok: owner, field })
 			;(outer as HTMLElement).dataset.rich = field
@@ -1925,12 +1952,33 @@ function peek({ story, uid }: Selection) {
 	return { blok, trail, components }
 }
 
+/** Where the edit bar keeps the settings, handed over each time the bar draws it */
+let slot: HTMLElement | undefined
+
+export function dock(el: HTMLElement) {
+	if (slot === el) return
+	slot = el
+	// drawn into the bar it replaced: drawn again here
+	inspector?.then((panel) => unmount(panel as unknown as Record<string, unknown>)).catch(() => {})
+	inspector = undefined
+	if (active) inspect().catch(() => {})
+}
+
+/** The settings, opened or folded, from the edit bar's badge */
+export function toggle_settings() {
+	inspect()
+		.then((panel) => panel.toggle())
+		.catch(() => {})
+}
+
 function inspect() {
+	const target = slot
+	if (!target) return Promise.reject(new Error("storyloco/editor: no edit bar to show settings in"))
 	return (inspector ??= import("./inspector.svelte")
 		.then(
 			({ default: Panel }) =>
 				mount(Panel, {
-					target: document.body,
+					target,
 					props: {
 						select,
 						highlight,
@@ -2016,7 +2064,7 @@ async function selection_at(el: Element): Promise<Selection | undefined> {
 
 // --- a word after a change, with a way back
 
-const TOAST = `[data-storyloco=toast]{position:fixed;left:50%;bottom:1.25rem;translate:-50% 0;z-index:2147483003;display:flex;align-items:center;gap:.75rem;max-inline-size:calc(100vw - 2rem);padding:.5rem .5rem .5rem .875rem;border-radius:999px;background:var(--editor-pill,var(--editor-ink,#1b243f));color:#fff;font:500 .8125rem/1.25 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .2s,translate .2s}
+const TOAST = `[data-storyloco=toast]{position:fixed;left:50%;bottom:1.25rem;translate:-50% 0;z-index:2147483003;display:flex;align-items:center;gap:.75rem;max-inline-size:calc(100vw - 2rem);padding:.5rem .5rem .5rem .875rem;border-radius:999px;backdrop-filter:blur(20px) saturate(1.8);background:color-mix(in srgb,var(--editor-pill,var(--editor-ink,#1b243f)) 82%,transparent);color:#fff;font:500 .8125rem/1.25 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .2s,translate .2s}
 [data-storyloco=toast][hidden]{display:flex;opacity:0;translate:-50% .75rem;pointer-events:none}
 [data-storyloco=toast]:not(:has(button)){padding-inline-end:.875rem}
 [data-storyloco=toast] button{all:unset;cursor:pointer;padding:.3rem .75rem;border-radius:999px;background:rgb(255 255 255/.14);white-space:nowrap}
