@@ -20,7 +20,10 @@ test("blocks colocated in .svelte module scripts load, generate, and type their 
 				exports: { ".": "./root.d.ts", "./schema": "./schema.ts", "./mux": "./mux.ts" },
 			})
 		)
-		await writeFile(path.join(pkg, "root.d.ts"), "export interface Registry {}")
+		await writeFile(
+			path.join(pkg, "root.d.ts"),
+			"export interface Registry {}\nexport type Story<T> = { uuid: string; content: T }"
+		)
 		await writeFile(
 			path.join(pkg, "schema.ts"),
 			`export * from ${JSON.stringify(path.join(import.meta.dir, "index.ts"))}`
