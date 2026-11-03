@@ -3263,9 +3263,17 @@
 		background: var(--field);
 		border: 1px solid var(--line);
 		border-radius: 0.5rem;
+		/* the format bar stays along the top, and only the text beneath it scrolls */
+		display: flex;
+		flex-direction: column;
 		max-block-size: 22rem;
-		overflow: auto;
+		overflow: hidden;
 		padding: 0.375rem 0.625rem 0.5rem;
+
+		& :global(.ProseMirror) {
+			min-block-size: 0;
+			overflow: auto;
+		}
 
 		&:focus-within {
 			background: var(--field-focus);
