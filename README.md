@@ -366,6 +366,20 @@ the site (`attrs`, `connect`, `EditBar` and the hook) come with a bump. `STORYLO
 (or `editor({ app: false })`) uses the copy in the installed package instead; a URL there takes the
 files from another build, like a local one served while working on the editor.
 
+On staging (localhost, a Vercel preview deployment, or a `next.` or `staging.` subdomain;
+`STORYLOCO_STAGING=true` or `false` for one that's none of those), `version` shows drafts to anyone
+who asks with a bare `?_storyblok`, and the edit bar gives visitors a Draft | Published switch.
+`event.locals.preview` says how a preview's drafts came, `"signed"` (the visual editor's) or
+`"staging"`, so a staging site behind a password can let the visual editor through and no one else:
+
+```typescript
+// before the password check: the visual editor's preview, editors and guests skip it
+if (event.locals.version === 'draft' && event.locals.preview !== 'staging') return resolve(event)
+```
+
+A site serving several spaces checks a preview with the token of the space a request shows:
+`version({ token: (event) => token_for(event) })`.
+
 A site that picks its own content version rather than using `version` asks `editor_version(event)`
 (from `storyloco/editor/server`) first: draft for editors and guests, published for the live view. A site that caches pages at
 its CDN (`s-maxage`) needs editors, and guests (`sl_guest…`), on a cache key of their own, or

@@ -22,6 +22,13 @@ const now = () => Math.floor(Date.now() / 1000)
 /** What a session staging started is signed for, in place of the space the visual editor's is */
 const STAGING = "staging"
 
+/**
+ * How a preview's drafts came, on `event.locals.preview`: the visual editor's signed link (or the
+ * session it started), or staging's, which anyone may ask for. Unset for an editor, a guest,
+ * development, or the published site
+ */
+export type Preview = "signed" | "staging"
+
 /** Development asked for what's live rather than its drafts */
 const DEV_PUBLISHED = "storyloco_published"
 
@@ -133,6 +140,12 @@ const versioned =
 		event.locals.version = editor_version(event) ?? (dev_draft || valid ? "draft" : "published")
 		// so the edit bar knows its switch is heard here: a site deciding the version itself won't follow it
 		;(event.locals as { switchable?: boolean }).switchable = true
+		// how a preview's drafts came: a site that keeps staging behind a password lets the visual
+		// editor's signed preview through, but not anyone who asked with `?_storyblok`
+		if (valid)
+			(event.locals as { preview?: Preview }).preview = valid.startsWith(`${STAGING}:`)
+				? "staging"
+				: "signed"
 
 		// the SDK pins every read to the first cache version it saw, so a warm server never saw a publish
 		if (event.locals.version === "published" && StoryblokClient.current) {
