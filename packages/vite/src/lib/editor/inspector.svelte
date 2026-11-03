@@ -138,6 +138,8 @@
 		const bar = panel_el?.closest<HTMLElement>("[data-storyloco=bar]")
 		// mid-morph, it measures where it's got to, so a second toggle turns back from there
 		const from = bar && shape(bar)
+		const badge = bar?.querySelector<HTMLElement>(".badge")
+		const was = badge?.getBoundingClientRect()
 		change()
 		await tick()
 		if (!bar || !from || matchMedia("(prefers-reduced-motion: reduce)").matches) return
@@ -154,16 +156,23 @@
 						},
 						{ clipPath: `inset(0 round ${to.radius}px)` },
 					]
-				: // the pill's contents wait in its corner, not the middle of the box closing on them
+				: // the pill's row waits in its corner, not the middle of the box closing on it, still
+					// centred on itself
 					[frame(from), frame(to)].map((f) => ({
 						...f,
-						alignItems: bar.dataset.corner?.startsWith("t") ? "flex-start" : "flex-end",
+						flexWrap: "wrap",
+						alignContent: bar.dataset.corner?.startsWith("t") ? "flex-start" : "flex-end",
 					}))
 		// ponytail: turned back mid-grow, it starts from the whole box, not the uncovered part
-		morphing = bar.animate(keyframes, {
-			duration: 340,
-			easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
-		})
+		const timing = { duration: 340, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+		morphing = bar.animate(keyframes, timing)
+		// the face glides to where it sits in the new shape, rather than stepping there
+		const now = badge?.getBoundingClientRect()
+		if (badge && was && now && (was.left !== now.left || was.top !== now.top))
+			badge.animate(
+				[{ translate: `${was.left - now.left}px ${was.top - now.top}px` }, { translate: "0 0" }],
+				timing
+			)
 	}
 
 	/** Open or fold it; from the keyboard, focus goes with it */
