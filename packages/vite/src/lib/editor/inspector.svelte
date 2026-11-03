@@ -2991,10 +2991,28 @@
 		padding-inline-start: 0.625rem;
 	}
 
+	/* a room's name, then its sizes beneath, wide enough to read whole */
 	.room {
 		display: grid;
 		gap: 0.25rem;
-		grid-template-columns: 1fr 5rem 5rem auto;
+		grid-template-columns: 1fr 1fr auto;
+
+		& input:first-child {
+			grid-column: 1 / 3;
+		}
+
+		& button {
+			grid-area: 1 / 3;
+		}
+	}
+
+	.floor > .button {
+		justify-self: start;
+	}
+
+	.group > .row > .button {
+		flex: none;
+		white-space: nowrap;
 	}
 
 	.readonly.out {
