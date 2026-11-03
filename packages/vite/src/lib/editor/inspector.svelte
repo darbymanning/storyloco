@@ -113,8 +113,8 @@
 
 	/**
 	 * Folding or opening morphs the edit bar from one shape into the other: its box before the
-	 * change grows or shrinks into the one after. Placed by its corner for the animation, since
-	 * open on a phone it's pinned to both sides.
+	 * change grows or shrinks into the one after. Shrinking, it's placed by its corner for the
+	 * animation, since open on a phone it's pinned to both sides.
 	 */
 	let morphing: Animation | undefined
 	const shape = (el: HTMLElement) => {
@@ -142,7 +142,21 @@
 		await tick()
 		if (!bar || !from || matchMedia("(prefers-reduced-motion: reduce)").matches) return
 		morphing?.cancel()
-		morphing = bar.animate([frame(from), frame(shape(bar))], {
+		const to = shape(bar)
+		const [a, b] = [from.rect, to.rect]
+		// growing, it's laid out whole at once and uncovered from the old shape, so nothing inside
+		// reflows or wraps on the way; shrinking to the pill, whose name fits any size it passes
+		const keyframes =
+			b.width >= a.width && b.height >= a.height
+				? [
+						{
+							clipPath: `inset(${a.top - b.top}px ${b.right - a.right}px ${b.bottom - a.bottom}px ${a.left - b.left}px round ${from.radius}px)`,
+						},
+						{ clipPath: `inset(0 round ${to.radius}px)` },
+					]
+				: [frame(from), frame(to)]
+		// ponytail: turned back mid-grow, it starts from the whole box, not the uncovered part
+		morphing = bar.animate(keyframes, {
 			duration: 340,
 			easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
 		})
