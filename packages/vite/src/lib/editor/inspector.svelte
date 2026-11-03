@@ -890,7 +890,15 @@
 			// its words straight away, as plain paragraphs, while the editor joins whoever else has it open
 			type Part = { text?: string; content?: Array<Part> }
 			const words = (part: Part): string => part.text ?? (part.content ?? []).map(words).join("")
-			node.textContent = ((doc as Part).content ?? []).map(words).join("\n\n")
+			// and where its format bar will be, as it will look once it's there
+			const bar = document.createElement("div")
+			bar.className = "format-bones"
+			bar.setAttribute("aria-hidden", "true")
+			bar.innerHTML = "<span></span><span></span><span class=wide></span><span></span>"
+			const text = document.createElement("div")
+			text.className = "words"
+			text.textContent = ((doc as Part).content ?? []).map(words).join("\n\n")
+			node.replaceChildren(bar, text)
 			node.dataset.waiting = ""
 			import("./richtext.js").then(async ({ holds, rich_editor, shared_doc }) => {
 				if (gone) return
@@ -2807,10 +2815,12 @@
 		color: inherit;
 		font: inherit;
 		inline-size: 100%;
+		outline: 3px solid transparent;
 		padding: 0.5rem 0.625rem;
 		transition:
-			border-color 0.15s,
-			background-color 0.15s;
+			border-color 0.2s,
+			background-color 0.2s,
+			outline-color 0.2s;
 
 		&:hover {
 			border-color: var(--line);
@@ -3257,7 +3267,36 @@
 	.rich {
 		&[data-waiting] {
 			color: var(--muted);
+			cursor: wait;
 			white-space: pre-line;
+		}
+
+		/* the format bar to come, its buttons pulsing until the editor is ready */
+		& :global(.format-bones) {
+			border-block-end: 1px solid var(--line);
+			display: flex;
+			flex: none;
+			gap: 2px;
+			margin: -0.375rem -0.625rem 0.25rem;
+			padding: 4px 6px;
+		}
+
+		& :global(.format-bones span) {
+			animation: pulse 1.4s ease-in-out infinite;
+			background: color-mix(in srgb, currentColor 16%, transparent);
+			block-size: 0.875rem;
+			border-radius: 0.25rem;
+			inline-size: 1rem;
+			margin: 0.4375rem 0.375rem;
+		}
+
+		& :global(.format-bones .wide) {
+			inline-size: 3rem;
+		}
+
+		& :global(.words) {
+			margin-block: 0.5em;
+			min-block-size: 3.5rem;
 		}
 
 		background: var(--field);
@@ -3267,22 +3306,24 @@
 		display: flex;
 		flex-direction: column;
 		max-block-size: 22rem;
+		outline: 3px solid transparent;
 		overflow: hidden;
 		padding: 0.375rem 0.625rem 0.5rem;
-
-		& :global(.ProseMirror) {
-			min-block-size: 0;
-			overflow: auto;
-		}
+		/* into focus gently, as the inputs do, rather than snapping darker */
+		transition:
+			border-color 0.2s,
+			background-color 0.2s,
+			outline-color 0.2s;
 
 		&:focus-within {
-			background: var(--field-focus);
+			background-color: var(--field-focus);
 			border-color: var(--accent);
 			outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent);
 		}
 
 		& :global(.ProseMirror) {
 			min-block-size: 4.5rem;
+			overflow: auto;
 		}
 
 		& :global(:is(p, h2, h3, ul, ol, blockquote)) {

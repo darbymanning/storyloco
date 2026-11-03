@@ -2413,8 +2413,10 @@ export async function comment() {
 /** Where the page shows a field: text typed in place, or rich text */
 function shown_at(uid: string, field: string) {
 	const found: Array<HTMLElement> = []
+	// the field whole, or a part of it shown in a place of its own: a paragraph, a plan's names and sizes
+	const at = `:${uid}:${field}`
 	for (const [node, { key }] of shareable)
-		if (node.isConnected && key.endsWith(`:${uid}:${field}`)) found.push(node)
+		if (node.isConnected && (key.endsWith(at) || key.includes(`${at}#`))) found.push(node)
 	for (const node of document.querySelectorAll<HTMLElement>("[data-rich]")) {
 		const rich = riches.get(node)
 		if (rich?.blok._uid === uid && rich.field === field) found.push(node)
@@ -2485,7 +2487,9 @@ function mark_field(event: Event) {
 		if (mark !== marking) return
 		const found = shown_at(at.uid, at.field)
 		for (const node of found) node.setAttribute("data-storyloco-field", "")
-		if (found[0]) return reveal(found[0])
+		// the first that shows: a plan's other house types are on the page, hidden
+		const shows = found.find((node) => node.getClientRects().length) ?? found[0]
+		if (shows) return reveal(shows)
 		const text = loose_text(at.uid, at.field)
 		if (!text) return
 		reveal(text.parentElement!)
