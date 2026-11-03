@@ -1,5 +1,6 @@
 import {
 	allowed,
+	assets_in,
 	copy_blok,
 	differences,
 	fresh_blok,
@@ -221,6 +222,8 @@ type Operation =
 			uid: string
 			field: string
 			index?: number
+			/** an image inside a plugin's value, like a floor's plan */
+			path?: Path
 			asset: number
 			alt: string
 			focus: string
@@ -307,6 +310,12 @@ const field_name = (value: unknown): value is string =>
 	typeof value === "string" && /^[a-z0-9_]+$/.test(value)
 export const id = (value: unknown): value is number =>
 	Number.isInteger(value) && (value as number) > 0
+/** Where in a plugin's value: a short list of keys and indexes */
+const is_path = (value: unknown): value is Path =>
+	Array.isArray(value) &&
+	value.length <= 20 &&
+	value.every((key) => typeof key === "string" || Number.isInteger(key))
+const same_path = (a: Path, b: Path) => JSON.stringify(a) === JSON.stringify(b)
 
 // --- block schemas, for what a list may hold
 
@@ -1293,11 +1302,12 @@ export async function operate(
 	}
 
 	if (body.op === "image") {
-		const { uid, field, index, asset, alt, focus } = body
+		const { uid, field, index, asset, alt, focus, path } = body
 		if (
 			typeof uid !== "string" ||
 			!field_name(field) ||
 			(index !== undefined && !Number.isInteger(index)) ||
+			(path !== undefined && !is_path(path)) ||
 			!id(asset) ||
 			!text(alt, 1000) ||
 			!text(focus, 40) ||
@@ -1308,11 +1318,13 @@ export async function operate(
 		// the asset's address comes from Storyblok, not the page, so a field can only point into the space
 		const chosen = asset_of(await editor.mapi<ManagedAsset>(`/assets/${asset}`))
 		let before: unknown
+		let was: Node | undefined
 		const changed = await editor.patch(body.story, (content) => {
 			const blok = find_blok(content, uid)
 			if (!blok) throw new EditorError(404, "That block isn’t in the story any more")
 			const type = Array.isArray(blok[field]) ? "multiasset" : "asset"
 			before = input_of({ type }, structuredClone(blok[field]))
+			if (path) was = assets_in(blok[field]).find((found) => same_path(found.path, path))?.asset
 			const value = {
 				id: chosen.id,
 				filename: chosen.filename,
@@ -1322,15 +1334,26 @@ export async function operate(
 				focus,
 				name: "",
 			}
-			if (!set_asset(blok, field, index, value))
+			if (!set_asset(blok, field, index, value, path))
 				throw new EditorError(400, `${field} isn’t an image field`)
 		})
-		return {
-			ok: true,
-			undo: changed
-				? { op: "fields", story: body.story, uid, values: { [field]: before } }
-				: undefined,
-		}
+		// one inside a plugin's value goes back the same way, as the rest of the value may have changed since
+		const back =
+			path && was && id(was.id)
+				? {
+						op: "image",
+						story: body.story,
+						uid,
+						field,
+						path,
+						asset: was.id,
+						alt: String(was.alt ?? ""),
+						focus: String(was.focus ?? ""),
+					}
+				: path
+					? undefined
+					: { op: "fields", story: body.story, uid, values: { [field]: before } }
+		return { ok: true, undo: changed ? back : undefined }
 	}
 
 	if (
@@ -1338,12 +1361,7 @@ export async function operate(
 		typeof body.uid !== "string" ||
 		!field_name(body.field) ||
 		!text(body.value, 20_000) ||
-		(body.path !== undefined &&
-			!(
-				Array.isArray(body.path) &&
-				body.path.length <= 20 &&
-				body.path.every((key) => typeof key === "string" || Number.isInteger(key))
-			))
+		(body.path !== undefined && !is_path(body.path))
 	)
 		throw new EditorError(400, "Unknown change")
 

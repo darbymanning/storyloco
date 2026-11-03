@@ -808,12 +808,27 @@
 	 * with it open, on the page or in their settings; its room saves it after a pause
 	 */
 	function rich(key: string, field: Field): Attachment<HTMLElement> {
+		// the same one while the field is the same, so the schema loading again after a save, as a
+		// new but equal object, doesn't start the editor over, empty until its room is ready
+		const known = `${key}:${JSON.stringify(field)}`
+		let attach = riches.get(known)
+		if (!attach) riches.set(known, (attach = rich_editor_for(key, field)))
+		return attach
+	}
+	const riches = new Map<string, Attachment<HTMLElement>>()
+
+	function rich_editor_for(key: string, field: Field): Attachment<HTMLElement> {
 		return (node) => {
 			let stop: (() => void) | undefined
 			let gone = false
 			const doc = untrack(() => $state.snapshot(values[key])) ?? { type: "doc", content: [] }
 			const target = untrack(() => selection)
 			if (!target) return
+			// its words straight away, as plain paragraphs, while the editor joins whoever else has it open
+			type Part = { text?: string; content?: Array<Part> }
+			const words = (part: Part): string => part.text ?? (part.content ?? []).map(words).join("")
+			node.textContent = ((doc as Part).content ?? []).map(words).join("\n\n")
+			node.dataset.waiting = ""
 			import("./richtext.js").then(async ({ holds, rich_editor, shared_doc }) => {
 				if (gone) return
 				const room = enter(`${target.story}:${target.uid}:${key}`)
@@ -837,6 +852,8 @@
 				room.value = () => shared_doc(room)
 				room.save = (value, shared) => save_shared(target, key, value, shared)
 				together.add(key)
+				node.textContent = ""
+				delete node.dataset.waiting
 				const editor = rich_editor({
 					element: node,
 					doc: (saved ?? doc) as RichDoc,
@@ -1537,8 +1554,8 @@
 						aria-label="Duplicate"
 						onclick={() => child(key, "duplicate", kid._uid)}
 						><svg viewBox="0 0 24 24" aria-hidden="true"
-							><rect x="8" y="8" width="13" height="13" rx="2" /><path
-								d="M4 16V5a1 1 0 0 1 1-1h11"
+							><rect x="9" y="9" width="11" height="11" rx="2" /><path
+								d="M5 15V6a1 1 0 0 1 1-1h9"
 							/></svg
 						></button
 					>
@@ -2002,6 +2019,8 @@
 		--accent: var(--editor-accent, #05807f);
 		--danger: var(--editor-danger, #e5484d);
 		--field: color-mix(in srgb, var(--ink) 4%, transparent);
+		/* focused, a field deepens a little into the glass, rather than turning solid */
+		--field-focus: color-mix(in srgb, var(--bg) 55%, transparent);
 
 		block-size: 100%;
 		color: var(--ink);
@@ -2009,6 +2028,7 @@
 		font:
 			400 0.8125rem/1.4 system-ui,
 			sans-serif;
+		flex: 1;
 		grid-template-rows: auto minmax(0, 1fr);
 		min-inline-size: 0;
 		overflow: hidden;
@@ -2291,7 +2311,7 @@
 		}
 
 		&:focus-visible {
-			background-color: var(--bg);
+			background-color: var(--field-focus);
 			border-color: var(--accent);
 			outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent);
 		}
@@ -2536,7 +2556,7 @@
 			padding: 0.25rem;
 
 			&.on {
-				background: var(--bg);
+				background: color-mix(in srgb, var(--ink) 12%, transparent);
 				box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 				color: var(--ink);
 			}
@@ -2549,7 +2569,8 @@
 
 	.results,
 	.adding ul {
-		background: var(--bg);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background: color-mix(in srgb, var(--bg) 85%, transparent);
 		border-radius: 0.5rem;
 		box-shadow:
 			0 0 0 1px var(--line),
@@ -2645,6 +2666,11 @@
 	}
 
 	.rich {
+		&[data-waiting] {
+			color: var(--muted);
+			white-space: pre-line;
+		}
+
 		background: var(--field);
 		border: 1px solid var(--line);
 		border-radius: 0.5rem;
@@ -2653,8 +2679,9 @@
 		padding: 0.375rem 0.625rem 0.5rem;
 
 		&:focus-within {
-			background: var(--bg);
+			background: var(--field-focus);
 			border-color: var(--accent);
+			outline: 3px solid color-mix(in srgb, var(--accent) 18%, transparent);
 		}
 
 		& :global(.ProseMirror) {
@@ -2884,12 +2911,20 @@
 				border-radius: 0.25rem;
 				color: var(--muted);
 				cursor: pointer;
+				block-size: 1.5rem;
+				display: grid;
 				font: inherit;
-				min-inline-size: 1.5rem;
-				padding: 0.125rem;
+				inline-size: 1.5rem;
+				padding: 0;
+				place-items: center;
+
+				& svg {
+					block-size: 1rem;
+					inline-size: 1rem;
+				}
 
 				&:hover:not(:disabled) {
-					background: var(--bg);
+					background: color-mix(in srgb, var(--ink) 10%, transparent);
 					color: var(--ink);
 				}
 

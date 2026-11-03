@@ -710,6 +710,24 @@
 						</button>
 						<span class="tip" aria-hidden="true">More · ⌘K</span>
 					</span>
+					{#if waiting}
+						<!-- in the open panel, publishing is the row's last button, rather than a label and a pill -->
+						<span class="control last">
+							<button
+								class="round go"
+								type="button"
+								aria-label={publishing ? "Publishing" : "Publish changes"}
+								aria-expanded={Boolean(reviewing)}
+								disabled={editor.saving || publishing}
+								onclick={go_live}
+							>
+								<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+									<path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
+								</svg>
+							</button>
+							<span class="tip" aria-hidden="true">Publish changes</span>
+						</span>
+					{/if}
 				{:else if editor.guest}
 					{@const guest = editor.guest}
 					<span class="who">
@@ -1065,6 +1083,16 @@
 			flex-wrap: wrap;
 			row-gap: 0.375rem;
 			white-space: normal;
+
+			/* the status is the badge's dot, and publishing the row's last button */
+			& :is(.status, .publish) {
+				display: none;
+			}
+
+			& .last {
+				display: flex;
+				margin-inline-start: auto;
+			}
 		}
 
 		/* clear of the row, over the settings */
@@ -1562,6 +1590,20 @@
 		display: flex;
 		position: relative;
 
+		/* only in the open panel */
+		&.last {
+			display: none;
+		}
+
+		/* right at the edge, its tip lines up with it rather than running past */
+		&.last .tip {
+			inset-inline: auto calc(50% - 0.9375rem);
+
+			&::after {
+				inset-inline: auto 0.625rem;
+			}
+		}
+
 		.tip {
 			inset-inline-start: calc(50% - 0.9375rem);
 		}
@@ -1599,6 +1641,21 @@
 		&:hover {
 			background-color: color-mix(in srgb, var(--accent) 15%, transparent);
 			color: var(--accent);
+		}
+
+		/* publishing: the accent, filled, the one thing on the row asking to be pressed */
+		&.go {
+			background-color: var(--accent);
+			color: var(--editor-accent-ink, #fff);
+
+			&:hover {
+				background-color: color-mix(in srgb, var(--accent) 85%, #fff);
+				color: var(--editor-accent-ink, #fff);
+			}
+
+			&:disabled {
+				opacity: 0.5;
+			}
 		}
 	}
 

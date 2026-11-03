@@ -85,12 +85,37 @@ export function with_string(value: unknown, path: Path, next: string) {
 const is_asset = (value: unknown): value is Node =>
 	!!value && typeof value === "object" && (value as Node).fieldtype === "asset"
 
+/** Every image inside a plugin's value, like a floor's plan in a list of floor plans, with where */
+export function assets_in(value: unknown, path: Path = []): Array<{ path: Path; asset: Node }> {
+	if (is_asset(value)) return path.length ? [{ path, asset: value }] : []
+	if (!value || typeof value !== "object") return []
+	return Object.entries(value).flatMap(([key, child]) =>
+		assets_in(child, [...path, Array.isArray(value) ? Number(key) : key])
+	)
+}
+
 /**
  * Put an asset into a blok's asset field, or at `index` in a multiasset, keeping whatever else
  * the field held. Only fields that already hold assets, like `set_text`.
  */
-export function set_asset(blok: Node, field: string, index: number | undefined, asset: Node) {
+export function set_asset(
+	blok: Node,
+	field: string,
+	index: number | undefined,
+	asset: Node,
+	path?: Path
+) {
 	const existing = blok[field]
+	// one inside a plugin's value, like a floor's plan: only where an image already is
+	if (path?.length) {
+		const parent = path
+			.slice(0, -1)
+			.reduce<Node | undefined>((at, key) => at?.[key] as Node | undefined, existing as Node)
+		const at = parent?.[path.at(-1)!]
+		if (!is_asset(at)) return false
+		parent![path.at(-1)!] = { ...at, ...asset }
+		return true
+	}
 	if (index === undefined) {
 		if (!is_asset(existing)) return false
 		blok[field] = { ...existing, ...asset }

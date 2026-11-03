@@ -16,6 +16,7 @@ import {
 	shows_rich,
 	rich_supported,
 	same,
+	assets_in,
 	set_asset,
 	set_text,
 	string_at,
@@ -69,6 +70,22 @@ describe("editor content", () => {
 		expect(set_asset(blok, "logos", 4, { id: 3 })).toBe(false)
 		expect(set_asset(blok, "title", undefined, { id: 3 })).toBe(false)
 		expect(blok.title).toBe("Hi")
+	})
+
+	test("an image inside a plugin's value is found by its path, and only replaced where one is", () => {
+		const plan = { fieldtype: "asset", id: 1, filename: "plan.jpg", alt: "" }
+		const blok = {
+			plans: { types: [{ name: "A", floors: [{ name: "Ground", plan: { ...plan } }] }] },
+		}
+		const path = ["types", 0, "floors", 0, "plan"]
+		expect(assets_in(blok.plans)).toEqual([{ path, asset: plan }])
+		expect(set_asset(blok, "plans", undefined, { id: 2, filename: "new.jpg" }, path)).toBe(true)
+		expect(blok.plans.types[0].floors[0].plan).toEqual({ ...plan, id: 2, filename: "new.jpg" })
+		expect(set_asset(blok, "plans", undefined, { id: 3 }, ["types", 0, "name"])).toBe(false)
+		expect(set_asset(blok, "plans", undefined, { id: 3 }, ["types", 5, "floors", 0, "plan"])).toBe(
+			false
+		)
+		expect(blok.plans.types[0].name).toBe("A")
 	})
 
 	test("locate finds a blok's list in bloks fields and richtext embeds", () => {
