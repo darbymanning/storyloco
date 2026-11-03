@@ -10,7 +10,15 @@
 	import { tick, untrack } from "svelte"
 	import type { Attachment } from "svelte/attachments"
 	import { call, editor, last_problem, send, set_settings_open } from "./client.js"
-	import { is_heading, is_video, rich_supported, same } from "./content.js"
+	import {
+		blok_choices,
+		is_heading,
+		is_video,
+		plugin_of,
+		rich_supported,
+		same,
+		theme_choices,
+	} from "./content.js"
 	import type { Inserts, RichDoc, RichField } from "./richtext.js"
 	import type { Selection } from "./overlay.js"
 	import { enter, leave, quietly, select as live_select, shared } from "./live.js"
@@ -70,7 +78,12 @@
 		picker: (options: {
 			current: Asset
 			images?: boolean
-			save: (choice: { asset: number; alt: string; focus: string }) => Promise<string | null>
+			save: (choice: {
+				asset: number
+				alt: string
+				focus: string
+				filename?: string
+			}) => Promise<string | null>
 		}) => void
 		/** What a richtext field can have put into it */
 		inserts: (field: Field) => Promise<Inserts>
@@ -686,6 +699,58 @@
 	// --- helpers for values
 
 	const text = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v))
+
+	// --- storyloco's own plugins, edited as their plugins edit them in Storyblok
+
+	type Value = Record<string, unknown>
+	const object_of = (v: unknown): Value =>
+		v && typeof v === "object" && !Array.isArray(v) ? (v as Value) : {}
+	const list_of = <T>(v: unknown) => (Array.isArray(v) ? (v as Array<T>) : [])
+
+	/** A blok select's choices, from its story's content, fetched once a story */
+	const blok_lists = new SvelteMap<number, ReturnType<typeof blok_choices>>()
+	function bloks_of(story: number) {
+		if (!blok_lists.has(story)) {
+			blok_lists.set(story, [])
+			call<{ content: unknown }>({ op: "content", story })
+				.then(({ content }) => blok_lists.set(story, blok_choices(content)))
+				.catch(() => blok_lists.delete(story))
+		}
+		return blok_lists.get(story)!
+	}
+
+	const zones =
+		typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : []
+	const here = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+	/** A currency field's codes: its options', else the plugin's own, with the stored one kept */
+	function codes_of(field: Field, current: string) {
+		const listed = text(field.options?.find((o) => o.name === "currencies")?.value)
+			.split(",")
+			.map((code) => code.trim().toUpperCase())
+			.filter(Boolean)
+		const codes = listed.length ? listed : ["GBP", "USD", "EUR"]
+		return codes.includes(current) ? codes : [...codes, current]
+	}
+
+	type Room = { id: string; name: string; area_m: string; area_ft: string }
+	type Floor = {
+		id: string
+		name: string
+		plan?: Asset
+		dimensions: Array<{ id: string; name: string; rooms: Array<Room> }>
+	}
+	type PlanType = { id: string; name?: string; floors: Array<Floor> }
+	/** Which house type each plans field is showing */
+	let plan_type = $state<Record<string, number>>({})
+	/** A plans field's types, changed by `edit` on a copy and saved */
+	function plans_edit(key: string, edit: (types: Array<PlanType>) => void, wait = 0) {
+		const next = structuredClone($state.snapshot(object_of(values[key]))) as Value
+		const types = list_of<PlanType>(next.types)
+		edit(types)
+		change(key, { ...next, types }, wait)
+	}
+	const fresh_room = (): Room => ({ id: crypto.randomUUID(), name: "", area_m: "", area_ft: "" })
 	const heading = (v: unknown) =>
 		v && typeof v === "object" ? (v as { text?: string; level?: number | null }) : {}
 	const asset = (v: unknown) => (v && typeof v === "object" ? (v as Asset) : {})
@@ -1767,9 +1832,431 @@
 	</div>
 {/snippet}
 
+{#snippet Theme(key: string, field: Field, id: string)}
+	{@const choices = theme_choices(field.options ?? undefined)}
+	{@const chosen = choices.find((choice) => choice.value === values[key])}
+	{@render Label(key, field, id)}
+	<div class="row">
+		<select
+			{id}
+			value={text(values[key])}
+			onchange={(e) => change(key, e.currentTarget.value || null)}
+		>
+			<option value="">None</option>
+			{#each choices as choice (choice.value)}<option value={choice.value}>{choice.name}</option
+				>{/each}
+		</select>
+		{#if chosen?.colors.length}
+			<span class="swatches" aria-hidden="true">
+				{#each chosen.colors as color, i (i)}<span style:background={color}></span>{/each}
+			</span>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet Time(key: string, field: Field, id: string)}
+	{@render Label(key, field, id)}
+	<input
+		{id}
+		type="time"
+		value={text(values[key])}
+		onchange={(e) => change(key, e.currentTarget.value)}
+	/>
+{/snippet}
+
+{#snippet Currency(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const currency = text(
+		value.currency || field.options?.find((o) => o.name === "default_currency")?.value || "GBP"
+	).toUpperCase()}
+	{@render Label(key, field, id)}
+	<div class="row">
+		<select
+			class="level"
+			aria-label="Currency"
+			value={currency}
+			onchange={(e) =>
+				change(key, { ...value, currency: e.currentTarget.value, amount: value.amount ?? null })}
+		>
+			{#each codes_of(field, currency) as code (code)}<option value={code}>{code}</option>{/each}
+		</select>
+		<input
+			{id}
+			type="number"
+			min="0"
+			step="any"
+			inputmode="decimal"
+			value={value.amount ?? ""}
+			onchange={(e) =>
+				change(key, {
+					...value,
+					currency,
+					amount: e.currentTarget.value === "" ? null : Number(e.currentTarget.value),
+				})}
+		/>
+	</div>
+{/snippet}
+
+{#snippet BlokSelect(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const choices = selection ? bloks_of(selection.story) : []}
+	{@render Label(key, field, id)}
+	<select
+		{id}
+		value={text(value.id)}
+		onchange={(e) => change(key, { ...value, id: e.currentTarget.value })}
+	>
+		<option value="">None</option>
+		{#each choices as choice (choice.id)}<option value={choice.id}
+				>{"— ".repeat(choice.depth)}{choice.label}</option
+			>{/each}
+		{#if text(value.id) && !choices.some((c) => c.id === value.id)}
+			<option value={text(value.id)}>{text(value.id)}</option>
+		{/if}
+	</select>
+{/snippet}
+
+{#snippet Dates(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const zone = text(value.timezone) || here}
+	{@const rows = list_of<Value>(value.dates)}
+	{@const keep = (dates: Array<Value>, timezone = zone) =>
+		change(key, { ...value, timezone, dates })}
+	{@const set = (i: number, part: string, next: string) =>
+		keep(rows.with(i, { ...rows[i], [part]: next || null }))}
+	{@render Label(key, field, id)}
+	<div class="group" {id}>
+		{#each rows as row, i (i)}
+			<div class="dates">
+				<input
+					type="date"
+					aria-label="Starts"
+					value={text(row.start_date)}
+					onchange={(e) => e.currentTarget.value && set(i, "start_date", e.currentTarget.value)}
+				/>
+				<input
+					type="time"
+					aria-label="Start time"
+					value={text(row.start_time)}
+					onchange={(e) => set(i, "start_time", e.currentTarget.value)}
+				/>
+				<button
+					type="button"
+					class="round"
+					aria-label="Remove"
+					onclick={() => keep(rows.toSpliced(i, 1))}
+					><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+					></button
+				>
+				<input
+					type="date"
+					aria-label="Ends"
+					value={text(row.end_date)}
+					onchange={(e) => set(i, "end_date", e.currentTarget.value)}
+				/>
+				<input
+					type="time"
+					aria-label="End time"
+					value={text(row.end_time)}
+					disabled={!row.start_time}
+					onchange={(e) => set(i, "end_time", e.currentTarget.value)}
+				/>
+			</div>
+		{/each}
+		<div class="row">
+			<button
+				type="button"
+				class="button quiet"
+				onclick={() => keep([...rows, { start_date: new Date().toISOString().slice(0, 10) }])}
+				>+ Date</button
+			>
+			<select
+				aria-label="Timezone"
+				value={zone}
+				onchange={(e) => keep(rows, e.currentTarget.value)}
+			>
+				{#each zones.includes(zone) ? zones : [zone, ...zones] as name (name)}<option value={name}
+						>{name.replaceAll("_", " ")}</option
+					>{/each}
+			</select>
+		</div>
+	</div>
+{/snippet}
+
+{#snippet Link_(key: string, field: Field, id: string)}
+	{@const value = object_of(values[key])}
+	{@const type = text(value.type) || "external"}
+	{@const keep = (patch: Value) => change(key, { ...value, type, ...patch })}
+	{@const story = object_of(value.story)}
+	{@render Label(key, field, id)}
+	{#if type !== "asset"}
+		<div class="segmented" role="radiogroup" aria-label="Link to">
+			{#each [["internal", "Page"], ["external", "URL"], ["email", "Email"]] as [kind, name] (kind)}
+				<button
+					type="button"
+					role="radio"
+					aria-checked={type === kind}
+					class:on={type === kind}
+					onclick={() => type !== kind && (values[key] = { ...value, type: kind })}>{name}</button
+				>
+			{/each}
+		</div>
+	{/if}
+	<input
+		{id}
+		placeholder="Link text"
+		value={text(value.text)}
+		onfocus={() => (focused = key)}
+		onblur={() => {
+			focused = null
+			flush()
+		}}
+		oninput={(e) => change(key, { ...value, type, text: e.currentTarget.value }, 700)}
+	/>
+	{#if type === "internal"}
+		<div class="combo">
+			<input
+				aria-label="Page"
+				placeholder={story.name ? text(story.name) : "Find a page"}
+				value={finding?.key === key ? finding.search : ""}
+				onfocus={() => find_stories(key, "")}
+				oninput={(e) => find_stories(key, e.currentTarget.value)}
+				onblur={() => setTimeout(() => finding?.key === key && (finding = null), 150)}
+			/>
+			{#if story.name && finding?.key !== key}<p class="help">Links to {story.name}</p>{/if}
+			{#if finding?.key === key && finding.results.length}
+				<ul class="results">
+					{#each finding.results as found (found.id)}
+						<li>
+							<button
+								type="button"
+								onmousedown={(e) => e.preventDefault()}
+								onclick={() => {
+									keep({ story: { id: found.id, uuid: found.uuid, name: found.name } })
+									finding = null
+								}}><strong>{found.name}</strong><span>/{found.full_slug}</span></button
+							>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{:else if type === "email"}
+		<input
+			type="email"
+			aria-label="Email"
+			placeholder="name@example.com"
+			value={text(value.email)}
+			onchange={(e) => keep({ email: e.currentTarget.value })}
+		/>
+	{:else if type === "asset"}
+		<p class="help">Links to a file, which is chosen in Storyblok.</p>
+	{:else}
+		<input
+			type="url"
+			aria-label="URL"
+			placeholder="https://"
+			value={text(value.url)}
+			onchange={(e) => keep({ url: e.currentTarget.value })}
+		/>
+	{/if}
+	{#if type !== "email"}
+		<label class="check small">
+			<input
+				type="checkbox"
+				checked={value.target === "_blank"}
+				onchange={(e) => keep({ target: e.currentTarget.checked ? "_blank" : "_self" })}
+			/>
+			Open in a new tab
+		</label>
+	{/if}
+{/snippet}
+
+{#snippet Plans(key: string, field: Field, id: string)}
+	{@const types = list_of<PlanType>(object_of(values[key]).types)}
+	{@const t = Math.min(plan_type[key] ?? 0, Math.max(types.length - 1, 0))}
+	{@const type = types[t]}
+	{@const typing = {
+		onfocus: () => (focused = key),
+		onblur: () => {
+			focused = null
+			flush()
+		},
+	}}
+	{@render Label(key, field, id)}
+	<div class="group" {id}>
+		<div class="row">
+			<select
+				aria-label="House type"
+				value={String(t)}
+				onchange={(e) => (plan_type[key] = Number(e.currentTarget.value))}
+			>
+				{#each types as each, i (each.id)}<option value={String(i)}
+						>{each.name || `Type ${i + 1}`}</option
+					>{/each}
+				{#if !types.length}<option value="0">No types yet</option>{/if}
+			</select>
+			<button
+				type="button"
+				class="button quiet"
+				onclick={() => {
+					plans_edit(key, (list) =>
+						list.push({ id: crypto.randomUUID(), name: `Type ${list.length + 1}`, floors: [] })
+					)
+					plan_type[key] = types.length
+				}}>+ Type</button
+			>
+		</div>
+		{#if type}
+			<label class="sub">
+				<span>Name</span>
+				<input
+					value={type.name ?? ""}
+					{...typing}
+					oninput={(e) => {
+						const name = e.currentTarget.value
+						plans_edit(key, (list) => (list[t].name = name), 700)
+					}}
+				/>
+			</label>
+			{#each type.floors as floor, f (floor.id)}
+				{@const rooms = floor.dimensions.flatMap((dimension, d) =>
+					dimension.rooms.map((room, r) => ({ room, d, r }))
+				)}
+				<div class="floor">
+					<div class="row">
+						<input
+							aria-label="Floor name"
+							placeholder="Floor"
+							value={floor.name}
+							{...typing}
+							oninput={(e) => {
+								const name = e.currentTarget.value
+								plans_edit(key, (list) => (list[t].floors[f].name = name), 700)
+							}}
+						/>
+						<button
+							type="button"
+							class="round"
+							aria-label="Remove {floor.name || 'floor'}"
+							onclick={() => plans_edit(key, (list) => list[t].floors.splice(f, 1))}
+							><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+							></button
+						>
+					</div>
+					<div class="asset">
+						{#if floor.plan?.filename}<img
+								src={thumb(floor.plan.filename)}
+								alt={floor.plan.alt ?? ""}
+							/>{/if}
+						<div class="asset-actions">
+							<button
+								type="button"
+								class="button"
+								onclick={() =>
+									picker({
+										current: floor.plan ?? asset(null),
+										images: true,
+										save: async (choice) => {
+											plans_edit(
+												key,
+												(list) =>
+													(list[t].floors[f].plan = {
+														...list[t].floors[f].plan,
+														id: choice.asset,
+														alt: choice.alt,
+														focus: choice.focus,
+														filename: choice.filename ?? "",
+													} as Asset)
+											)
+											return null
+										},
+									})}>{floor.plan?.filename ? "Replace plan" : "Choose a plan"}</button
+							>
+						</div>
+					</div>
+					{#each rooms as { room, d, r } (room.id)}
+						<div class="room">
+							{#each [["name", "Room"], ["area_m", "m"], ["area_ft", "ft"]] as [part, name] (part)}
+								<input
+									aria-label={name}
+									placeholder={name}
+									value={room[part as keyof Room]}
+									{...typing}
+									oninput={(e) => {
+										const next = e.currentTarget.value
+										plans_edit(
+											key,
+											(list) =>
+												(list[t].floors[f].dimensions[d].rooms[r][part as keyof Room] = next),
+											700
+										)
+									}}
+								/>
+							{/each}
+							<button
+								type="button"
+								class="round"
+								aria-label="Remove {room.name || 'room'}"
+								onclick={() =>
+									plans_edit(key, (list) => list[t].floors[f].dimensions[d].rooms.splice(r, 1))}
+								><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+								></button
+							>
+						</div>
+					{/each}
+					<button
+						type="button"
+						class="button quiet"
+						onclick={() =>
+							plans_edit(key, (list) => {
+								const dimensions = list[t].floors[f].dimensions
+								if (!dimensions.length)
+									dimensions.push({ id: crypto.randomUUID(), name: "", rooms: [] })
+								dimensions.at(-1)!.rooms.push(fresh_room())
+							})}>+ Room</button
+					>
+				</div>
+			{/each}
+			<div class="row">
+				<button
+					type="button"
+					class="button quiet"
+					onclick={() =>
+						plans_edit(key, (list) =>
+							list[t].floors.push({ id: crypto.randomUUID(), name: "", dimensions: [] })
+						)}>+ Floor</button
+				>
+				<button
+					type="button"
+					class="button quiet"
+					onclick={() => {
+						plans_edit(key, (list) => list.splice(t, 1))
+						plan_type[key] = Math.max(t - 1, 0)
+					}}>Remove {type.name || "type"}</button
+				>
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet Unknown(key: string, field: Field, id: string)}
 	{@render Label(key, field, id)}
-	<p class="readonly" {id}>Edited in Storyblok</p>
+	{#if editor.space && selection}
+		<!-- no Storyblok address opens a block, so the story, from where its field's a scroll away -->
+		<a
+			class="readonly out"
+			{id}
+			href="https://app.storyblok.com/#/me/spaces/{editor.space}/stories/0/0/{selection.story}"
+			target="_blank"
+			rel="noopener noreferrer"
+			>Edit in Storyblok<svg viewBox="0 0 24 24" aria-hidden="true"
+				><path d="M7 17 17 7M8 7h9v9" /></svg
+			></a
+		>
+	{:else}
+		<p class="readonly" {id}>Edit in Storyblok</p>
+	{/if}
 {/snippet}
 
 {#snippet Control(key: string, field: Field)}
@@ -1818,6 +2305,20 @@
 			{@render Video_(key, field, id)}
 		{:else if field.type === "table"}
 			{@render Table_(key, field, id)}
+		{:else if plugin_of(field) === "plans"}
+			{@render Plans(key, field, id)}
+		{:else if plugin_of(field) === "theme"}
+			{@render Theme(key, field, id)}
+		{:else if plugin_of(field) === "time"}
+			{@render Time(key, field, id)}
+		{:else if plugin_of(field) === "currency"}
+			{@render Currency(key, field, id)}
+		{:else if plugin_of(field) === "blok_select"}
+			{@render BlokSelect(key, field, id)}
+		{:else if plugin_of(field) === "dates"}
+			{@render Dates(key, field, id)}
+		{:else if plugin_of(field) === "link"}
+			{@render Link_(key, field, id)}
 		{:else}
 			{@render Unknown(key, field, id)}
 		{/if}
@@ -2451,6 +2952,71 @@
 	.asset-actions {
 		display: flex;
 		gap: 0.375rem;
+	}
+
+	/* a theme's colours beside its name */
+	.swatches {
+		align-items: center;
+		display: flex;
+		flex: none;
+
+		& span {
+			block-size: 1.25rem;
+			border-radius: 50%;
+			box-shadow: 0 0 0 2px var(--field-focus);
+			inline-size: 1.25rem;
+
+			& + span {
+				margin-inline-start: -0.375rem;
+			}
+		}
+	}
+
+	/* a date: its start, then its end, beside the button that takes it out */
+	.dates {
+		display: grid;
+		gap: 0.25rem;
+		grid-template-columns: 1fr 6rem auto;
+
+		& input[type="date"]:last-of-type {
+			grid-column: 1;
+		}
+	}
+
+	/* a floor of a plan: its name, its plan, its rooms */
+	.floor {
+		border-inline-start: 2px solid var(--line);
+		display: grid;
+		gap: 0.375rem;
+		padding-inline-start: 0.625rem;
+	}
+
+	.room {
+		display: grid;
+		gap: 0.25rem;
+		grid-template-columns: 1fr 5rem 5rem auto;
+	}
+
+	.readonly.out {
+		align-items: center;
+		color: var(--ink);
+		display: flex;
+		gap: 0.375rem;
+		justify-content: space-between;
+		text-decoration: none;
+
+		& svg {
+			block-size: 1rem;
+			fill: none;
+			inline-size: 1rem;
+			stroke: currentColor;
+			stroke-linecap: round;
+			stroke-width: 2;
+		}
+
+		&:hover {
+			background: color-mix(in srgb, var(--ink) 8%, transparent);
+		}
 	}
 
 	.file {
