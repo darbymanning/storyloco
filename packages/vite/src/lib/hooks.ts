@@ -2,7 +2,7 @@ import { useStoryblokApi } from "@storyblok/svelte"
 import type { Handle } from "./kit.js"
 import { StoryblokClient } from "./storyblok.svelte.js"
 import { editor_version } from "./editor/version.js"
-import { site_token } from "./settings.js"
+import { site_token, staging } from "./settings.js"
 
 export { handle_redirects as redirects } from "./redirects/handle.js"
 export { editor_version }
@@ -17,6 +17,9 @@ const LINK_TTL = 60 * 60
 const SESSION_TTL = 12 * 60 * 60
 
 const now = () => Math.floor(Date.now() / 1000)
+
+/** What a session staging started is signed for, in place of the space the visual editor's is */
+const STAGING = "staging"
 
 async function sha1(text: string) {
 	const hash = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text))
@@ -49,6 +52,9 @@ async function signed(value: string | null | undefined, token: string, ttl: numb
  * `[timestamp]` and `[token]` to the URL, the token a SHA-1 of `space:preview token:timestamp`
  * that's good for an hour. A bare `?_storyblok` shows the published site.
  *
+ * On staging (see `staging`), anyone may look at the drafts: a bare `?_storyblok` starts the same
+ * session, as it did before previews were signed, and the edit bar there switches between them.
+ *
  * `?_storyblok` only reaches the document request: client-side navigations fetch
  * `__data.json`, and remote functions POST to `/_app/remote/…`, without it. So a preview is kept
  * on a cookie signed the same way, renewed on each request and ending 12 hours after the last;
@@ -65,19 +71,27 @@ export const version: Handle = async ({ event, resolve }) => {
 		? `${tk("space_id")}:${tk("timestamp")}:${tk("token")}`
 		: undefined
 
+	const off = query.get("_storyblok") === "off"
+	// staging takes a bare `?_storyblok` as asking for drafts; only staging honours a session it started
+	const staged =
+		(query.has("_storyblok") || kept?.startsWith(`${STAGING}:`)) && (await staging(event.url))
 	// the editor's signature first, then the session it started; nothing to check on most requests
-	const token =
-		(given || kept) && query.get("_storyblok") !== "off" ? await site_token() : undefined
+	const token = (given || kept || staged) && !off ? await site_token() : undefined
 	let valid: string | undefined
 	if (token)
 		for (const [value, ttl] of [
 			[given, LINK_TTL],
 			[kept, SESSION_TTL],
 		] as const)
-			if (await signed(value, token, ttl)) {
+			if (
+				(value !== kept || !value?.startsWith(`${STAGING}:`) || staged) &&
+				(await signed(value, token, ttl))
+			) {
 				valid = value
 				break
 			}
+	if (!valid && token && staged && query.has("_storyblok"))
+		valid = await sign(STAGING, now(), token)
 
 	if (valid && token)
 		// renewed on each request; SameSite=None, so it lasts inside the visual editor's cross-site frame

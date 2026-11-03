@@ -74,6 +74,31 @@ describe("version", () => {
 		expect(cookies.storyblok_preview).toStartWith(`123:${now()}:`)
 	})
 
+	describe("on staging", () => {
+		const STAGING = "https://next.example.com"
+
+		test("a bare ?_storyblok shows drafts, on a session of its own", async () => {
+			const { version, cookies } = await run(`${STAGING}/about?_storyblok`)
+			expect(version).toBe("draft")
+			expect(cookies.storyblok_preview).toMatch(/^staging:\d+:[0-9a-f]{40}$/)
+			expect((await run(`http://localhost:5173/?_storyblok`)).version).toBe("draft")
+		})
+
+		test("which lasts on the cookie alone, until ?_storyblok=off", async () => {
+			const { cookies } = await run(`${STAGING}/?_storyblok`)
+			expect((await run(`${STAGING}/about`, cookies)).version).toBe("draft")
+			expect(await run(`${STAGING}/about?_storyblok=off`, cookies)).toEqual({
+				version: "published",
+				cookies: {},
+			})
+		})
+
+		test("but never on the live site", async () => {
+			const { cookies } = await run(`${STAGING}/?_storyblok`)
+			expect(await run(`${SITE}/about`, cookies)).toEqual({ version: "published", cookies: {} })
+		})
+	})
+
 	test("a link a few seconds ahead of the server's clock", async () => {
 		expect((await run(`${SITE}/?${from_editor(now() + 5)}`)).version).toBe("draft")
 	})

@@ -119,7 +119,7 @@
 	let clear = $state(0)
 	let bar = $state<HTMLElement>()
 
-	const shown = $derived(!framed && (editor.draft || Boolean(editor.user)))
+	const shown = $derived(!framed && (editor.draft || editor.staging || Boolean(editor.user)))
 	/* Editing, the badge opens the block settings, which the bar holds, and the bar's row with them */
 	const settings = $derived(editor.editing && Boolean(editor.user))
 	const card = $derived(settings && editor.settings_open)
@@ -382,6 +382,14 @@
 	$effect(() => {
 		if (user_id) load_inbox()
 	})
+
+	/** On staging, the page again with its drafts or with what's live, which the server remembers */
+	function view(draft: boolean) {
+		if (draft === editor.draft) return
+		const url = new URL(location.href)
+		url.searchParams.set("_storyblok", draft ? "" : "off")
+		location.assign(url)
+	}
 
 	function show_inbox() {
 		inbox_open = !inbox_open
@@ -773,6 +781,16 @@
 						<span class="tip" aria-hidden="true">Leave: see the site as visitors do</span>
 					</span>
 				{:else}
+					{#if editor.staging}
+						<span class="versions" role="group" aria-label="Content to show">
+							<button type="button" aria-pressed={editor.draft} onclick={() => view(true)}
+								>Draft</button
+							>
+							<button type="button" aria-pressed={!editor.draft} onclick={() => view(false)}
+								>Published</button
+							>
+						</span>
+					{/if}
 					<button class="action" type="button" onclick={signin}>
 						<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
 							<path
@@ -1401,6 +1419,37 @@
 
 		&:hover {
 			color: var(--accent);
+		}
+	}
+
+	/* staging's switch between its drafts and what's live */
+	.versions {
+		background: color-mix(in srgb, var(--ink) 6%, transparent);
+		border-radius: 999px;
+		display: flex;
+		padding: 0.125rem;
+
+		& button {
+			background: none;
+			border: 0;
+			border-radius: 999px;
+			color: var(--muted);
+			cursor: pointer;
+			font: inherit;
+			padding: 0.1875rem 0.625rem;
+			transition:
+				background-color 0.2s,
+				color 0.2s;
+
+			&:hover {
+				color: var(--ink);
+			}
+
+			&[aria-pressed="true"] {
+				background: color-mix(in srgb, var(--ink) 12%, transparent);
+				color: var(--ink);
+				cursor: default;
+			}
 		}
 	}
 

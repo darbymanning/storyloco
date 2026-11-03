@@ -21,6 +21,8 @@ type Injected = {
 	user: EditorUser | null
 	space: string | null
 	draft: boolean
+	/** A staging site, where anyone may switch between drafts and what's live */
+	staging?: boolean
 	guest?: SharedWith | null
 	/** Edit mode on as the page lands, as the sign-in that brought them here asked */
 	edit?: boolean
@@ -388,6 +390,11 @@ export const editor = {
 	get guest(): SharedWith | null {
 		watch()
 		return S.injected.guest ?? null
+	},
+	/** A staging site, where a visitor may switch between drafts and what's live */
+	get staging(): boolean {
+		watch()
+		return !!S.injected.staging
 	},
 	/** Whether the page shows drafts: a preview, or someone signed in */
 	get draft(): boolean {
