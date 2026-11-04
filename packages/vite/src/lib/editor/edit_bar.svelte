@@ -1571,14 +1571,21 @@
 		gap: 0.375rem;
 		position: relative;
 
+		/* every box property its knob is placed by, set here: a site's form styles (a forms plugin's
+		   `[type="checkbox"]` gives it a border and a ring) would move the knob off its track */
 		& input {
 			appearance: none;
 			background: color-mix(in srgb, var(--ink) 18%, transparent);
 			block-size: 1rem;
+			border: 0;
 			border-radius: 999px;
+			box-shadow: none;
+			box-sizing: border-box;
 			cursor: inherit;
+			flex: none;
 			inline-size: 1.75rem;
 			margin: 0;
+			padding: 0;
 			position: relative;
 			transition: background-color 0.2s ease;
 
