@@ -29,6 +29,7 @@ import {
 	is_rich,
 	locate,
 	rich_compact,
+	rich_images,
 	rich_supported,
 	paragraphs,
 	shows_rich,
@@ -1305,19 +1306,33 @@ function blank(el: Element) {
 /**
  * Where richtext is edited from this element showing it: the outermost wrapper round it that shows
  * nothing more, so the editor takes the site's richtext container, but never an image beside the
- * text that has no words of its own to tell it apart
+ * text that has no words of its own to tell it apart. One of the field's own images is the field,
+ * though, like a logo after "Welcome to": left out, it would show again beside the editor's copy
  */
-function rich_wrapper(node: Element, block: Element) {
+function rich_wrapper(node: Element, block: Element, images: ReadonlyArray<string> = []) {
 	const text = compact_text(node)
 	let outer = node
 	while (
 		outer.parentElement &&
 		outer.parentElement !== block &&
 		compact_text(outer.parentElement) === text &&
-		[...outer.parentElement.children].every((child) => child === outer || blank(child))
+		[...outer.parentElement.children].every(
+			(child) => child === outer || blank(child) || shows_own(child, images)
+		)
 	)
 		outer = outer.parentElement
 	return outer as HTMLElement
+}
+
+/** Whether an element is just one of a richtext field's own images, at whatever size the site asks */
+function shows_own(el: Element, images: ReadonlyArray<string>) {
+	const img = el.matches("img")
+		? el
+		: el.children.length === 1
+			? el.querySelector(":scope > img")
+			: null
+	const src = img?.getAttribute("src")
+	return !!src && images.some((own) => src.startsWith(own))
 }
 
 /** The innermost element showing all of this one's text */
@@ -1361,6 +1376,7 @@ async function mark_riches(block: HTMLElement) {
 	if (!fields.length) return
 	const wanted = fields.map(({ value, ...rich }) => [rich_compact(value), rich] as const)
 	const embedded = embedded_in(fields.map(({ value }) => value))
+	const images = fields.flatMap(({ value }) => rich_images(value))
 	// the outermost element showing each text, in order, so the same text in several fields pairs
 	// up with where it shows, as `match` does
 	const shown = new Map<string, Array<HTMLElement>>()
@@ -1371,7 +1387,7 @@ async function mark_riches(block: HTMLElement) {
 		if (!text || holds_blok(el, embedded)) continue
 		const compact = wanted.find(([want]) => shows_rich(text, want))?.[0]
 		if (compact === undefined) continue
-		shown.set(compact, [...(shown.get(compact) ?? []), rich_wrapper(innermost(el), block)])
+		shown.set(compact, [...(shown.get(compact) ?? []), rich_wrapper(innermost(el), block, images)])
 		inside = el
 	}
 	// shown by no one element: a run of them, like a body beside its title, when only one field holds it
@@ -1777,6 +1793,7 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 	const fields = rich_fields(blok)
 	if (!fields.length) return
 	const embedded = embedded_in(fields.map(({ value }) => value))
+	const images = fields.flatMap(({ value }) => rich_images(value))
 	for (let node: Element | null = el; node && node !== block; node = node.parentElement) {
 		if (riches.has(node)) return node as HTMLElement
 		if (holds_blok(node, embedded)) return
@@ -1789,7 +1806,7 @@ async function rich_at(el: Element): Promise<HTMLElement | undefined> {
 		if (pick) {
 			// from the text itself out, as it's marked on hover: an element holding it beside an image
 			// that has no words, like a row with a picture, shows the same text but isn't it
-			const outer = rich_wrapper(innermost(node as HTMLElement), block)
+			const outer = rich_wrapper(innermost(node as HTMLElement), block, images)
 			// pressed beside the text rather than on it, it's the block that's meant
 			if (!outer.contains(el)) return
 			const { blok: owner, field } = pick
