@@ -24,7 +24,7 @@ test("generated interfaces compile with inferred plugins, recursive blocks, and 
 		)
 		await writeFile(
 			path.join(pkg, "root.d.ts"),
-			"export interface Registry {}\nexport type Story<T> = { uuid: string; content: T }"
+			"export interface Registry {}\nexport type Story<T> = { uuid: string; content: T }\nexport type Content = Record<string, unknown>"
 		)
 		await writeFile(
 			path.join(pkg, "schema.ts"),
@@ -49,7 +49,10 @@ export default schema({ blocks: { page, hero }, fieldPlugins: { heading } });`
 const hero: Hero = { heading: {text: "hello"}, tone: "red" };
 const page: Page = {body: [hero]};
 const content: ContentTypes["page"] = page;
-const rich: NonNullable<Page["copy"]> = {type: "doc", content: [{type: "blok", attrs: {id: null, body: [hero]}}]};
+const rich: NonNullable<Page["copy"]> = {type: "doc", content: [{type: "blok", attrs: {id: null, body: [{ ...hero, component: "hero", heading: { plugin: "heading", text: "hello" } }]}}]};
+// a blocks-limited richtext is still a richtext, wherever one goes
+const plain: import("storyloco/schema").RichTextFieldValue = rich;
+void plain;
 // @ts-expect-error Rich-text block restrictions are preserved
 const badRich: NonNullable<Page["copy"]> = {type: "doc", content: [{type: "blok", attrs: {id: null, body: [{component: "page"}]}}]};
 void rich; void badRich;
@@ -209,6 +212,8 @@ test("stories a field picks are their uuids, or the stories once resolved; a lin
 		"/"
 	).replace(/\s+/g, " ")
 	expect(types).toContain('"items"?: (import("storyloco").Story<CaseStudy> | string)[]')
-	expect(types).toContain('"lead"?: import("storyloco").Story<unknown> | string')
+	expect(types).toContain(
+		'"lead"?: import("storyloco").Story<import("storyloco").Content> | string'
+	)
 	expect(types).toContain('"link"?: StoryblokLink')
 })

@@ -93,7 +93,7 @@ export function generate_types(
 		`export type Richtext<T, B> =
 			T extends readonly (infer E)[] ? Richtext<E, B>[] :
 			T extends { type: "blok"; attrs: infer A }
-				? Omit<T, "attrs"> & { attrs: Omit<A, "body"> & { body: B[] | null } } :
+				? Omit<T, "attrs"> & { attrs: Omit<A, "body"> & { body: Array<B & { component: string }> | null } } :
 			T extends object
 				? { [K in keyof T]: K extends "content" ? Richtext<T[K], B> : T[K] } : T`,
 		"",
@@ -102,7 +102,9 @@ export function generate_types(
 		'/** A link, with the story it points to once links are resolved (`resolve_links: "url"`); the schema\'s own allows only strings beside its fields */',
 		"type StoryRef = { name?: string; uuid?: string; slug?: string; full_slug?: string; url?: string; [key: string]: unknown }",
 		'export type StoryblokLink = import("storyloco/schema").MultilinkFieldValue extends infer L ? L extends unknown ? { [K in keyof L as string extends K ? never : K]: L[K] } & { story?: StoryRef } : never : never',
-		'export type { AssetFieldValue as StoryblokAsset, MultilinkFieldValue as StoryblokMultilink, RichTextFieldValue as StoryblokRichtext, TableFieldValue as StoryblokTable } from "storyloco/schema"'
+		"/** What a multilink field holds, by the name a site annotates one with */",
+		"export type StoryblokMultilink = StoryblokLink",
+		'export type { AssetFieldValue as StoryblokAsset, RichTextFieldValue as StoryblokRichtext, TableFieldValue as StoryblokTable } from "storyloco/schema"'
 	)
 
 	for (const component of components) {
@@ -126,7 +128,8 @@ export function generate_types(
 				value =
 					field.type === "bloks"
 						? `(${types.join(" | ") || "never"})[]`
-						: `Richtext<RichTextFieldValue, ${types.join(" | ") || "never"}>`
+						: // still a richtext as the schema has it, so it goes wherever one does, with its bloks typed
+							`RichTextFieldValue & Richtext<RichTextFieldValue, ${types.join(" | ") || "never"}>`
 			} else if (field.type === "multilink") {
 				value = "StoryblokLink"
 			} else if (
@@ -138,7 +141,8 @@ export function generate_types(
 					.flat()
 					.map((name) => names.get(String(name)))
 					.filter(Boolean)
-				const story = `import("storyloco").Story<${types.join(" | ") || "unknown"}> | string`
+				// of the types it's limited to; any type's content, as Storyblok's own story types it, when it isn't
+				const story = `import("storyloco").Story<${types.join(" | ") || 'import("storyloco").Content'}> | string`
 				value = field.type === "options" ? `(${story})[]` : story
 			} else if (field.type === "custom") {
 				// A registered field plugin wins; Storyloco's own plugins are typed without one
