@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from "svelte"
 	import { editor } from "./client.js"
+	import { page_origin } from "./page.js"
 
 	type Target = { node: HTMLElement; story: number; uid: string; name: string }
 	type Choice = { name: string; display_name: string }
@@ -90,12 +91,7 @@
 		const inside = box.top + 8
 		const last = box.bottom - height - 8
 		stuck = inside < floor && last > floor
-		// the page's origin, which the body is unless the site positions it
-		const body = document.body
-		const origin =
-			getComputedStyle(body).position === "static"
-				? { top: -scrollY, left: -scrollX }
-				: body.getBoundingClientRect()
+		const origin = page_origin()
 		const width = bar?.offsetWidth ?? 240
 		const y = stuck ? floor : inside >= floor ? inside : Math.max(inside, last)
 		let x = Math.min(Math.max(box.left + 8, 8), innerWidth - width - 8)
