@@ -1072,8 +1072,9 @@
 
 	/*
 	 * open for someone who edits, with nothing selected, it's the row the panel opens from: as
-	 * wide, on the same glass and spread the same way, so turning edit mode on grows the panel
-	 * above it and nothing else moves. It may grow wider, for a status or a publish beside it
+	 * wide, on the same glass and holding the same buttons spread the same way (the status,
+	 * saving and any problem the badge's dot and ring, publishing the last button), so turning
+	 * edit mode on grows the panel above it and nothing in the row moves
 	 */
 	.bar.open:has(.mode):not(:has(:global(.inspector:not(.folded)))) {
 		border-radius: 1rem;
@@ -1087,6 +1088,14 @@
 		& .inner {
 			column-gap: 0.375rem;
 			justify-content: space-between;
+
+			& :is(.status, .publish, .state) {
+				display: none;
+			}
+
+			& .last {
+				display: flex;
+			}
 		}
 	}
 
