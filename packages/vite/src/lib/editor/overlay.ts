@@ -49,7 +49,7 @@ import {
 	stop as go_offline,
 } from "./live.js"
 import { anchor_at } from "./anchor.js"
-import { page_origin } from "./page.js"
+import { next_frame, page_origin } from "./page.js"
 import type { Asset as Stored } from "./server.js"
 import type { Inserts, RichField } from "./richtext.js"
 import { show as show_presence } from "./presence.js"
@@ -1571,12 +1571,12 @@ function offer(img: HTMLImageElement, spot: Spot) {
 		// pointer still over the image moves without entering it again, so nothing else would bring it back
 		addEventListener(
 			"scroll",
-			() => {
+			next_frame(() => {
 				if (!offered || !offered_spot) return
 				const box = offered.getBoundingClientRect()
 				if (box.bottom < 0 || box.top > innerHeight) withdraw()
 				else offer(offered, offered_spot)
-			},
+			}),
 			{ passive: true }
 		)
 		document.body.append(image_tools)
@@ -2484,8 +2484,9 @@ function ring_round(text: Text) {
 	}
 	place()
 	document.body.append(el)
-	addEventListener("scroll", place, { passive: true })
-	ring = { el, place }
+	const follow = next_frame(place)
+	addEventListener("scroll", follow, { passive: true })
+	ring = { el, place: follow }
 }
 
 function unring() {
@@ -2710,7 +2711,7 @@ export function install() {
 		const story = selected?.story ?? editor.story?.id
 		if (uid && story) select({ story, uid }, true)
 	})
-	addEventListener("scroll", place_tag, { passive: true })
+	addEventListener("scroll", next_frame(place_tag), { passive: true })
 	addEventListener("storyloco:panel-field", mark_field)
 	// a save re-renders the page, and the selected blok's element with it
 	on_saved(() => {
