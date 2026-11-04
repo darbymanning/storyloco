@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from "svelte"
 	import { editor } from "./client.js"
-	import { page_origin } from "./page.js"
+	import { next_frame, page_origin } from "./page.js"
 
 	type Target = { node: HTMLElement; story: number; uid: string; name: string }
 	type Choice = { name: string; display_name: string }
@@ -322,9 +322,11 @@
 			menu = null
 		}
 	}
+
+	const follow = next_frame(() => place())
 </script>
 
-<svelte:window onscroll={place} onresize={place} />
+<svelte:window onscroll={follow} onresize={place} />
 
 {#if drop}
 	<div
