@@ -22,7 +22,7 @@ test("blocks colocated in .svelte module scripts load, generate, and type their 
 		)
 		await writeFile(
 			path.join(pkg, "root.d.ts"),
-			"export interface Registry {}\nexport type Story<T> = { uuid: string; content: T }"
+			"export interface Registry {}\nexport type Story<T> = { uuid: string; content: T }\nexport type Content = Record<string, unknown>"
 		)
 		await writeFile(
 			path.join(pkg, "schema.ts"),
