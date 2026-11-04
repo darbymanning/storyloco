@@ -1055,7 +1055,8 @@
 	 * holding the settings' name, the bar is a pill of its own, which morphs whole as it opens: glass,
 	 * the page blurred through it, a wash of the accent from the top and a catch of light on its edge
 	 */
-	.bar:has(.settings:not(:empty)) {
+	.bar:has(.settings:not(:empty)),
+	.bar.open:has(.mode) {
 		--sheen: inset 0 1px 0 rgb(255 255 255 / 0.1);
 
 		backdrop-filter: blur(20px) saturate(1.8);
@@ -1066,6 +1067,26 @@
 
 		& :is(.panel, .inner) {
 			transition: none;
+		}
+	}
+
+	/*
+	 * open for someone who edits, with nothing selected, it's the row the panel opens from: as
+	 * wide, on the same glass and spread the same way, so turning edit mode on grows the panel
+	 * above it and nothing else moves. It may grow wider, for a status or a publish beside it
+	 */
+	.bar.open:has(.mode):not(:has(:global(.inspector:not(.folded)))) {
+		border-radius: 1rem;
+		min-inline-size: min(22rem, 100% - 2 * var(--o));
+		padding: 0.375rem;
+
+		& .panel {
+			flex: 1;
+		}
+
+		& .inner {
+			column-gap: 0.375rem;
+			justify-content: space-between;
 		}
 	}
 
@@ -1118,16 +1139,6 @@
 			& + .person {
 				margin-inline-start: -0.625rem;
 			}
-		}
-
-		/* open is editing, so the switch says it in its tip and to a screen reader */
-		& .mode .label {
-			block-size: 1px;
-			clip-path: inset(50%);
-			inline-size: 1px;
-			overflow: hidden;
-			position: absolute;
-			white-space: nowrap;
 		}
 
 		& .panel {
