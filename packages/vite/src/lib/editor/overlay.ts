@@ -49,6 +49,7 @@ import {
 	stop as go_offline,
 } from "./live.js"
 import { anchor_at } from "./anchor.js"
+import { page_origin } from "./page.js"
 import type { Asset as Stored } from "./server.js"
 import type { Inserts, RichField } from "./richtext.js"
 import { show as show_presence } from "./presence.js"
@@ -761,7 +762,7 @@ const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-r
 [data-storyloco-follow] a[href],[data-storyloco-follow] a[href] *{cursor:pointer}`
 
 /* Outside the layer, so a site's reset can't unpin our own bits */
-const OURS = `[data-storyloco=image]{position:fixed;z-index:2147483000;animation:storyloco-in .16s ease-out}
+const OURS = `[data-storyloco=image]{position:absolute;transform:translateX(-100%);z-index:2147483000;animation:storyloco-in .16s ease-out}
 [data-storyloco=image][hidden],[data-storyloco=image] [hidden]{display:none!important}
 button.storyloco-image{display:grid;place-items:center;inline-size:2rem;block-size:2rem;padding:0;border:0;border-radius:.5rem;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);cursor:pointer;box-shadow:0 2px 8px rgb(0 0 0/.2)}
 button.storyloco-image:focus-visible{outline:2px solid #fff;outline-offset:-4px}
@@ -781,8 +782,8 @@ button.storyloco-image[aria-expanded=true] .x{opacity:1;rotate:0deg;scale:1}
 [data-storyloco=drop] span{display:flex;align-items:center;gap:.5rem;padding:.5rem .875rem;border-radius:999px;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:500 .8125rem/1.25 system-ui,sans-serif;letter-spacing:normal;box-shadow:0 4px 16px rgb(0 0 0/.25)}
 [data-storyloco=drop][data-uploading] span{animation:storyloco-pulse .8s ease-in-out infinite alternate}
 @keyframes storyloco-pulse{to{opacity:.55}}
-[data-storyloco=field-ring]{position:fixed;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
-[data-storyloco=tag]{position:fixed;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
+[data-storyloco=field-ring]{position:absolute;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
+[data-storyloco=tag]{position:absolute;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
 [data-storyloco=tag][hidden]{display:block;opacity:0}
 @keyframes storyloco-in{from{opacity:0;translate:0 -2px}}
 @media (prefers-reduced-motion:reduce){[data-storyloco],[data-storyloco] *{animation:none!important;transition-property:opacity!important}}`
@@ -828,8 +829,9 @@ function place_tag() {
 	const box = hovered.getBoundingClientRect()
 	tag.hidden =
 		hovered.hasAttribute("data-storyloco-selected") || box.bottom < 0 || box.top > innerHeight
-	tag.style.left = `${Math.max(box.left, 0)}px`
-	tag.style.top = `${Math.max(box.top - tag.offsetHeight, 0)}px`
+	const origin = page_origin()
+	tag.style.left = `${Math.max(box.left, 0) - origin.left}px`
+	tag.style.top = `${Math.max(box.top - tag.offsetHeight, 0) - origin.top}px`
 }
 
 // --- text, edited where it is
@@ -1591,8 +1593,10 @@ function offer(img: HTMLImageElement, spot: Spot) {
 	}
 	offered_spot = spot
 	const box = img.getBoundingClientRect()
-	image_tools.style.top = `${Math.max(box.top, 0) + 8}px`
-	image_tools.style.right = `${Math.max(innerWidth - box.right, 0) + 8}px`
+	// its right edge, as it's shifted back by its own width
+	const origin = page_origin()
+	image_tools.style.top = `${Math.max(box.top, 0) + 8 - origin.top}px`
+	image_tools.style.left = `${Math.min(box.right, innerWidth) - 8 - origin.left}px`
 	const menu = image_tools.lastElementChild as HTMLElement
 	menu.querySelector<HTMLButtonElement>("[data-do=remove]")!.hidden = !spot.asset.id || !!spot.path
 	menu.onclick = (e) => {
@@ -2470,9 +2474,10 @@ function ring_round(text: Text) {
 	range.selectNodeContents(text)
 	const place = () => {
 		const box = range.getBoundingClientRect()
+		const origin = page_origin()
 		Object.assign(el.style, {
-			top: `${box.top - 4}px`,
-			left: `${box.left - 4}px`,
+			top: `${box.top - 4 - origin.top}px`,
+			left: `${box.left - 4 - origin.left}px`,
 			width: `${box.width + 8}px`,
 			height: `${box.height + 8}px`,
 		})
