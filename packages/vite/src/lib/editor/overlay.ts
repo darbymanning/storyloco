@@ -50,7 +50,6 @@ import {
 	others,
 	select as live_select,
 	start as go_live,
-	stop as go_offline,
 } from "./live.js"
 import { anchor_at } from "./anchor.js"
 import { next_frame, page_origin } from "./page.js"
@@ -2642,9 +2641,7 @@ function arm(on: boolean) {
 		})
 		return
 	}
-	go_offline()
-	hide_presence?.()
-	hide_presence = null
+	// who else is here stays, as a guest's does: the edit bar shows them, to follow, editing or not
 	comments?.then((panel) => unmount(panel as unknown as Record<string, unknown>))
 	comments = undefined
 	bar?.hide()
@@ -2800,6 +2797,7 @@ export function install() {
 	})
 	on_editing(arm)
 	arm(editor.editing)
+	present()
 	detect()
 	on_saved(detect)
 	// whether there's anything to publish, by content rather than by when it was last saved
