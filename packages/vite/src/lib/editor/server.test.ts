@@ -310,3 +310,42 @@ describe("editor schemas", () => {
 		await refused(check("table", "a,b"))
 	})
 })
+
+describe("a plugin's moxy keys", () => {
+	test("a field's own option, else the space's Moxy datasource, before any other", async () => {
+		const { moxy_setting } = await import("./ops.js")
+		const asked: Array<string> = []
+		const entries: Record<string, Array<{ name: string; value: string }>> = {
+			"1": [{ name: "MOXY_MUX_SECRET_ID", value: "from-other" }],
+			"2": [
+				{ name: "MOXY_MUX_SECRET_ID", value: "from-moxy" },
+				{ name: "NOT_OURS", value: "x" },
+			],
+		}
+		const editor = {
+			space: `s${Math.random()}`,
+			mapi: async (path: string) => {
+				asked.push(path)
+				if (path.startsWith("/datasources/"))
+					return {
+						datasources: [
+							{ id: 1, name: "Colours", slug: "colours" },
+							{ id: 2, name: "Moxy", slug: "moxy" },
+						],
+					}
+				return { datasource_entries: entries[path.match(/datasource_id=(\d+)/)![1]] }
+			},
+		} as never
+		const field = (value: string) => ({
+			type: "custom",
+			field_type: "mux-field",
+			options: [{ name: "MOXY_MUX_SECRET_ID", value }],
+		})
+		expect(await moxy_setting(editor, field("own"), "MOXY_MUX_SECRET_ID")).toBe("own")
+		expect(asked).toEqual([])
+		expect(await moxy_setting(editor, field(""), "MOXY_MUX_SECRET_ID")).toBe("from-moxy")
+		// the Moxy datasource answered, so the others weren't read
+		expect(asked.filter((p) => p.includes("datasource_id=1"))).toEqual([])
+		expect(await moxy_setting(editor, field(""), "NOT_OURS")).toBeUndefined()
+	})
+})

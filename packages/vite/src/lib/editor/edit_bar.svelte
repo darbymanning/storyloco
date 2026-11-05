@@ -287,12 +287,14 @@
 		open = false
 		reviewing = null
 		inbox_open = false
+		everyone_open = false
 	}
 
 	function key(event: KeyboardEvent) {
-		if (event.key === "Escape" && (reviewing || inbox_open)) {
+		if (event.key === "Escape" && (reviewing || inbox_open || everyone_open)) {
 			reviewing = null
 			inbox_open = false
+			everyone_open = false
 		} else if (open && event.key === "Escape") open = false
 		// ⌘K, or Ctrl+K: find a page, a block or something to do; a field's own ⌘K is a link
 		const typing =
@@ -371,6 +373,8 @@
 
 	/* Mentions and replies, for everyone signed in: push only reaches those who've allowed it */
 	let inbox_open = $state(false)
+	/* Everyone else on the page, listed from the +N past the faces, to follow any of them */
+	let everyone_open = $state(false)
 	const inbox = $derived(editor.inbox)
 	const count = (n: number) => (n > 9 ? "9+" : String(n))
 	const VERBS: Record<string, string> = {
@@ -407,6 +411,7 @@
 	function show_inbox() {
 		inbox_open = !inbox_open
 		reviewing = null
+		everyone_open = false
 		if (inbox_open) load_inbox()
 	}
 
@@ -428,6 +433,7 @@
 	async function go_live() {
 		inbox_open = false
 		if (reviewing) return (reviewing = null)
+		everyone_open = false
 		reviewing = "loading"
 		const overlay = import("./overlay.js").then(async (o) => {
 			await o.load_schema().catch(() => {})
@@ -571,9 +577,19 @@
 					</button>
 				{/each}
 				{#if here.people.length > faces}
-					<span class="person more" aria-label="and {here.people.length - faces} more">
+					<button
+						type="button"
+						class="person more"
+						aria-expanded={everyone_open}
+						aria-label="Everyone here: {here.people.length - faces} more"
+						onclick={() => {
+							everyone_open = !everyone_open
+							inbox_open = false
+							reviewing = null
+						}}
+					>
 						+{here.people.length - faces}
-					</span>
+					</button>
 				{/if}
 			</span>
 		{/if}
@@ -820,6 +836,39 @@
 				{/if}
 			</div>
 		</div>
+
+		{#if everyone_open && here.people.length}
+			<div class="review" role="dialog" aria-label="Here now">
+				<p class="heading">Here now</p>
+				<ul class="everyone">
+					{#each here.people as person (person.id)}
+						{@const name = person.user.name ?? "Someone"}
+						{@const followed = editor.following === person.id}
+						<li>
+							<button
+								type="button"
+								style:--c={person.color}
+								aria-pressed={followed}
+								onclick={() => {
+									follow(followed ? null : person.id)
+									everyone_open = false
+								}}
+							>
+								<span class="face" aria-hidden="true"
+									><Face
+										name={person.user.name}
+										photo={person.user.photo}
+										gravatar={person.user.gravatar}
+									/></span
+								>
+								<span class="name">{name}</span>
+								<span class="follow">{followed ? "Following" : "Follow"}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 
 		{#if inbox_open}
 			<div class="review" role="dialog" aria-label="Notifications">
@@ -2032,6 +2081,72 @@
 			list-style: none;
 			margin: 0;
 			padding: 0;
+		}
+	}
+
+	/* Everyone on the page, a row each: their face in their colour, then their name, to follow */
+	.review .everyone {
+		display: grid;
+		gap: 0.125rem;
+		margin-block-start: 0.5rem;
+
+		& button {
+			align-items: center;
+			background: none;
+			border: 0;
+			border-radius: 0.5rem;
+			color: inherit;
+			cursor: pointer;
+			display: flex;
+			font: inherit;
+			gap: 0.625rem;
+			inline-size: 100%;
+			padding: 0.375rem 0.5rem;
+			text-align: start;
+
+			&:hover,
+			&:focus-visible {
+				background: color-mix(in srgb, var(--ink) 7%, transparent);
+			}
+
+			&:focus-visible {
+				outline: 2px solid var(--accent);
+				outline-offset: -2px;
+			}
+		}
+
+		& .face {
+			background: var(--c, var(--muted));
+			block-size: 1.75rem;
+			border-radius: 50%;
+			box-shadow: 0 0 0 2px var(--c, var(--muted));
+			color: #fff;
+			display: grid;
+			flex: none;
+			font-size: 0.6875rem;
+			font-weight: 600;
+			inline-size: 1.75rem;
+			overflow: hidden;
+			place-items: center;
+		}
+
+		& .name {
+			flex: 1;
+			font-weight: 500;
+			min-inline-size: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		& .follow {
+			color: var(--muted);
+			font-size: 0.75rem;
+		}
+
+		& [aria-pressed="true"] .follow {
+			color: var(--accent);
+			font-weight: 600;
 		}
 	}
 
