@@ -466,6 +466,11 @@
 		all: revert;
 	}
 
+	/* reverting drops the browser's own hiding of [hidden] too, so it's put back */
+	:where(.picker) [hidden] {
+		display: none;
+	}
+
 	.picker {
 		/* light or dark as the person prefers, whatever scheme the site uses */
 		color-scheme: light dark;

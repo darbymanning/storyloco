@@ -2587,6 +2587,11 @@
 		all: revert;
 	}
 
+	/* reverting drops the browser's own hiding of [hidden] too, so it's put back */
+	:where(.inspector) [hidden] {
+		display: none;
+	}
+
 	/* In the edit bar's slot: its name there while folded, the bar's panel when open */
 	.inspector {
 		/* light or dark as the person prefers, whatever scheme the site uses */
