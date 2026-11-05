@@ -13,6 +13,7 @@ import {
 	paragraphs,
 	with_paragraph,
 	rich_compact,
+	rich_images,
 	shows_rich,
 	rich_supported,
 	same,
@@ -426,5 +427,28 @@ describe("storyloco's plugins in the panel", () => {
 			{ id: "a", label: "area · Top", depth: 0 },
 			{ id: "b", label: "card", depth: 1 },
 		])
+	})
+})
+
+describe("a richtext field's own images", () => {
+	test("found by their src, however deep, and nothing else", () => {
+		const logo = "https://a.storyblok.com/f/1/349x104/abc/logo.png"
+		const doc = {
+			type: "doc",
+			content: [
+				{
+					type: "paragraph",
+					content: [
+						{ type: "text", text: "Welcome to" },
+						{ type: "hard_break" },
+						{ type: "image", attrs: { src: logo, alt: "" } },
+					],
+				},
+				{ type: "image", attrs: { alt: "no src" } },
+			],
+		}
+		expect(rich_images(doc)).toEqual([logo])
+		expect(rich_images({ type: "doc", content: [{ type: "paragraph" }] })).toEqual([])
+		expect(rich_images(null)).toEqual([])
 	})
 })

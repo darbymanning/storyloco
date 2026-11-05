@@ -231,6 +231,14 @@ export function rich_compact(value: unknown): string {
 	return (node.text ?? "").replace(/\s+/g, "") + (node.content ?? []).map(rich_compact).join("")
 }
 
+/** The images a richtext value holds, by their src, like a logo set beside a line of its text */
+export function rich_images(value: unknown): Array<string> {
+	const node = value as (Rich & { attrs?: { src?: unknown } }) | null
+	if (!node || typeof node !== "object") return []
+	const own = node.type === "image" && typeof node.attrs?.src === "string" ? [node.attrs.src] : []
+	return [...own, ...(node.content ?? []).flatMap(rich_images)]
+}
+
 /**
  * Whether an element's text, spaces aside, is a richtext value's: the same, or with whatever the
  * site shows for each blok embedded in it, a button's label say, in its gaps
