@@ -384,6 +384,43 @@ function components_of(editor: Editor) {
 	return components
 }
 
+const settings = new Map<string, { at: number; entries: Promise<Map<string, string>> }>()
+
+/**
+ * Moxy's keys as the space keeps them in a datasource (one named like Moxy or Integrations first,
+ * then any), for fields whose plugin options were left empty, like older plugins' fields
+ */
+function moxy_settings(editor: Editor) {
+	const hit = settings.get(editor.space)
+	if (hit && Date.now() - hit.at < 300_000) return hit.entries
+	const entries = (async () => {
+		const { datasources } = await editor.mapi<{
+			datasources: Array<{ id: number; name: string; slug: string }>
+		}>("/datasources/?per_page=100")
+		const likely = (d: { name: string; slug: string }) =>
+			/moxy|integration/i.test(`${d.name} ${d.slug}`) ? 0 : 1
+		const found = new Map<string, string>()
+		for (const datasource of datasources.toSorted((a, b) => likely(a) - likely(b))) {
+			const { datasource_entries } = await editor.mapi<{
+				datasource_entries: Array<{ name: string; value: string }>
+			}>(`/datasource_entries/?datasource_id=${datasource.id}&per_page=1000`)
+			for (const { name, value } of datasource_entries)
+				if (/^(MOXY_\w+|R2_BUCKET)$/.test(name) && value && !found.has(name)) found.set(name, value)
+			if (likely(datasource) === 0 && found.size) break
+		}
+		return found
+	})()
+	entries.catch(() => settings.delete(editor.space))
+	settings.set(editor.space, { at: Date.now(), entries })
+	return entries
+}
+
+/** A moxy key for a plugin's field: its own option, else the space's datasource of them */
+export async function moxy_setting(editor: Editor, field: Field, name: string) {
+	const own = field.options?.find((option) => option.name === name)?.value
+	return own || (await moxy_settings(editor).catch(() => new Map<string, string>())).get(name)
+}
+
 /** The list's field schema, and how many bloks it may hold */
 async function rules(editor: Editor, place: Place) {
 	const components = await components_of(editor)
@@ -981,7 +1018,7 @@ async function mux_secret(editor: Editor, component: unknown, field: unknown) {
 	const schema = (await components_of(editor)).find((c) => c.name === component)?.schema[field]
 	if (schema?.type !== "custom" || !is_video(schema))
 		throw new EditorError(400, "That isn’t a video field")
-	const secret = schema.options?.find((option) => option.name === "MOXY_MUX_SECRET_ID")?.value
+	const secret = await moxy_setting(editor, schema, "MOXY_MUX_SECRET_ID")
 	if (!secret)
 		throw new EditorError(
 			409,
@@ -1048,12 +1085,13 @@ async function r2_field(editor: Editor, component: unknown, field: unknown) {
  */
 async function r2(
 	site: Site,
+	editor: Editor,
 	field: Field,
 	path: string,
 	init: { method?: string; body?: unknown } = {}
 ) {
-	const secret = r2_option(field, "MOXY_R2_SECRET_ID")
-	const bucket = r2_option(field, "R2_BUCKET")
+	const secret = await moxy_setting(editor, field, "MOXY_R2_SECRET_ID")
+	const bucket = await moxy_setting(editor, field, "R2_BUCKET")
 	if (!secret || !bucket)
 		throw new EditorError(
 			409,
@@ -1276,14 +1314,16 @@ export async function operate(
 		})
 		if (text(body.search, 200) && body.search) query.set("filter[q]", body.search)
 		if (r2_id(body.folder)) query.set("folder_id", body.folder)
-		const assets = (await r2(site, field, `assets?${query}`)) as Array<R2Asset>
+		const assets = (await r2(site, editor, field, `assets?${query}`)) as Array<R2Asset>
 		return { assets: assets.map(r2_summary) }
 	}
 
 	if (body.op === "r2_folders") {
 		const field = await r2_field(editor, body.component, body.field)
 		type Tree = { id: string; name: string; children?: Array<Tree> }
-		const { structured = [] } = (await r2(site, field, "folders")) as { structured?: Array<Tree> }
+		const { structured = [] } = (await r2(site, editor, field, "folders")) as {
+			structured?: Array<Tree>
+		}
 		const flat = (list: Array<Tree>, parent: string | null): Array<unknown> =>
 			list.flatMap(({ id, name, children = [] }) => [{ id, name, parent }, ...flat(children, id)])
 		return { folders: flat(structured, null) }
@@ -1292,7 +1332,7 @@ export async function operate(
 	if (body.op === "r2_upload") {
 		// a URL the page uploads straight to, so neither the secret nor the file passes through here
 		const field = await r2_field(editor, body.component, body.field)
-		const { url } = (await r2(site, field, "assets/upload-url", { method: "POST" })) as {
+		const { url } = (await r2(site, editor, field, "assets/upload-url", { method: "POST" })) as {
 			url: string
 		}
 		return { url }
@@ -1549,7 +1589,7 @@ export async function operate(
 				blok[key],
 				resolve,
 				async (id) => summary((await editor.mapi<{ story: Summary }>(`/stories/${id}`)).story),
-				async (field, id) => (await r2(site, field, `assets/${id}`)) as R2Asset
+				async (field, id) => (await r2(site, editor, field, `assets/${id}`)) as R2Asset
 			)
 		}
 		if (JSON.stringify(current.content) === was) return { ok: true, blok }
