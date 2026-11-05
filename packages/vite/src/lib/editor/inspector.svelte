@@ -54,7 +54,7 @@
 	}
 	type Loaded = { story: Story; blok: Blok; trail: Array<{ uid: string; component: string }> }
 	type Asset = {
-		id?: number | null
+		id?: number | string | null
 		filename?: string | null
 		alt?: string | null
 		focus?: string | null
@@ -83,8 +83,10 @@
 		picker: (options: {
 			current: Asset
 			images?: boolean
+			/** An R2 Assets field's, whose files are in its own bucket rather than Storyblok's library */
+			r2?: { component: string; field: string }
 			save: (choice: {
-				asset: number
+				asset: number | string
 				alt: string
 				focus: string
 				filename?: string
@@ -792,6 +794,12 @@
 	const file_name = (filename?: string | null) => filename?.split("/").pop() ?? ""
 	const only_images = (field: Field) =>
 		!field.filetypes?.length || field.filetypes.every((t) => t === "images")
+	const option = (field: Field, name: string) =>
+		field.options?.find((found) => found.name === name)?.value
+	/** An R2 Assets field: its files, edited as an image field's, are in its own bucket */
+	const is_r2 = (field: Field) => plugin_of(field) === "r2" && option(field, "link") !== "true"
+	const r2_of = (key: string, field: Field) =>
+		is_r2(field) && loaded ? { component: loaded.blok.component, field: key } : undefined
 	/** `YYYY-MM-DD HH:mm`, as Storyblok keeps dates, to and from what the input takes */
 	const to_input = (v: unknown, date_only?: boolean) => {
 		const s = text(v)
@@ -1336,6 +1344,7 @@
 		picker({
 			current: value,
 			images: only_images(field),
+			r2: r2_of(key, field),
 			save: async (choice) => {
 				change(key, { id: choice.asset, alt: choice.alt, focus: choice.focus })
 				return null
@@ -1451,6 +1460,7 @@
 					picker({
 						current: {},
 						images: only_images(field),
+						r2: r2_of(key, field),
 						save: async (choice) => {
 							keep([...list, { id: choice.asset, alt: choice.alt, focus: choice.focus }])
 							return null
@@ -2397,6 +2407,10 @@
 			{@render Video_(key, field, id)}
 		{:else if field.type === "table"}
 			{@render Table_(key, field, id)}
+		{:else if is_r2(field) && option(field, "multiple") === "true"}
+			{@render Multiasset(key, field, id)}
+		{:else if is_r2(field)}
+			{@render Asset_(key, field, id)}
 		{:else if plugin_of(field) === "plans"}
 			{@render Plans(key, field, id)}
 		{:else if plugin_of(field) === "theme"}

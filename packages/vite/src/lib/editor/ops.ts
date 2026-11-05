@@ -11,6 +11,8 @@ import {
 	is_heading,
 	is_text,
 	is_video,
+	r2_summary,
+	type R2Asset,
 	locate,
 	set_asset,
 	set_text,
@@ -274,6 +276,16 @@ type Operation =
 	| { op: "mux_status"; component: string; field: string; upload: string }
 	| { op: "mux_assets"; component: string; field: string }
 	| { op: "mux_set"; story: number; uid: string; field: string; asset: string }
+	| {
+			op: "r2_assets"
+			component: string
+			field: string
+			search?: string
+			page?: number
+			folder?: string
+	  }
+	| { op: "r2_folders"; component: string; field: string }
+	| { op: "r2_upload"; component: string; field: string }
 
 /** An asset as the page sees it, from the Management API's own shape */
 export interface Asset {
@@ -444,7 +456,9 @@ const open_options = (field: Field) =>
 		? field.options
 		: plugin_of(field) === "currency"
 			? field.options?.filter(({ name }) => ["currencies", "default_currency"].includes(name))
-			: undefined
+			: plugin_of(field) === "r2"
+				? field.options?.filter(({ name }) => ["link", "multiple"].includes(name))
+				: undefined
 
 /** What the page may see of the schema: plugin options hold moxy secrets, so they stay here */
 function public_schema(components: Array<Component>) {
@@ -483,6 +497,9 @@ const PLUGINS = (field: { field_type?: string | null }) =>
 const LINKS = new Set(["url", "story", "email", "asset"])
 
 type Resolve = (id: number) => Promise<Asset>
+/** A file in an R2 Assets field's bucket, by its id, from moxy */
+type ResolveR2 = (field: Field, id: string) => Promise<R2Asset>
+const no_r2: ResolveR2 = () => Promise.reject(new EditorError(400, "Unknown change"))
 type FindStory = (id: number) => Promise<Summary>
 
 const TARGETS = new Set(["_self", "_blank", "_parent", "_top", "_new"])
@@ -505,7 +522,8 @@ async function plugin_value(
 	existing: unknown,
 	resolve: Resolve,
 	find_story: FindStory,
-	bad: (why?: string) => never
+	bad: (why?: string) => never,
+	resolve_r2: ResolveR2
 ): Promise<unknown> {
 	const object = (v: unknown): v is Node => !!v && typeof v === "object" && !Array.isArray(v)
 	const was = object(existing) ? existing : { plugin: field.field_type }
@@ -517,6 +535,28 @@ async function plugin_value(
 		typeof v === "string" && /^[\w-]{1,64}$/.test(v) ? v : (crypto.randomUUID() as string)
 
 	switch (plugin_of(field)) {
+		case "r2": {
+			if (r2_option(field, "link") === "true") bad("is edited in Storyblok")
+			if (value === null) return null
+			const kept = new Map(
+				(Array.isArray(existing) ? existing : [existing])
+					.filter(object)
+					.map((item) => [item.id, item])
+			)
+			// the page says which file and its alt text and focus; the file itself comes from the
+			// bucket, or is what the field already held, never what the page sends
+			const one = async (v: unknown) => {
+				if (!object(v) || typeof v.id !== "string" || !/^[\w-]{1,64}$/.test(v.id)) bad()
+				const { id, alt, focus } = v as { id: string; alt?: unknown; focus?: unknown }
+				const said = { alt: str(alt, 1000), focus: str(focus, 40) }
+				if (said.focus && !/^\d+x\d+:\d+x\d+$/.test(said.focus)) bad()
+				const was = kept.get(id)
+				const asset =
+					was && object(was._data) ? (was._data as R2Asset) : await resolve_r2(field, id)
+				return { ...was, ...r2_value(asset, said.alt, said.focus) }
+			}
+			return Array.isArray(value) ? Promise.all(list(value).map(one)) : one(value)
+		}
 		case "theme": {
 			if (value === null || value === "") return null
 			const choices = theme_choices(field.options as Array<{ name: string; value: string }>)
@@ -681,7 +721,8 @@ export async function normalise(
 	value: unknown,
 	existing: unknown,
 	resolve: Resolve,
-	find_story: FindStory = () => Promise.reject(new EditorError(400, "Unknown change"))
+	find_story: FindStory = () => Promise.reject(new EditorError(400, "Unknown change")),
+	resolve_r2: ResolveR2 = no_r2
 ): Promise<unknown> {
 	const bad = (why = "isn’t a value this field can hold") => {
 		throw new EditorError(400, `${field.display_name || "That field"} ${why}`)
@@ -824,7 +865,8 @@ export async function normalise(
 				)
 				return { ...(existing as Node), ...settings }
 			}
-			if (plugin_of(field)) return plugin_value(field, value, existing, resolve, find_story, bad)
+			if (plugin_of(field))
+				return plugin_value(field, value, existing, resolve, find_story, bad, resolve_r2)
 			if (!PLUGINS(field) || !object(value)) bad("is edited in Storyblok")
 			for (const v of Object.values(value as Node))
 				if (v !== null && typeof v !== "string" && typeof v !== "number") bad()
@@ -861,6 +903,8 @@ export function input_of(field: Field | undefined, stored: unknown): unknown {
 		case "custom":
 			// a theme's or a time's is a string, as its plugin stores it
 			if (typeof stored === "string" && plugin_of(field)) return stored
+			// an R2 Assets field's file, or its list of them
+			if (plugin_of(field) === "r2") return Array.isArray(stored) || object(stored) ? stored : null
 			return object(stored) ? stored : is_video(field) ? null : {}
 		default:
 			return stored ?? ""
@@ -974,6 +1018,81 @@ async function mux(
 		throw new EditorError(502, reason ? `Mux: ${reason}` : `Mux didn’t take that (${res.status})`)
 	}
 	return ((await res.json()) as { data: unknown }).data
+}
+
+// --- R2 Assets files, through moxy
+
+const r2_option = (field: Field, name: string) =>
+	field.options?.find((option) => option.name === name)?.value
+
+const r2_id = (value: unknown): value is string =>
+	typeof value === "string" && /^[\w-]{1,64}$/.test(value)
+
+/** An R2 Assets field, by its block and name, checked to be one that holds files */
+async function r2_field(editor: Editor, component: unknown, field: unknown) {
+	if (typeof component !== "string" || typeof field !== "string")
+		throw new EditorError(400, "Unknown change")
+	const schema = (await components_of(editor)).find((c) => c.name === component)?.schema[field]
+	if (
+		schema?.type !== "custom" ||
+		plugin_of(schema) !== "r2" ||
+		r2_option(schema, "link") === "true"
+	)
+		throw new EditorError(400, "That isn’t an R2 Assets field")
+	return schema
+}
+
+/**
+ * A call to the bucket an R2 Assets field was set up with. Moxy writes the bucket and its secret
+ * into the field's options when a space connects R2 Assets; the secret never leaves the server.
+ */
+async function r2(
+	site: Site,
+	field: Field,
+	path: string,
+	init: { method?: string; body?: unknown } = {}
+) {
+	const secret = r2_option(field, "MOXY_R2_SECRET_ID")
+	const bucket = r2_option(field, "R2_BUCKET")
+	if (!secret || !bucket)
+		throw new EditorError(
+			409,
+			"R2 Assets isn’t connected for this space yet. Connect it from the R2 Assets app in Storyblok."
+		)
+	const res = await (site.fetch ?? fetch)(`${site.moxy}/api/r2/${bucket}/${path}`, {
+		method: init.method,
+		headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+		body: init.body === undefined ? undefined : JSON.stringify(init.body),
+	})
+	if (!res.ok) {
+		const reason = ((await res.json().catch(() => null)) as { error?: string } | null)?.error
+		throw new EditorError(502, reason ? `R2: ${reason}` : `R2 didn’t take that (${res.status})`)
+	}
+	return ((await res.json()) as { data: unknown }).data
+}
+
+/** The field's value for a file in the bucket, as the R2 Assets plugin writes it, with this field's alt and focus */
+export function r2_value(asset: R2Asset, alt: string, focus: string) {
+	const { title, source, copyright, name, width, height, format, content_type, size_bytes } =
+		asset.attributes
+	return {
+		id: asset.id,
+		alt,
+		filename: asset.links?.self ?? "",
+		focus,
+		title,
+		source,
+		copyright,
+		is_external_url: false,
+		meta_data: { alt, title, source, copyright },
+		name,
+		width,
+		height,
+		format,
+		content_type,
+		size_bytes,
+		_data: asset,
+	}
 }
 
 const mux_id = (value: unknown): value is string =>
@@ -1146,6 +1265,37 @@ export async function operate(
 		const secret = await mux_secret(editor, body.component, body.field)
 		const assets = (await mux(site, secret, "video/v1/assets?limit=50")) as Array<MuxAsset>
 		return { assets: assets.map(summary_of) }
+	}
+
+	if (body.op === "r2_assets") {
+		const field = await r2_field(editor, body.component, body.field)
+		const query = new URLSearchParams({
+			limit: "48",
+			page: String(id(body.page) ? body.page : 1),
+			sort: "-created_at",
+		})
+		if (text(body.search, 200) && body.search) query.set("filter[q]", body.search)
+		if (r2_id(body.folder)) query.set("folder_id", body.folder)
+		const assets = (await r2(site, field, `assets?${query}`)) as Array<R2Asset>
+		return { assets: assets.map(r2_summary) }
+	}
+
+	if (body.op === "r2_folders") {
+		const field = await r2_field(editor, body.component, body.field)
+		type Tree = { id: string; name: string; children?: Array<Tree> }
+		const { structured = [] } = (await r2(site, field, "folders")) as { structured?: Array<Tree> }
+		const flat = (list: Array<Tree>, parent: string | null): Array<unknown> =>
+			list.flatMap(({ id, name, children = [] }) => [{ id, name, parent }, ...flat(children, id)])
+		return { folders: flat(structured, null) }
+	}
+
+	if (body.op === "r2_upload") {
+		// a URL the page uploads straight to, so neither the secret nor the file passes through here
+		const field = await r2_field(editor, body.component, body.field)
+		const { url } = (await r2(site, field, "assets/upload-url", { method: "POST" })) as {
+			url: string
+		}
+		return { url }
 	}
 
 	if (body.op === "comments") {
@@ -1393,8 +1543,13 @@ export async function operate(
 			const field = schema[key]
 			if (!field || !field_name(key) || ["bloks", "tab", "section"].includes(field.type))
 				throw new EditorError(400, `${key} can’t be changed here`)
-			blok[key] = await normalise(field, value, blok[key], resolve, async (id) =>
-				summary((await editor.mapi<{ story: Summary }>(`/stories/${id}`)).story)
+			blok[key] = await normalise(
+				field,
+				value,
+				blok[key],
+				resolve,
+				async (id) => summary((await editor.mapi<{ story: Summary }>(`/stories/${id}`)).story),
+				async (field, id) => (await r2(site, field, `assets/${id}`)) as R2Asset
 			)
 		}
 		if (JSON.stringify(current.content) === was) return { ok: true, blok }

@@ -49,6 +49,52 @@ describe("editor schemas", () => {
 			)
 		).toBeInstanceOf(EditorError)
 
+	test("an R2 Assets field's file comes from its bucket, or is what the field held", async () => {
+		const field = { type: "custom", field_type: "uiloco-asset" }
+		const r2_asset = (id: string) => ({
+			id,
+			type: "asset",
+			links: { self: `https://assets.uilo.co/f/c/b/10x10/${id}/a.jpg` },
+			attributes: { width: 10, height: 10, alt: "In the bucket" },
+		})
+		const fetched: Array<string> = []
+		const r2 = async (_: unknown, id: string) => (fetched.push(id), r2_asset(id))
+		const put = (value: unknown, existing?: unknown, extra = {}) =>
+			normalise({ ...field, ...extra }, value, existing, resolve, undefined, r2)
+
+		// the page's filename is ignored: the file is the bucket's
+		const one = (await put({
+			id: "u1",
+			alt: "Head",
+			focus: "1x2:3x4",
+			filename: "evil",
+		})) as Record<string, unknown>
+		expect(one.filename).toBe(r2_asset("u1").links.self)
+		expect([one.alt, one.focus, (one.meta_data as { alt: string }).alt]).toEqual([
+			"Head",
+			"1x2:3x4",
+			"Head",
+		])
+		expect(fetched).toEqual(["u1"])
+
+		// a file the field already holds isn't fetched again; a new one in a list is
+		const list = (await put([{ id: "u2" }, { id: "u1", alt: "New alt" }], [one])) as Array<
+			Record<string, unknown>
+		>
+		expect(list.map((item) => [item.id, item.alt])).toEqual([
+			["u2", ""],
+			["u1", "New alt"],
+		])
+		expect(fetched).toEqual(["u1", "u2"])
+
+		expect(await put(null, one)).toBeNull()
+		// undoing puts the stored value back through the same checks
+		expect(await put(input_of(field, list), list)).toEqual(list)
+		await refused(put({ id: "u1", focus: "middle" }))
+		await refused(put({ id: "../x" }))
+		await refused(put({ id: "u1" }, undefined, { options: [{ name: "link", value: "true" }] }))
+	})
+
 	test("a storyloco plugin's value is only what its plugin would store", async () => {
 		const plugin = (field_type: string, value: unknown, existing?: unknown, extra = {}) =>
 			check("custom", value, existing, { field_type, ...extra })
@@ -87,7 +133,11 @@ describe("editor schemas", () => {
 		await refused(plugin("uiloco-dates", { timezone: "Mars/Olympus", dates: [] }))
 		expect(
 			await plugin("uiloco-link", { type: "external", url: "https://x.test", text: "Go" })
-		).toMatchObject({ type: "external", url: "https://x.test", text: "Go" })
+		).toMatchObject({
+			type: "external",
+			url: "https://x.test",
+			text: "Go",
+		})
 		await refused(plugin("uiloco-link", { type: "external", url: "javascript:alert(1)" }))
 		await refused(plugin("uiloco-link", { type: "asset", text: "A" }, { type: "external" }))
 	})
