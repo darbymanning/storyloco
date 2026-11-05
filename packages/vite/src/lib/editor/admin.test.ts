@@ -66,3 +66,60 @@ test("another path in, and /admin left to the site", async () => {
 	expect((await visit("/admin", 404, own)).status).toBe(404)
 	expect((await visit("/about?go", 200, own)).status).toBe(303)
 })
+
+test("a shared link's token stays on its page, so the address copied from there lets the next person in", async () => {
+	const token = "t".repeat(24)
+	const asked: Array<string> = []
+	const real = globalThis.fetch
+	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const body = JSON.parse(String(init?.body ?? "{}")) as { op: string; token?: string }
+		asked.push(body.op)
+		if (body.op === "open")
+			return body.token === token
+				? Response.json({ handle: `h${asked.length}` })
+				: new Response(null, { status: 404 })
+		if (body.op === "who")
+			return Response.json({
+				user: { id: "g", name: null, email: null },
+				guest: { role: "view", named: false, by: null },
+			})
+		return real(input, init)
+	}) as typeof fetch
+	try {
+		// the link itself lands on its page with the token kept
+		const opened = await visit(`/__storyloco/share/${token}?to=%2Fform%3Fa%3D1`, 200)
+		expect(opened.headers.get("location")).toBe(`/form?a=1&sl_share=${token}`)
+
+		// someone else, given that address, is let in on the same request, with a cookie for the next
+		const jar = new Map<string, string>()
+		const locals: { guest?: unknown } = {}
+		const path = `/form?sl_share=${token}`
+		const event = {
+			url: new URL(`https://site.test${path}`),
+			request: new Request(`https://site.test${path}`, { headers: { accept: "text/html" } }),
+			locals,
+			cookies: {
+				get: (name: string) => jar.get(name),
+				set: (name: string, value: string) => void jar.set(name, value),
+				delete: (name: string) => void jar.delete(name),
+			},
+		}
+		await handle({ event, resolve: async () => new Response("page") } as never)
+		expect(jar.get("sl_guest_1")).toBeString()
+		expect(locals.guest).toMatchObject({ role: "view" })
+
+		// a token that isn't a shared link's lets nobody in
+		const before = asked.length
+		const other = {
+			...event,
+			url: new URL("https://site.test/form?sl_share=nope-not-a-token-at-all"),
+			locals: {},
+		}
+		jar.clear()
+		await handle({ event: other, resolve: async () => new Response("page") } as never)
+		expect(jar.size).toBe(0)
+		expect(asked.length).toBe(before + 1)
+	} finally {
+		globalThis.fetch = real
+	}
+})

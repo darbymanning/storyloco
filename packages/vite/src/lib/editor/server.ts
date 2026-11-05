@@ -170,6 +170,19 @@ const local = (path: string | null | undefined) =>
 	path?.startsWith("/") && !path.startsWith("//") ? path : "/"
 
 const cookie = { path: "/", httpOnly: true, secure: true, sameSite: "lax" } as const
+
+/**
+ * A shared draft's link stays on the page it opens, so the address someone copies from there and
+ * passes on lets the next person in too, as the link itself would
+ */
+const SHARE = "sl_share"
+const share_token = (value: string | null) => (value && /^[\w-]{20,64}$/.test(value) ? value : null)
+
+/** A guest's handle from moxy, for a shared draft's link (`open`) or an invitation's (`redeem`) */
+const handle_for = (moxy: string, op: "open" | "redeem", token: string, origin: string) =>
+	ask_moxy<{ handle: string }>({ url: moxy }, "/apps/editor/guest", { op, token, origin }).catch(
+		() => null
+	)
 /** A sign-in that lands in edit mode, as ⌘⇧E does, from one of `editor`'s `entry` ways in */
 const EDIT_ON = "sl_edit_on"
 /** `admin`, `/admin/` and `/admin` alike */
@@ -196,11 +209,8 @@ async function route(
 	const shared = path.match(/^\/(share|guest)\/([\w-]{20,64})$/)
 	if (shared && request.method === "GET") {
 		const known = await own_space(space).catch(() => null)
-		const reply = await ask_moxy<{ handle: string }>({ url: moxy }, "/apps/editor/guest", {
-			op: shared[1] === "share" ? "open" : "redeem",
-			token: shared[2],
-			origin: url.origin,
-		}).catch(() => null)
+		const open = shared[1] === "share"
+		const reply = await handle_for(moxy, open ? "open" : "redeem", shared[2], url.origin)
 		if (!reply)
 			return new Response(
 				`<!doctype html><meta name="viewport" content="width=device-width"><title>Link expired</title><body style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;color:#1b243f"><h1 style="font-size:1.375rem">This link doesn’t work any more</h1><p>It may have expired, been used already, or had sharing turned off. Ask whoever sent it for a new one.</p></body>`,
@@ -210,7 +220,10 @@ async function route(
 				}
 			)
 		cookies.set(guest_cookie_for(known), reply.handle, { ...cookie, maxAge: 60 * 60 * 24 * 30 })
-		redirect(303, local(url.searchParams.get("to")))
+		// an invitation is one person's, and used up; a shared link can go on to others from the page
+		const to = new URL(local(url.searchParams.get("to")), url)
+		if (open) to.searchParams.set(SHARE, shared[2])
+		redirect(303, to.pathname + to.search + to.hash)
 	}
 
 	if (path === "/signin") {
@@ -462,6 +475,26 @@ function create({
 			} catch (e) {
 				if (e === SIGNED_OUT) event.cookies.delete(guest_name, { path: "/" })
 				else console.error(e)
+			}
+		}
+
+		// a page's address passed on from a shared link: its token lets this person in as the link would
+		const passed = share_token(event.url.searchParams.get(SHARE))
+		const locals = event.locals as { editor?: Editor; guest?: Guest }
+		if (
+			passed &&
+			space &&
+			!live &&
+			!locals.editor &&
+			!locals.guest &&
+			event.request.method === "GET"
+		) {
+			const reply = await handle_for(broker, "open", passed, event.url.origin)
+			if (reply) {
+				event.cookies.set(guest_name, reply.handle, { ...cookie, maxAge: 60 * 60 * 24 * 30 })
+				locals.guest = await guest_of(broker, reply.handle).catch(
+					(e) => (console.error(e), undefined)
+				)
 			}
 		}
 
