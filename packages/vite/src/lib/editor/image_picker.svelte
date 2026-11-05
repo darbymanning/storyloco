@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { untrack } from "svelte"
-	import type { Asset } from "./server.js"
+	import type { Asset as Stored } from "./server.js"
 
+	/** Storyblok's assets and folders go by number, an R2 Assets bucket's by uuid */
+	type Id = number | string
+	type Asset = Omit<Stored, "id"> & { id: Id }
 	type Current = {
-		id?: number | null
+		id?: Id | null
 		filename?: string | null
 		alt?: string | null
 		focus?: string | null
 	}
-	type Choice = { asset: number; alt: string; focus: string; filename: string }
-	type Folder = { id: number; name: string; parent: number | null }
+	type Choice = { asset: Id; alt: string; focus: string; filename: string }
+	type Folder = { id: Id; name: string; parent: Id | null }
 
 	let {
 		current,
@@ -24,11 +27,11 @@
 		current: Current
 		/** Only images, as an image field takes; otherwise any file */
 		images?: boolean
-		list: (search: string, page: number, folder?: number) => Promise<{ assets: Array<Asset> }>
+		list: (search: string, page: number, folder?: Id) => Promise<{ assets: Array<Asset> }>
 		/** The library's folders, to browse and upload into */
 		folders?: () => Promise<{ folders: Array<Folder> }>
 		/** A file added to the library, in this folder */
-		put: (file: File, folder?: number) => Promise<Asset>
+		put: (file: File, folder?: Id) => Promise<Asset>
 		save: (choice: Choice) => Promise<string | null>
 		close: () => void
 		/** Alt text written for the image, by AI */
@@ -48,10 +51,10 @@
 
 	let search = $state("")
 	let tree = $state<Array<Folder>>([])
-	let folder = $state<number | null>(null)
+	let folder = $state<Id | null>(null)
 	/** The folders shown open in the tree */
-	let opened = $state<Array<number>>([])
-	const children_of = (parent: number | null) =>
+	let opened = $state<Array<Id>>([])
+	const children_of = (parent: Id | null) =>
 		tree.filter((f) => f.parent === parent).sort((a, b) => a.name.localeCompare(b.name))
 	let assets = $state<Array<Asset>>([])
 	let page = $state(1)
@@ -121,7 +124,7 @@
 		}
 	}
 
-	function browse(to: number | null) {
+	function browse(to: Id | null) {
 		folder = to
 		if (to !== null && !opened.includes(to)) opened.push(to)
 		load()
@@ -139,7 +142,7 @@
 		tip = { text: name.textContent ?? "", x: box.right + 8, y: box.top + box.height / 2 }
 	}
 
-	function toggle(id: number) {
+	function toggle(id: Id) {
 		opened = opened.includes(id) ? opened.filter((open) => open !== id) : [...opened, id]
 	}
 
@@ -207,7 +210,7 @@
 	}
 </script>
 
-{#snippet Branch(parent: number | null)}
+{#snippet Branch(parent: Id | null)}
 	<ul>
 		{#each children_of(parent) as child (child.id)}
 			{@const nested = children_of(child.id).length > 0}

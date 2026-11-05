@@ -29,7 +29,10 @@ import {
 	is_rich,
 	locate,
 	rich_compact,
+	is_r2_file,
+	r2_summary,
 	rich_images,
+	type R2Asset,
 	rich_supported,
 	paragraphs,
 	shows_rich,
@@ -1431,7 +1434,7 @@ type Asset = {
 	filename?: string | null
 	alt?: string | null
 	focus?: string | null
-	id?: number | null
+	id?: number | string | null
 }
 type Spot = {
 	story: number
@@ -1443,6 +1446,8 @@ type Spot = {
 	asset: Asset
 	/** a multiasset field's images, for taking this one out */
 	list?: Array<Asset>
+	/** an R2 Assets field's: the block it's in, whose field says which bucket */
+	r2?: string
 }
 
 /** An image URL's path without the image service's resizing, so a rendition matches its field */
@@ -1470,7 +1475,12 @@ function image_field(img: HTMLImageElement, candidates: Iterable<Blok>, story: n
 			const list: Array<unknown> = Array.isArray(value) ? value : [value]
 			list.forEach((item, i) => {
 				const asset = item as Asset | null
-				if (asset?.fieldtype === "asset" && asset.filename && asset_path(asset.filename) === path)
+				const r2 = is_r2_file(item)
+				if (
+					(asset?.fieldtype === "asset" || r2) &&
+					asset?.filename &&
+					asset_path(asset.filename) === path
+				)
 					found.push({
 						story,
 						uid: blok._uid!,
@@ -1478,6 +1488,7 @@ function image_field(img: HTMLImageElement, candidates: Iterable<Blok>, story: n
 						index: Array.isArray(value) ? i : undefined,
 						asset,
 						list: Array.isArray(value) ? (value as Array<Asset>) : undefined,
+						r2: r2 ? String(blok.component) : undefined,
 					})
 			})
 		}
@@ -1540,11 +1551,49 @@ async function put(file: File, folder?: number) {
 }
 
 async function set_image(spot: Spot, choice: Omit<Choice, "filename">) {
-	const { story, uid, field, index, path } = spot
-	if (!(await send({ op: "image", story, uid, field, index, path, ...choice })))
-		return last_problem()
+	const { story, uid, field, index, path, list } = spot
+	// an R2 Assets field takes which file and its alt and focus; the server finds the file in the bucket
+	const chosen = { id: choice.asset, alt: choice.alt, focus: choice.focus }
+	const sent = spot.r2
+		? send({
+				op: "fields",
+				story,
+				uid,
+				values: {
+					[field]: list
+						? list.map((asset, i) =>
+								i === index
+									? chosen
+									: { id: asset.id, alt: asset.alt ?? "", focus: asset.focus ?? "" }
+							)
+						: chosen,
+				},
+			})
+		: send({ op: "image", story, uid, field, index, path, ...choice })
+	if (!(await sent)) return last_problem()
 	forget(story)
 	return null
+}
+
+/** Where an R2 Assets field's files come from: its own bucket, through moxy */
+type R2 = { component: string; field: string }
+const r2_of = (spot: Spot): R2 | undefined =>
+	spot.r2 ? { component: spot.r2, field: spot.field } : undefined
+
+/** A file added to an R2 Assets field's bucket, sent straight to moxy by a URL the server asks for */
+async function put_r2(r2: R2, file: File, folder?: number | string) {
+	const { url } = await call<{ url: string }>({ op: "r2_upload", ...r2 })
+	const form = new FormData()
+	form.append("file", file)
+	if (folder) form.append("folder_id", String(folder))
+	const res = await fetch(url, { method: "POST", body: form })
+	const body = (await res.json().catch(() => null)) as {
+		data?: Array<R2Asset>
+		error?: string
+	} | null
+	const added = body?.data?.[0]
+	if (!res.ok || !added) throw new Error(body?.error ?? `Upload failed (${res.status})`)
+	return r2_summary(added)
 }
 
 /** An image field emptied, or the one image taken out of a list of them */
@@ -1625,6 +1674,7 @@ function offer(img: HTMLImageElement, spot: Spot) {
 		else
 			open_picker({
 				current: spot.asset,
+				r2: r2_of(spot),
 				save: ({ asset, alt, focus }) => set_image(spot, { asset, alt, focus }),
 			})
 	}
@@ -1708,7 +1758,8 @@ async function dropped(event: DragEvent) {
 	if (!spot) return
 	show_hint(img, true)
 	try {
-		const asset = await put(file)
+		const r2 = r2_of(spot)
+		const asset = r2 ? await put_r2(r2, file) : await put(file)
 		const failed = await set_image(spot, { asset: asset.id, alt: asset.alt, focus: "" })
 		if (failed) toast(failed)
 	} catch (e) {
@@ -1718,7 +1769,7 @@ async function dropped(event: DragEvent) {
 	}
 }
 
-type Choice = { asset: number; alt: string; focus: string; filename: string }
+type Choice = { asset: number | string; alt: string; focus: string; filename: string }
 
 /** The image picker, loaded only when someone opens it */
 export async function open_picker({
@@ -1726,12 +1777,15 @@ export async function open_picker({
 	save,
 	images = true,
 	closed,
+	r2,
 }: {
 	current: Asset
 	save: (choice: Choice) => Promise<string | null>
 	images?: boolean
 	/** Hears it close, chosen or not */
 	closed?: () => void
+	/** An R2 Assets field's, whose files are in its own bucket rather than Storyblok's library */
+	r2?: R2
 }) {
 	const { default: Picker } = await import("./image_picker.svelte")
 	const picker = mount(Picker, {
@@ -1739,10 +1793,12 @@ export async function open_picker({
 		props: {
 			current,
 			images,
-			list: (search: string, page: number, folder?: number) =>
-				call({ op: "assets", search, page, folder }),
-			folders: () => call({ op: "folders" }),
-			put,
+			list: (search: string, page: number, folder?: number | string) =>
+				call({ op: r2 ? "r2_assets" : "assets", ...r2, search, page, folder }),
+			folders: () => call({ op: r2 ? "r2_folders" : "folders", ...r2 }),
+			// Storyblok's folders go by number, as its picker gives them
+			put: (file: File, folder?: number | string) =>
+				r2 ? put_r2(r2, file, folder) : put(file, folder as number | undefined),
 			suggest: (url: string) =>
 				call<{ alt: string }>({ op: "ai", do: "alt", url }).then(({ alt }) => alt),
 			save,
@@ -1764,7 +1820,8 @@ export async function rich_inserts(field: Field | undefined): Promise<Inserts> {
 					current: {},
 					closed: () => resolve(null),
 					save: async ({ asset, alt, filename }) => {
-						resolve({ src: filename, alt, id: asset })
+						// from Storyblok's library, so a number
+						resolve({ src: filename, alt, id: asset as number })
 						return null
 					},
 				})

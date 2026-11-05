@@ -533,9 +533,48 @@ export const plugin_of = (field: Plugged) => {
 			"uiloco-currency": "currency",
 			"uiloco-blok-select": "blok_select",
 			"uiloco-dates": "dates",
+			"uiloco-asset": "r2",
 		} as Record<string, string>
 	)[type]
 }
+
+/** A file in an R2 Assets bucket, as moxy describes it */
+export type R2Asset = {
+	id: string
+	links?: { self?: string }
+	attributes: {
+		filename?: string
+		alt?: string
+		title?: string
+		source?: string
+		copyright?: string
+		name?: string
+		focus?: string
+		width?: number
+		height?: number
+		format?: string | null
+		content_type?: string | null
+		size_bytes?: number
+	}
+}
+
+/** A file in the bucket as the picker shows it, like an asset from Storyblok */
+export const r2_summary = (asset: R2Asset) => ({
+	id: asset.id,
+	filename: asset.links?.self ?? "",
+	alt: asset.attributes.alt ?? "",
+	title: asset.attributes.title ?? "",
+	copyright: asset.attributes.copyright ?? "",
+	focus: asset.attributes.focus ?? "",
+	content_type: asset.attributes.content_type ?? null,
+})
+
+/** A file from an R2 Assets bucket, as its plugin stores it in a field: the bucket's record of it in `_data` */
+export const is_r2_file = (value: unknown): value is { id: string; filename: string } =>
+	!!value &&
+	typeof value === "object" &&
+	typeof (value as { filename?: unknown }).filename === "string" &&
+	(value as { _data?: { type?: unknown } })._data?.type === "asset"
 
 /** A name as the theme plugin keys it, the way radashi's `dash` does: `Dark Green` → `dark-green` */
 export function dash(name: string) {
