@@ -450,7 +450,7 @@
 									><path
 										d="M9.94 14.06 4 20M14 4l1.1 2.9L18 8l-2.9 1.1L14 12l-1.1-2.9L10 8l2.9-1.1zM19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"
 									/></svg
-								><span class="tip" aria-hidden="true">Write it with AI</span></button
+								><span class="ai-tip" aria-hidden="true">Write it with AI</span></button
 							>
 						{/if}
 					</span>
@@ -840,7 +840,7 @@
 				stroke-width: 2;
 			}
 
-			& .tip {
+			& .ai-tip {
 				background-color: var(--ink);
 				border-radius: 0.5rem;
 				color: var(--bg);
@@ -869,7 +869,7 @@
 				}
 			}
 
-			&:is(:hover, :focus-visible):not(.busy) .tip {
+			&:is(:hover, :focus-visible):not(.busy) .ai-tip {
 				opacity: 1;
 				translate: 0 0;
 			}
