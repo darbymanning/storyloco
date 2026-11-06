@@ -476,6 +476,9 @@
 	const here = $derived(editor.here)
 	/* Those on this page first, then the rest of the site */
 	const everyone = $derived([...here.people, ...here.elsewhere])
+	$effect(() => {
+		if (!everyone.length) everyone_open = false
+	})
 	const other_site = ({ page }: Person) =>
 		!!page && new URL(page, location.origin).origin !== location.origin
 	const place_of = ({ page }: Person) => (page ? page_name(page, location.origin) : "")

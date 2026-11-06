@@ -535,6 +535,34 @@ describe("who's where on the site", () => {
 		expect(ids(seen.here)).toEqual(["a1"])
 	})
 
+	test("a page that isn't a safe address is ignored, as anyone in the room can say anything", () => {
+		const bad = [
+			"http://[",
+			"javascript:alert(1)",
+			"data:text/html,x",
+			"https://a.test//evil.test",
+			"//",
+		]
+		const people = [tab("me", 1, "/here"), ...bad.map((page, i) => tab(`x${i}`, 10 + i, page))]
+		const seen = who_is_where({ ...base, people, following: "10" })
+		expect(seen.elsewhere).toEqual([])
+		expect(seen.followed).toBeNull()
+		// a bare path, from a tab on an older editor, is fine
+		const old = who_is_where({ ...base, people: [tab("me", 1, "/here"), tab("a", 2, "/news")] })
+		expect(ids(old.elsewhere)).toEqual(["a"])
+	})
+
+	test("the latest tab doesn't compare this browser's clock with the room's", () => {
+		// moved a moment ago by a slow clock, against a later join by the room's
+		const people = [
+			tab("me", 1, "/here"),
+			tab("moved", 2, "/a", 1000),
+			tab("idle", 2, "/b", 900000),
+		]
+		const moved = new Map([["moved", 500]])
+		expect(ids(who_is_where({ ...base, people, moved }).elsewhere)).toEqual(["moved"])
+	})
+
 	test("a guest sees their own page, and whoever they follow", () => {
 		const people = [
 			tab("me", "g", "/here"),

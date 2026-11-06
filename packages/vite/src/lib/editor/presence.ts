@@ -388,7 +388,7 @@ const views = new Map<string, View>()
 
 function went(to: View) {
 	views.set(to.id, to)
-	if (to.id !== editor.here.followed?.id) return
+	if (!editor.following || to.id !== editor.here.followed?.id) return
 	const node = to.uid ? tools.element_of(to.uid) : null
 	const top = node
 		? scrollY +
@@ -425,11 +425,14 @@ function glide(top: number) {
 }
 
 let going: string | null = null
+/** A page of theirs that going to didn't reach, like one that redirects, so it isn't tried again and again */
+let unreachable: string | null = null
 
 /** The followed person moved to another page: go there too */
 async function along() {
 	const them = editor.here.followed
-	if (!them?.page || them.page === page_of(location.href) || them.page === going) return
+	if (!them?.page || them.page === page_of(location.href)) return
+	if (them.page === going || them.page === unreachable) return
 	const there = new URL(them.page, location.origin)
 	// another site has its own sign-in, so following stops at its edge
 	if (there.origin !== location.origin) return
@@ -437,6 +440,7 @@ async function along() {
 	await kit()
 		.goto(there.pathname + there.search)
 		.catch(() => {})
+	unreachable = them.page === page_of(location.href) ? null : them.page
 	going = null
 }
 
@@ -444,6 +448,7 @@ let frame_el: HTMLElement | null = null
 
 /** A frame round the page in the followed person's colour, its label the way to stop */
 function frame_following() {
+	if (!editor.following && !frame_el) return
 	const them = editor.here.followed
 	if (!them) {
 		// still following, while they reload: it comes down once following stops

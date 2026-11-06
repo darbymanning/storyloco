@@ -618,10 +618,28 @@ type Connected = {
 	joined: number
 }
 
-/** Someone's page, when they've more than one open: the one they last moved to, or opened */
+/**
+ * Someone's page, when they've more than one open: the one they last moved in, as seen from here,
+ * else the one opened last, by the room's clock. The two clocks can't be compared with each other.
+ */
 function latest<T extends Connected>(tabs: ReadonlyArray<T>, moved: ReadonlyMap<string, number>) {
-	const when = (tab: T) => moved.get(tab.id) ?? tab.joined
-	return tabs.reduce((best, tab) => (when(tab) > when(best) ? tab : best))
+	return tabs.reduce((best, tab) => {
+		const [a, b] = [moved.get(tab.id) ?? 0, moved.get(best.id) ?? 0]
+		return a > b || (a === b && tab.joined > best.joined) ? tab : best
+	})
+}
+
+/**
+ * Whether a page someone says they're on can be shown and gone to. It comes from whoever's in the
+ * room, and the room passes on anything, so it might not be an address, or a safe one.
+ */
+function usable_page(page: string) {
+	try {
+		const url = new URL(page, "https://site.invalid")
+		return /^https?:$/.test(url.protocol) && !url.pathname.startsWith("//")
+	} catch {
+		return false
+	}
 }
 
 /**
@@ -648,6 +666,7 @@ export function who_is_where<T extends Connected>({
 	const users = new Map<string, Array<T>>()
 	for (const person of people) {
 		if (!person.page || person.id === me || person.user.id === my_user) continue
+		if (!usable_page(person.page)) continue
 		const key = String(person.user.id)
 		users.set(key, [...(users.get(key) ?? []), person])
 	}

@@ -113,7 +113,11 @@ export function on_comments(listener: (page: string) => void) {
 }
 
 /** What this person has selected, for the others to outline */
-export const select = (selected: Person["select"]) => post({ t: "select", select: selected })
+export const select = (selected: Person["select"]) => {
+	selecting = selected
+	post({ t: "select", select: selected })
+}
+let selecting: Person["select"] = null
 
 // --- the connection
 
@@ -276,6 +280,9 @@ on_navigate(() => {
 	here()
 	setTimeout(() => {
 		for (const room of rooms.values()) join(room)
+		// the room drops a selection with the page; a change of query can leave it still showing here,
+		// and the overlay has let go of any that isn't by now
+		if (selecting) post({ t: "select", select: selecting })
 	})
 	for (const listener of cursor_listeners) listener({ id: "*", gone: true })
 })
