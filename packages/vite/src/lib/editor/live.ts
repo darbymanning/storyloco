@@ -9,6 +9,7 @@ import {
 	call,
 	editor,
 	load_inbox,
+	on_follow,
 	on_navigate,
 	on_sent,
 	refresh,
@@ -158,6 +159,7 @@ async function open() {
 		ws.onopen = () => {
 			attempts = 0
 			here()
+			say_following()
 			for (const room of rooms.values()) join(room)
 			// saves made while this page was cut off weren't heard: catch up with them
 			if (was_open) refresh()
@@ -273,6 +275,10 @@ function receive(message: Message) {
 			return
 	}
 }
+
+/** Who this page follows, as a guest hears only of their own page and whoever that is */
+const say_following = () => post({ t: "follow", user: editor.following })
+on_follow(say_following)
 
 on_navigate(() => {
 	// a new page leaves the fields of the last one in the room; any still showing here join again,
