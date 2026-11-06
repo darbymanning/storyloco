@@ -431,19 +431,30 @@
 
 				<label>
 					<span>Alt text</span>
-					<textarea
-						rows="3"
-						bind:value={alt}
-						placeholder="What the image shows, for people who can’t see it"></textarea>
+					<span class="alt">
+						<textarea
+							rows="3"
+							bind:value={alt}
+							readonly={suggesting}
+							placeholder="What the image shows, for people who can’t see it"></textarea>
+						<!-- the image service can't describe a vector -->
+						{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
+							<button
+								type="button"
+								class="ai"
+								class:busy={suggesting}
+								aria-label={suggesting ? "Looking at the image" : "Write it with AI"}
+								disabled={suggesting}
+								onclick={suggest_alt}
+								><svg viewBox="0 0 24 24" aria-hidden="true"
+									><path
+										d="M9.94 14.06 4 20M14 4l1.1 2.9L18 8l-2.9 1.1L14 12l-1.1-2.9L10 8l2.9-1.1zM19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"
+									/></svg
+								><span class="tip" aria-hidden="true">Write it with AI</span></button
+							>
+						{/if}
+					</span>
 				</label>
-				{#if suggest && IMAGE.test(chosen.filename) && !/\.svg$/i.test(chosen.filename)}
-					<p class="hint">
-						<button class="link" type="button" disabled={suggesting} onclick={suggest_alt}>
-							{suggesting ? "Looking at the image…" : alt ? "Suggest another" : "Suggest alt text"}
-						</button>
-						· check it says what matters here
-					</p>
-				{/if}
 			</section>
 		</div>
 
@@ -770,6 +781,105 @@
 		font: inherit;
 		padding: 0;
 		text-decoration: underline;
+	}
+
+	/* The alt text, with AI to write it tucked into its corner, as in the panel */
+	.alt {
+		display: block;
+		position: relative;
+
+		& textarea {
+			display: block;
+			padding-inline-end: 2.5rem;
+		}
+
+		& textarea[readonly] {
+			color: var(--muted);
+		}
+
+		& .ai {
+			background: none;
+			block-size: 1.75rem;
+			border: 0;
+			border-radius: 0.375rem;
+			color: var(--muted);
+			cursor: pointer;
+			display: grid;
+			inline-size: 1.75rem;
+			inset: 0.3125rem 0.3125rem auto auto;
+			padding: 0;
+			place-items: center;
+			position: absolute;
+			transition:
+				background-color 0.15s,
+				color 0.15s;
+
+			&:hover:not(:disabled) {
+				background: color-mix(in srgb, var(--ink) 10%, transparent);
+				color: var(--accent);
+			}
+
+			&:focus-visible {
+				outline: 2px solid var(--accent);
+				outline-offset: 1px;
+			}
+
+			&.busy {
+				animation: pulse 1.4s ease-in-out infinite;
+				color: var(--accent);
+				cursor: wait;
+			}
+
+			& svg {
+				block-size: 1rem;
+				fill: none;
+				inline-size: 1rem;
+				stroke: currentColor;
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				stroke-width: 2;
+			}
+
+			& .tip {
+				background-color: var(--ink);
+				border-radius: 0.5rem;
+				color: var(--bg);
+				font-size: 0.75rem;
+				font-weight: 500;
+				inset: auto 0 calc(100% + 0.5rem) auto;
+				opacity: 0;
+				padding: 0.375rem 0.5rem;
+				pointer-events: none;
+				position: absolute;
+				transition:
+					opacity 0.2s ease,
+					translate 0.2s ease;
+				translate: 0 0.25rem;
+				white-space: nowrap;
+				z-index: 1;
+
+				&::after {
+					background-color: inherit;
+					block-size: 0.3125rem;
+					clip-path: polygon(0 0, 100% 0, 50% 100%);
+					content: "";
+					inline-size: 0.625rem;
+					inset: 100% 0.5625rem auto auto;
+					position: absolute;
+				}
+			}
+
+			&:is(:hover, :focus-visible):not(.busy) .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
+		}
+	}
+
+	@keyframes pulse {
+		50% {
+			opacity: 0.5;
+		}
 	}
 
 	input[type="search"],
