@@ -22,6 +22,9 @@ import {
 	dash,
 	date_entry,
 	plugin_of,
+	page_name,
+	page_of,
+	who_is_where,
 	theme_choices,
 	set_asset,
 	set_text,
@@ -450,5 +453,128 @@ describe("a richtext field's own images", () => {
 		expect(rich_images(doc)).toEqual([logo])
 		expect(rich_images({ type: "doc", content: [{ type: "paragraph" }] })).toEqual([])
 		expect(rich_images(null)).toEqual([])
+	})
+})
+
+describe("who's where on the site", () => {
+	test("a page is its site, path and query, without what's only for this visit", () => {
+		expect(page_of("https://a.test/news?page=2")).toBe("https://a.test/news?page=2")
+		expect(page_of("https://a.test/")).toBe("https://a.test/")
+		expect(
+			page_of("https://a.test/form?sl_share=abc&comment=9&_storyblok=1&_storyblok_tk[x]=2")
+		).toBe("https://a.test/form")
+		expect(page_of("https://a.test/news?page=2&sl_share=abc")).toBe("https://a.test/news?page=2")
+		// two sites in one space each have a home page, and they aren't the same one
+		expect(page_of("https://a.test/")).not.toBe(page_of("https://b.test/"))
+		// the room keeps 200 characters: a query that wouldn't fit goes whole
+		expect(page_of(`https://a.test/news?q=${"x".repeat(300)}`)).toBe("https://a.test/news")
+	})
+
+	test("a page is named as someone would say it", () => {
+		const origin = "https://a.test"
+		expect(page_name("https://a.test/", origin)).toBe("Home")
+		expect(page_name("https://a.test/news?page=2", origin)).toBe("/news?page=2")
+		expect(page_name("https://a.test/caf%C3%A9", origin)).toBe("/café")
+		expect(page_name("https://a.test/50%off", origin)).toBe("/50%off")
+		expect(page_name("https://b.test/", origin)).toBe("b.test")
+		expect(page_name("https://b.test/form", origin)).toBe("b.test/form")
+		// a tab still on an older editor says only the path
+		expect(page_name("/news", origin)).toBe("/news")
+	})
+
+	const tab = (id: string, user: number | string, page: string | null, joined = 0) => ({
+		id,
+		user: { id: user },
+		page,
+		joined,
+	})
+	const ids = (list: Array<{ id: string }>) => list.map(({ id }) => id)
+	const base = { me: "me", page: "/here", moved: new Map<string, number>(), following: null }
+
+	test("others are on this page or elsewhere, and never me, in any tab", () => {
+		const { here, elsewhere, followed } = who_is_where({
+			...base,
+			people: [
+				tab("me", 1, "/here"),
+				tab("my-other-tab", 1, "/there"),
+				tab("a", 2, "/here"),
+				tab("b", 3, "/there"),
+				tab("just-connected", 4, null),
+			],
+		})
+		expect(ids(here)).toEqual(["a"])
+		expect(ids(elsewhere)).toEqual(["b"])
+		expect(followed).toBeNull()
+	})
+
+	test("someone with several tabs is one person: here if any tab is, else where they moved last", () => {
+		const people = [tab("me", 1, "/here"), tab("a1", 2, "/old", 1), tab("a2", 2, "/new", 2)]
+		expect(ids(who_is_where({ ...base, people }).elsewhere)).toEqual(["a2"])
+		const moved = new Map([["a1", 9]])
+		expect(ids(who_is_where({ ...base, people, moved }).elsewhere)).toEqual(["a1"])
+		const present = [...people, tab("a3", 2, "/here", 0)]
+		const seen = who_is_where({ ...base, people: present })
+		expect(ids(seen.here)).toEqual(["a3"])
+		expect(seen.elsewhere).toEqual([])
+	})
+
+	test("following goes by the person, so it survives a new tab or a reload", () => {
+		const before = [tab("me", 1, "/here"), tab("old-connection", 2, "/here")]
+		const after = [tab("me", 1, "/here"), tab("new-connection", 2, "/next")]
+		expect(who_is_where({ ...base, people: before, following: "2" }).followed?.id).toBe(
+			"old-connection"
+		)
+		expect(who_is_where({ ...base, people: after, following: "2" }).followed?.id).toBe(
+			"new-connection"
+		)
+		// they're followed to the tab they're using, even with an older one still on this page
+		const both = [tab("me", 1, "/here"), tab("a1", 2, "/here", 1), tab("a2", 2, "/next", 2)]
+		const moved = new Map([["a2", 5]])
+		const seen = who_is_where({ ...base, people: both, following: "2", moved })
+		expect(seen.followed?.id).toBe("a2")
+		expect(ids(seen.here)).toEqual(["a1"])
+	})
+
+	test("a page that isn't a safe address is ignored, as anyone in the room can say anything", () => {
+		const bad = [
+			"http://[",
+			"javascript:alert(1)",
+			"data:text/html,x",
+			"https://a.test//evil.test",
+			"//",
+		]
+		const people = [tab("me", 1, "/here"), ...bad.map((page, i) => tab(`x${i}`, 10 + i, page))]
+		const seen = who_is_where({ ...base, people, following: "10" })
+		expect(seen.elsewhere).toEqual([])
+		expect(seen.followed).toBeNull()
+		// a bare path, from a tab on an older editor, is fine
+		const old = who_is_where({ ...base, people: [tab("me", 1, "/here"), tab("a", 2, "/news")] })
+		expect(ids(old.elsewhere)).toEqual(["a"])
+	})
+
+	test("the latest tab doesn't compare this browser's clock with the room's", () => {
+		// moved a moment ago by a slow clock, against a later join by the room's
+		const people = [
+			tab("me", 1, "/here"),
+			tab("moved", 2, "/a", 1000),
+			tab("idle", 2, "/b", 900000),
+		]
+		const moved = new Map([["moved", 500]])
+		expect(ids(who_is_where({ ...base, people, moved }).elsewhere)).toEqual(["moved"])
+	})
+
+	test("a guest sees their own page, and whoever they follow", () => {
+		const people = [
+			tab("me", "g", "/here"),
+			tab("a", 2, "/here"),
+			tab("b", 3, "/draft"),
+			tab("c", 4, "/other"),
+		]
+		const seen = who_is_where({ ...base, people, guest: true })
+		expect(ids(seen.here)).toEqual(["a"])
+		expect(seen.elsewhere).toEqual([])
+		expect(ids(who_is_where({ ...base, people, guest: true, following: "3" }).elsewhere)).toEqual([
+			"b",
+		])
 	})
 })

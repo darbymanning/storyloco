@@ -1,4 +1,5 @@
-import { editor, follow, kit, on_follow } from "./client.js"
+import { editor, follow, kit, on_follow, resume_following } from "./client.js"
+import { page_of } from "./content.js"
 import {
 	cursor,
 	on_cursor,
@@ -387,7 +388,7 @@ const views = new Map<string, View>()
 
 function went(to: View) {
 	views.set(to.id, to)
-	if (to.id !== editor.following) return
+	if (!editor.following || to.id !== editor.here.followed?.id) return
 	const node = to.uid ? tools.element_of(to.uid) : null
 	const top = node
 		? scrollY +
@@ -424,34 +425,42 @@ function glide(top: number) {
 }
 
 let going: string | null = null
+/** A page of theirs that going to didn't reach, like one that redirects, so it isn't tried again and again */
+let unreachable: string | null = null
 
 /** The followed person moved to another page: go there too */
 async function along() {
-	const them = others_anywhere().find((p) => p.id === editor.following)
-	if (!them?.page || them.page === location.pathname || them.page === going) return
+	const them = editor.here.followed
+	if (!them?.page || them.page === page_of(location.href)) return
+	if (them.page === going || them.page === unreachable) return
+	const there = new URL(them.page, location.origin)
+	// another site has its own sign-in, so following stops at its edge
+	if (there.origin !== location.origin) return
 	going = them.page
 	await kit()
-		.goto(them.page)
+		.goto(there.pathname + there.search)
 		.catch(() => {})
+	unreachable = them.page === page_of(location.href) ? null : them.page
 	going = null
 }
-
-const others_anywhere = () => editor.here.people
 
 let frame_el: HTMLElement | null = null
 
 /** A frame round the page in the followed person's colour, its label the way to stop */
 function frame_following() {
-	const them = others_anywhere().find((p) => p.id === editor.following)
+	if (!editor.following && !frame_el) return
+	const them = editor.here.followed
 	if (!them) {
+		// still following, while they reload: it comes down once following stops
+		if (editor.following) return
 		frame_el?.remove()
 		frame_el = null
 		return
 	}
-	if (!frame_el || frame_el.dataset.id !== them.id) {
+	if (!frame_el || frame_el.dataset.id !== String(them.user.id)) {
 		frame_el?.remove()
 		frame_el = element("following", them.color, `Following ${first_name(them)} · Stop`)
-		frame_el.dataset.id = them.id
+		frame_el.dataset.id = String(them.user.id)
 		frame_el.querySelector(".name")!.addEventListener("click", () => follow(null))
 	}
 }
@@ -501,12 +510,15 @@ export function show(given: Tools) {
 	const stop_follow = on_follow(() => {
 		frame_following()
 		along()
-		const where = editor.following && views.get(editor.following)
+		const followed = editor.here.followed
+		const where = followed && views.get(followed.id)
 		if (where) went(where)
 		redraw()
 	})
 	const stop_people = on_people(() => {
 		redraw()
+		// not left to the next frame: someone followed from before a reload is only just known
+		frame_following()
 		along()
 	})
 	document.addEventListener("pointermove", moved, { passive: true })
@@ -517,6 +529,7 @@ export function show(given: Tools) {
 	addEventListener("touchstart", stop_following, { passive: true })
 	redraw()
 	scrolled()
+	resume_following()
 
 	return () => {
 		stop()
