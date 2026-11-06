@@ -68,10 +68,13 @@
 
 	async function suggest_alt() {
 		if (!suggest || !chosen.filename) return
+		const asked = chosen.filename
 		suggesting = true
 		problem = null
 		try {
-			alt = await suggest(chosen.filename)
+			const written = await suggest(asked)
+			// another image chosen while it was looking keeps its own alt text
+			if (chosen.filename === asked) alt = written
 		} catch (e) {
 			problem = (e as Error).message
 		} finally {
