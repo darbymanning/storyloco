@@ -713,6 +713,25 @@
 						</button>
 						<span class="tip" aria-hidden="true">Comment · C</span>
 					</span>
+					<span class="control">
+						<button
+							class="round"
+							type="button"
+							aria-label="Check accessibility"
+							onclick={() => {
+								open = false
+								import("./overlay.js").then((o) => o.accessibility())
+							}}
+						>
+							<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+								<circle cx="16" cy="4" r="1" />
+								<path
+									d="m18 19 1-7-6 1M5 8l3-3 5.5 3-2.36 3.5M4.24 14.5a5 5 0 0 0 6.88 6M13.76 17.5a5 5 0 0 0-6.88-6"
+								/>
+							</svg>
+						</button>
+						<span class="tip" aria-hidden="true">Accessibility</span>
+					</span>
 					{#each [true, false] as back (back)}
 						{@const what = back ? history.undo : history.redo}
 						<span class="control">

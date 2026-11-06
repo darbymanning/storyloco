@@ -38,6 +38,7 @@
 		pick,
 		label,
 		comment,
+		accessibility,
 	}: {
 		/** The blocks on the page, in order */
 		blocks: () => Array<Block>
@@ -45,6 +46,7 @@
 		pick: (block: Block) => void
 		label: (name: string) => string
 		comment: () => void
+		accessibility: () => void
 	} = $props()
 
 	let view = $state<View | null>(null)
@@ -173,6 +175,8 @@
 		phone: "M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2",
 		tablet: "M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2",
 		comment: "M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z",
+		accessibility:
+			"M16 3a1 1 0 1 0 0 2 1 1 0 0 0 0-2zM18 19l1-7-6 1M5 8l3-3 5.5 3-2.36 3.5M4.24 14.5a5 5 0 0 0 6.88 6M13.76 17.5a5 5 0 0 0-6.88-6",
 		edit: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
 		block:
 			"M5 4h14a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM5 15h6v5H5zM15 15h4v5h-4z",
@@ -222,6 +226,12 @@
 		{ id: "phone", title: "Preview on a phone", icon: ICONS.phone, run: () => open("phone") },
 		{ id: "tablet", title: "Preview on a tablet", icon: ICONS.tablet, run: () => open("tablet") },
 		{ id: "comment", title: "Comment", icon: ICONS.comment, run: () => (close(), comment()) },
+		{
+			id: "accessibility",
+			title: "Check accessibility",
+			icon: ICONS.accessibility,
+			run: () => (close(), accessibility()),
+		},
 		{
 			id: "edit",
 			title: "Stop editing",

@@ -2489,11 +2489,53 @@ export async function tool(
 					},
 					label: label_of,
 					comment,
+					accessibility,
 				},
 			}) as unknown as Tools
 	)
 	await load_schema().catch(() => {})
 	await (await tools).open(view)
+}
+
+let checking_a11y: { close: () => void } | undefined
+
+/** The accessibility check beside the page, or away again */
+export async function accessibility() {
+	if (checking_a11y) return checking_a11y.close()
+	const { default: Panel } = await import("./a11y.svelte")
+	await load_schema().catch(() => {})
+	// after the waiting, so a second click while it was loading doesn't open a second one
+	if (checking_a11y) return
+	const close = () => {
+		unmount(panel)
+		checking_a11y = undefined
+	}
+	const panel = mount(Panel, {
+		target: document.body,
+		props: {
+			is_field: async (img: HTMLImageElement) => !!(await spot_of(img)),
+			block_at: (el: Element) => {
+				const block = block_of(el)
+				const target = block && target_of(block)
+				return target ? { story: target.story, uid: target.uid, name: label_of(target.name) } : null
+			},
+			open_block: ({ story, uid }: { story: number; uid: string }) => {
+				if (!editor.editing) set_editing(true)
+				select({ story, uid })
+			},
+			edit_image: async (img: HTMLImageElement) => {
+				const spot = await spot_of(img)
+				if (!spot) return toast("Couldn’t find that image’s field")
+				open_picker({
+					current: spot.asset,
+					r2: r2_of(spot),
+					save: ({ asset, alt, focus }) => set_image(spot, { asset, alt, focus }),
+				})
+			},
+			close,
+		},
+	})
+	checking_a11y = { close }
 }
 
 /** Place a new comment: the next click on the page says where. A guest from the link says who they are first */
