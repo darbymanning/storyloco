@@ -36,7 +36,9 @@
 		unpublished,
 		type Notice,
 		type Pending,
+		type Person,
 	} from "./client.js"
+	import { page_name } from "./content.js"
 
 	let {
 		accent,
@@ -472,6 +474,20 @@
 
 	/* Everyone else on this page, from the multiplayer room, as initials in their colours */
 	const here = $derived(editor.here)
+	/* Those on this page first, then the rest of the site */
+	const everyone = $derived([...here.people, ...here.elsewhere])
+	const other_site = ({ page }: Person) =>
+		!!page && new URL(page, location.origin).origin !== location.origin
+	const place_of = ({ page }: Person) => (page ? page_name(page, location.origin) : "")
+	const short = (text: string) => (text.length > 28 ? `${text.slice(0, 27)}…` : text)
+
+	/* Follow them, or stop; another site has its own sign-in, so that's opened rather than followed */
+	function go_with(person: Person) {
+		const id = String(person.user.id)
+		if (editor.following === id) return follow(null)
+		if (other_site(person)) return void window.open(person.page!, "_blank", "noopener")
+		follow(id)
+	}
 	// whoever's signed in, as soon as they are, not once the multiplayer room has seen them
 	const me = $derived(here.me?.user ?? editor.user)
 	const initials_of = (name: string | null) =>
@@ -549,17 +565,19 @@
 			{/if}
 		</button>
 
-		{#if here.people.length}
-			<span class="people" role="group" aria-label="Also editing this page">
-				{#each here.people.slice(0, faces) as person (person.id)}
+		{#if everyone.length}
+			<span class="people" role="group" aria-label="Also on this site">
+				{#each everyone.slice(0, faces) as person (person.user.id)}
 					{@const name = person.user.name ?? "Someone"}
-					{@const followed = editor.following === person.id}
+					{@const followed = editor.following === String(person.user.id)}
+					{@const away = here.elsewhere.includes(person)}
 					<button
 						type="button"
 						class="person"
+						class:away
 						style:--c={person.color}
 						aria-pressed={followed}
-						onclick={() => follow(followed ? null : person.id)}
+						onclick={() => go_with(person)}
 						animate:flip={{ duration: 350, easing: cubicOut }}
 						out:scale={{ start: 0.3, duration: 220, easing: backIn, opacity: 0 }}
 					>
@@ -571,24 +589,32 @@
 							/></span
 						>
 						<span class="tip" aria-hidden="true">
-							{followed ? `Following ${name} · click to stop` : `${name} · click to follow`}
+							{followed
+								? `Following ${name} · click to stop`
+								: away
+									? `${name} · ${short(place_of(person))} · ${other_site(person) ? "click to open" : "click to follow"}`
+									: `${name} · click to follow`}
 						</span>
-						<span class="sr">{followed ? `Stop following ${name}` : `Follow ${name}`}</span>
+						<span class="sr"
+							>{followed
+								? `Stop following ${name}`
+								: `${other_site(person) ? "Open the page of" : "Follow"} ${name}${away ? `, on ${place_of(person)}` : ""}`}</span
+						>
 					</button>
 				{/each}
-				{#if here.people.length > faces}
+				{#if everyone.length > faces}
 					<button
 						type="button"
 						class="person more"
 						aria-expanded={everyone_open}
-						aria-label="Everyone here: {here.people.length - faces} more"
+						aria-label="Everyone here: {everyone.length - faces} more"
 						onclick={() => {
 							everyone_open = !everyone_open
 							inbox_open = false
 							reviewing = null
 						}}
 					>
-						+{here.people.length - faces}
+						+{everyone.length - faces}
 					</button>
 				{/if}
 			</span>
@@ -856,36 +882,50 @@
 			</div>
 		</div>
 
-		{#if everyone_open && here.people.length}
-			<div class="review" role="dialog" aria-label="Here now">
-				<p class="heading">Here now</p>
-				<ul class="everyone">
-					{#each here.people as person (person.id)}
-						{@const name = person.user.name ?? "Someone"}
-						{@const followed = editor.following === person.id}
-						<li>
-							<button
-								type="button"
-								style:--c={person.color}
-								aria-pressed={followed}
-								onclick={() => {
-									follow(followed ? null : person.id)
-									everyone_open = false
-								}}
+		{#if everyone_open && everyone.length}
+			<div class="review" role="dialog" aria-label="Who’s here">
+				{#snippet Row(person: Person)}
+					{@const followed = editor.following === String(person.user.id)}
+					{@const away = here.elsewhere.includes(person)}
+					<li>
+						<button
+							type="button"
+							style:--c={person.color}
+							aria-pressed={followed}
+							onclick={() => {
+								go_with(person)
+								everyone_open = false
+							}}
+						>
+							<span class="face" aria-hidden="true"
+								><Face
+									name={person.user.name}
+									photo={person.user.photo}
+									gravatar={person.user.gravatar}
+								/></span
 							>
-								<span class="face" aria-hidden="true"
-									><Face
-										name={person.user.name}
-										photo={person.user.photo}
-										gravatar={person.user.gravatar}
-									/></span
-								>
-								<span class="name">{name}</span>
-								<span class="follow">{followed ? "Following" : "Follow"}</span>
-							</button>
-						</li>
-					{/each}
-				</ul>
+							<span class="who">
+								<span class="name">{person.user.name ?? "Someone"}</span>
+								{#if away}<span class="at-page">{place_of(person)}</span>{/if}
+							</span>
+							<span class="follow"
+								>{followed ? "Following" : other_site(person) ? "Open" : "Follow"}</span
+							>
+						</button>
+					</li>
+				{/snippet}
+				{#if here.people.length}
+					<p class="heading">On this page</p>
+					<ul class="everyone">
+						{#each here.people as person (person.user.id)}{@render Row(person)}{/each}
+					</ul>
+				{/if}
+				{#if here.elsewhere.length}
+					<p class="heading">Elsewhere</p>
+					<ul class="everyone">
+						{#each here.elsewhere as person (person.user.id)}{@render Row(person)}{/each}
+					</ul>
+				{/if}
 			</div>
 		{/if}
 
@@ -1946,6 +1986,13 @@
 			outline-offset: 3px;
 		}
 
+		/* elsewhere on the site: there, but not here with you */
+		&.away:not(:hover, :focus-visible, [aria-pressed="true"]) {
+			box-shadow: 0 0 0 2px var(--bg);
+			opacity: 0.6;
+			scale: 0.86;
+		}
+
 		.tip {
 			font-weight: 500;
 			inset-inline-start: calc(50% - 1rem);
@@ -2107,7 +2154,25 @@
 	.review .everyone {
 		display: grid;
 		gap: 0.125rem;
-		margin-block-start: 0.5rem;
+		margin-block: 0.5rem 0.75rem;
+
+		&:last-child {
+			margin-block-end: 0;
+		}
+
+		& .who {
+			display: grid;
+			flex: 1;
+			min-inline-size: 0;
+		}
+
+		& .at-page {
+			color: var(--muted);
+			font-size: 0.75rem;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
 
 		& button {
 			align-items: center;
@@ -2150,7 +2215,6 @@
 		}
 
 		& .name {
-			flex: 1;
 			font-weight: 500;
 			min-inline-size: 0;
 			overflow: hidden;

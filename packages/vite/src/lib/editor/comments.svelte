@@ -54,7 +54,7 @@
 	 * someone from a partner agency who's signed in since this page loaded
 	 */
 	const people = $derived.by(() => {
-		const here = editor.here.people.flatMap(({ user }) =>
+		const here = [...editor.here.people, ...editor.here.elsewhere].flatMap(({ user }) =>
 			user.name
 				? [{ id: String(user.id), name: user.name, photo: user.photo, gravatar: user.gravatar }]
 				: []

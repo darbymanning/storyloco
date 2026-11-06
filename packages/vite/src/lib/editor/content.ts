@@ -576,6 +576,94 @@ export const is_r2_file = (value: unknown): value is { id: string; filename: str
 	typeof (value as { filename?: unknown }).filename === "string" &&
 	(value as { _data?: { type?: unknown } })._data?.type === "asset"
 
+// --- who's where on the site
+
+/** What's in a page's address only for this visit: a shared link's token, a comment opened, the visual editor's */
+const VISIT_ONLY = /^(sl_share|comment|_storyblok.*)$/
+
+/**
+ * Where a page is, to the others: its site too, as a space can have more than one, each with a `/`,
+ * and its query, as `?page=2` shows something else. The room keeps 200 characters, so a longer query
+ * goes rather than sending someone to half of one.
+ */
+export function page_of(href: string) {
+	const url = new URL(href)
+	for (const key of [...url.searchParams.keys()])
+		if (VISIT_ONLY.test(key)) url.searchParams.delete(key)
+	const whole = url.origin + url.pathname + url.search
+	return whole.length <= 200 ? whole : url.origin + url.pathname
+}
+
+/** A page's address as someone would say it: its path here, with the site's name for another site */
+export function page_name(page: string, origin: string) {
+	// against this site, as a tab from before pages had their site says only the path
+	const url = new URL(page, origin)
+	const path = decoded(url.pathname + url.search)
+	if (url.origin !== origin) return url.host + (path === "/" ? "" : path)
+	return path === "/" ? "Home" : path
+}
+
+function decoded(text: string) {
+	try {
+		return decodeURI(text)
+	} catch {
+		return text
+	}
+}
+
+type Connected = {
+	id: string
+	user: { id: number | string }
+	page: string | null
+	joined: number
+}
+
+/** Someone's page, when they've more than one open: the one they last moved to, or opened */
+function latest<T extends Connected>(tabs: ReadonlyArray<T>, moved: ReadonlyMap<string, number>) {
+	const when = (tab: T) => moved.get(tab.id) ?? tab.joined
+	return tabs.reduce((best, tab) => (when(tab) > when(best) ? tab : best))
+}
+
+/**
+ * Everyone else on the site, one entry a person however many tabs they have open: those on this
+ * page, those elsewhere, and whoever's followed, by the tab they're using. Someone just connected
+ * hasn't said where they are yet. A guest sees only their own page, and whoever they follow.
+ */
+export function who_is_where<T extends Connected>({
+	people,
+	me,
+	page,
+	moved,
+	following,
+	guest = false,
+}: {
+	people: ReadonlyArray<T>
+	me: string | null | undefined
+	page: string | null
+	moved: ReadonlyMap<string, number>
+	following: string | null
+	guest?: boolean
+}) {
+	const my_user = people.find((person) => person.id === me)?.user.id
+	const users = new Map<string, Array<T>>()
+	for (const person of people) {
+		if (!person.page || person.id === me || person.user.id === my_user) continue
+		const key = String(person.user.id)
+		users.set(key, [...(users.get(key) ?? []), person])
+	}
+	const here: Array<T> = []
+	const elsewhere: Array<T> = []
+	let followed: T | null = null
+	for (const [user, tabs] of users) {
+		const last = latest(tabs, moved)
+		if (user === following) followed = last
+		const on_this_page = tabs.filter((tab) => tab.page === page)
+		if (on_this_page.length) here.push(latest(on_this_page, moved))
+		else if (!guest || user === following) elsewhere.push(last)
+	}
+	return { here, elsewhere, followed }
+}
+
 /** A name as the theme plugin keys it, the way radashi's `dash` does: `Dark Green` → `dark-green` */
 export function dash(name: string) {
 	const parts = name

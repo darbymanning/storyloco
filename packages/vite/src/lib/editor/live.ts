@@ -15,7 +15,7 @@ import {
 	set_presence,
 	type Person,
 } from "./client.js"
-import { same } from "./content.js"
+import { page_of, same } from "./content.js"
 
 /*
  * Multiplayer: everyone editing the site holds a socket to its space's room in moxy, which passes
@@ -68,7 +68,10 @@ function changed() {
 }
 
 /** Everyone else on this page, earliest first */
-export const others = () => people.filter((p) => p.id !== me?.id && p.page === location.pathname)
+export const others = () => {
+	const page = page_of(location.href)
+	return people.filter((p) => p.id !== me?.id && p.page === page)
+}
 
 const cursor_listeners = new Set<(cursor: Cursor) => void>()
 
@@ -84,7 +87,7 @@ function post(message: Record<string, unknown>) {
 
 /** Say which page this is, and its story once known */
 export function here() {
-	post({ t: "here", page: location.pathname, story: editor.story?.id ?? null })
+	post({ t: "here", page: page_of(location.href), story: editor.story?.id ?? null })
 }
 
 /** Where this pointer is, for the others to draw */

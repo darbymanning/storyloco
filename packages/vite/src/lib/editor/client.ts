@@ -3,7 +3,7 @@ import { tick } from "svelte"
 import { createSubscriber } from "svelte/reactivity"
 import type { ISbStoryData } from "@storyblok/svelte"
 import type { EditorUser } from "./server.js"
-import { find_blok, like_page } from "./content.js"
+import { find_blok, like_page, page_of, who_is_where } from "./content.js"
 
 export type { EditorUser }
 
@@ -115,8 +115,12 @@ type State = {
 	detected: ISbStoryData | null
 	presence: { me: { id: string; color: string } | null; people: Array<Person> }
 	inbox: { notices: Array<Notice>; unread: number }
-	/** whose view this page follows: the page they're on, and where they've scrolled to */
+	/** whose view this page follows, by their user: the page they're on, and where they've scrolled to */
 	following: string | null
+	/** When someone followed went missing, to stop following them if they don't come back */
+	follow_wait: ReturnType<typeof setTimeout> | null
+	/** When each connection last changed page, to tell which of someone's tabs they're using */
+	moved: Map<string, number>
 	follow_listeners: Set<() => void>
 	navigations: Set<() => void>
 	pending: number
@@ -151,6 +155,8 @@ S.detected ??= null
 S.presence ??= { me: null, people: [] }
 S.inbox ??= { notices: [], unread: 0 }
 S.following ??= null
+S.follow_wait ??= null
+S.moved ??= new Map()
 S.follow_listeners ??= new Set()
 S.navigations ??= new Set()
 S.pending ??= 0
@@ -210,8 +216,13 @@ function read_injected() {
 
 /** Set by the multiplayer connection, loaded only for editors */
 export function set_presence(next: State["presence"]) {
+	const was = new Map(S.presence.people.map((person) => [person.id, person.page]))
+	for (const person of next.people)
+		if (was.has(person.id) && was.get(person.id) !== person.page) S.moved.set(person.id, Date.now())
+	for (const id of S.moved.keys())
+		if (!next.people.some((person) => person.id === id)) S.moved.delete(id)
 	S.presence = next
-	if (S.following && !next.people.some((p) => p.id === S.following)) S.following = null
+	keep_following()
 	changed()
 }
 
@@ -256,12 +267,53 @@ export function set_settings_open(on: boolean) {
 	changed()
 }
 
+/** Where a tab keeps who it's following, for as long as the tab's open */
+const FOLLOWING = "sl_following"
+/** How long someone followed can be gone before following them stops: long enough to reload a page */
+const FOLLOW_WAIT = 15_000
+
 /** Follow someone's view, or stop with null */
 export function follow(id: string | null) {
 	if (S.following === id) return
 	S.following = id
+	if (S.follow_wait) clearTimeout(S.follow_wait)
+	S.follow_wait = null
+	try {
+		if (id) sessionStorage.setItem(FOLLOWING, id)
+		else sessionStorage.removeItem(FOLLOWING)
+	} catch {
+		// not remembered, which only matters if this page reloads
+	}
+	keep_following()
 	changed()
 	for (const listener of S.follow_listeners) listener()
+}
+
+/** Whoever this tab was following before it reloaded */
+export function resume_following() {
+	try {
+		const kept = sessionStorage.getItem(FOLLOWING)
+		if (kept) follow(kept)
+	} catch {
+		// nothing to pick up again
+	}
+}
+
+/**
+ * Someone reloading looks like them leaving and someone new arriving, and so does this page's own
+ * connection dropping, so following only stops if they're still gone after a moment
+ */
+function keep_following() {
+	const there =
+		!S.following || S.presence.people.some((person) => String(person.user.id) === S.following)
+	if (there) {
+		if (S.follow_wait) clearTimeout(S.follow_wait)
+		S.follow_wait = null
+	} else
+		S.follow_wait ??= setTimeout(() => {
+			S.follow_wait = null
+			follow(null)
+		}, FOLLOW_WAIT)
 }
 
 /** Run `listener` whenever following starts or stops */
@@ -442,23 +494,35 @@ export const editor = {
 		watch()
 		return S.settings_open
 	},
-	/** Who this page is following, by their place in the room */
+	/** Who this page is following, by their user */
 	get following() {
 		watch()
 		return S.following
 	},
-	/** Everyone else editing this page right now, and this person as the others see them */
-	get here(): { color: string | null; me: Person | null; people: Array<Person> } {
+	/** Everyone else on the site, on this page and elsewhere, and this person as the others see them */
+	get here(): {
+		color: string | null
+		me: Person | null
+		people: Array<Person>
+		elsewhere: Array<Person>
+		followed: Person | null
+	} {
 		watch()
-		const page = typeof location === "undefined" ? null : location.pathname
-		const { presence, following } = S
+		const { presence, following, moved, injected } = S
+		const { here, elsewhere, followed } = who_is_where({
+			people: presence.people,
+			me: presence.me?.id,
+			page: typeof location === "undefined" ? null : page_of(location.href),
+			moved,
+			following,
+			guest: !!injected.guest,
+		})
 		return {
 			color: presence.me?.color ?? null,
 			me: presence.people.find((p) => p.id === presence.me?.id) ?? null,
-			// whoever's followed stays listed as they move between pages, since this page goes after them
-			people: presence.people.filter(
-				(p) => p.id !== presence.me?.id && (p.page === page || p.id === following)
-			),
+			people: here,
+			elsewhere,
+			followed,
 		}
 	},
 	/** Whether edit mode is on; `set_editing` turns it off and on */
