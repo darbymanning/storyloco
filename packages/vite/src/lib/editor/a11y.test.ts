@@ -99,6 +99,7 @@ describe("words", () => {
 		expect(alt_problem("x ".repeat(120))).toBe("long")
 		expect(alt_problem("Will Goldsmith, Head of Bedales")).toBeNull()
 		expect(alt_problem("Pupils in the Olivier Theatre")).toBeNull()
+		expect(alt_problem("Well-being")).toBeNull()
 		expect(alt_problem("")).toBeNull()
 	})
 })

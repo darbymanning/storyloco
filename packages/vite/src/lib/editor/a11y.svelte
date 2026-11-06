@@ -42,16 +42,22 @@
 	/** Images in this list are fields, so they can be fixed from here */
 	let fields = $state.raw(new Set<Element>())
 	let checking = $state(true)
+	let failed = $state(false)
 	let panel = $state<HTMLElement>()
 	let vision = $state<Vision>(null)
 	/** The element being pointed out on the page */
-	let pointed = $state<Element | null>(null)
+	let pointed: Element | null = null
+	/** Beside the page, away from the edit bar and the block settings it holds */
+	const left = document
+		.querySelector<HTMLElement>("[data-storyloco=bar]")
+		?.dataset.corner?.endsWith("r")
 	let ring = $state<{ top: number; left: number; width: number; height: number } | null>(null)
 
 	const to_fix = $derived(issues.filter((issue) => issue.severity === "fail").length)
 	const to_check = $derived(issues.length - to_fix)
 	const summary = $derived.by(() => {
 		if (checking) return "Checking this page…"
+		if (failed) return "Couldn’t check this page. Try again."
 		if (!issues.length) return "Nothing found on this page"
 		const said = [to_fix && `${to_fix} to fix`, to_check && `${to_check} to check`]
 		return said.filter(Boolean).join(" · ")
@@ -76,16 +82,24 @@
 			if (!known) asked.set(img, (known = is_field(img)))
 			return known
 		}
-		const found = await audit(field)
-		// a bad alt can be fixed from here too, not only a missing one
-		await Promise.all(
-			found.map(async ({ el }) => {
-				if (el instanceof HTMLImageElement && (await field(el).catch(() => false))) images.add(el)
-			})
-		)
-		if (run !== run_id) return
-		issues = found
-		fields = images
+		try {
+			const found = await audit(field)
+			// a bad alt can be fixed from here too, not only a missing one
+			await Promise.all(
+				found.map(async ({ el }) => {
+					if (el instanceof HTMLImageElement && (await field(el).catch(() => false))) images.add(el)
+				})
+			)
+			if (run !== run_id) return
+			issues = found
+			fields = images
+			failed = false
+		} catch (e) {
+			console.error(e)
+			if (run !== run_id) return
+			issues = []
+			failed = true
+		}
 		checking = false
 		point(null)
 	}
@@ -122,8 +136,8 @@
 	}
 
 	function key(event: KeyboardEvent) {
-		// the image picker over this takes its own Escape
-		if (event.key === "Escape" && !document.querySelector("dialog[open]")) close()
+		// only from here: elsewhere, Escape is for whatever else is open or being edited
+		if (event.key === "Escape" && panel?.contains(document.activeElement)) close()
 	}
 
 	onMount(() => {
@@ -171,6 +185,7 @@
 <aside
 	bind:this={panel}
 	class="a11y"
+	class:left
 	data-storyloco="a11y"
 	aria-label="Accessibility check"
 	tabindex="-1"
@@ -202,7 +217,7 @@
 	</header>
 
 	<div class="list">
-		{#if !checking && !issues.length}
+		{#if !checking && !failed && !issues.length}
 			<p class="clear">
 				No problems an automatic check can find. It’s still worth trying the page with only a
 				keyboard.
@@ -254,7 +269,7 @@
 											type="button"
 											onclick={() => edit_image(el as HTMLImageElement)}
 										>
-											{issue.title === "No alt text" ? "Add alt text" : "Edit alt text"}
+											{(el as HTMLImageElement).alt ? "Edit alt text" : "Add alt text"}
 										</button>
 									{/if}
 									{#if block}
@@ -328,6 +343,11 @@
 		grid-template-rows: auto minmax(0, 1fr) auto;
 		inline-size: min(23rem, calc(100vw - 2rem));
 		inset: 1rem 1rem 1rem auto;
+
+		&.left {
+			inset-inline: 1rem auto;
+		}
+
 		outline: none;
 		position: fixed;
 		z-index: 2147483001;

@@ -2503,8 +2503,9 @@ let checking_a11y: { close: () => void } | undefined
 export async function accessibility() {
 	if (checking_a11y) return checking_a11y.close()
 	const { default: Panel } = await import("./a11y.svelte")
-	if (checking_a11y) return
 	await load_schema().catch(() => {})
+	// after the waiting, so a second click while it was loading doesn't open a second one
+	if (checking_a11y) return
 	const close = () => {
 		unmount(panel)
 		checking_a11y = undefined

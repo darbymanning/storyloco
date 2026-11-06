@@ -120,7 +120,7 @@ export function alt_problem(alt: string): "filename" | "redundant" | "long" | nu
 	if (
 		/\.(jpe?g|png|gif|webp|avif|svg|heic|tiff?)$/i.test(text) ||
 		/^(img|image|dsc|dscn|pxl|screenshot|photo)[-_ ]?\d+/i.test(text) ||
-		/^[\w]+([-_][\w]+)+$/.test(text)
+		/^\w+([-_]\w+){2,}$/.test(text)
 	)
 		return "filename"
 	if (/^(an? )?(image|picture|photo|photograph|graphic) of\b/i.test(text)) return "redundant"
@@ -146,19 +146,39 @@ export type Issue = {
 }
 
 const SKIP = "script,style,noscript,template,[data-storyloco]"
+
+/**
+ * Whether it's displayed. Fully faded counts as not, unless an animation is doing it, like a block
+ * waiting to fade in as it's scrolled to, so what's found doesn't depend on how far down the page is
+ */
+const displayed = (el: Element) => {
+	if (!el.checkVisibility({ visibilityProperty: true })) return false
+	for (let at: Element | null = el; at; at = at.parentElement)
+		if (getComputedStyle(at).opacity === "0" && !at.getAnimations().length) return false
+	return true
+}
+
 const shown = (el: Element) => {
 	if (el.closest(SKIP) || el.closest("[aria-hidden=true]")) return false
 	const box = el.getBoundingClientRect()
-	return (
-		box.width > 1 &&
-		box.height > 1 &&
-		el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
-	)
+	return box.width > 1 && box.height > 1 && displayed(el)
 }
 
 const snippet = (text: string | null | undefined) => {
 	const flat = (text ?? "").replace(/\s+/g, " ").trim()
 	return flat.length > 70 ? `${flat.slice(0, 70)}…` : flat
+}
+
+/** An image URL's file name, as readable as it can be made */
+function file_name(src: string) {
+	if (src.startsWith("data:")) return ""
+	const name = src.split("/m/")[0].split("/").pop() ?? ""
+	try {
+		return snippet(decodeURIComponent(name))
+	} catch {
+		// a stray % in the address
+		return snippet(name)
+	}
 }
 
 /** What a link or button is called to someone who can't see it, near enough */
@@ -171,7 +191,7 @@ function name_of(el: Element) {
 				.split(/\s+/)
 				.map((id) => document.getElementById(id)?.textContent ?? "")
 				.join(" ")) ||
-		(el as HTMLElement).innerText ||
+		(el as HTMLElement).innerText?.trim() ||
 		[...el.querySelectorAll("img[alt], svg title, [aria-label]")]
 			.map(
 				(inner) =>
@@ -232,7 +252,7 @@ function contrast_of_text(add: Add) {
 	}
 
 	const media = [...document.querySelectorAll("img,video,canvas,iframe,picture")]
-		.filter((el) => !el.closest(SKIP))
+		.filter((el) => !el.closest(SKIP) && displayed(el))
 		.map((el) => ({ el, box: el.getBoundingClientRect() }))
 		.filter(({ box }) => box.width > 40 && box.height > 40)
 
@@ -308,7 +328,8 @@ function contrast_of_text(add: Add) {
 			key: `contrast:${hex(fg)}:${hex(bg)}:${target}`,
 			group: "contrast",
 			severity: "fail",
-			title: `Contrast ${ratio.toFixed(1)}:1, needs ${target}:1`,
+			// down, as 4.46 rounded up would read as passing
+			title: `Contrast ${Math.floor(ratio * 10) / 10}:1, needs ${target}:1`,
 			why:
 				target === 3
 					? "Large text needs at least 3:1 to read comfortably."
@@ -332,7 +353,7 @@ async function images(add: Add, is_field: (img: HTMLImageElement) => Promise<boo
 		all.map(async (img) => {
 			const src = img.currentSrc || img.src
 			const alt = img.getAttribute("alt")
-			const sample = decodeURIComponent(src.split("/m/")[0].split("/").pop() ?? "")
+			const sample = file_name(src)
 			if (alt === null || (!alt.trim() && (await is_field(img).catch(() => false))))
 				return add({
 					key: `alt:missing:${src}`,
@@ -369,16 +390,11 @@ async function images(add: Add, is_field: (img: HTMLImageElement) => Promise<boo
 function headings(add: Add) {
 	// by what's displayed rather than its size: an empty one has no height, and is still announced
 	const list = [...document.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading][aria-level]")]
-		.filter(
-			(el) =>
-				!el.closest(SKIP) &&
-				!el.closest("[aria-hidden=true]") &&
-				el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
-		)
+		.filter((el) => !el.closest(SKIP) && !el.closest("[aria-hidden=true]") && displayed(el))
 		.map((el) => ({
 			el,
 			level: Number(el.getAttribute("aria-level") ?? el.tagName[1]),
-			text: el.textContent ?? "",
+			text: name_of(el),
 		}))
 	const { problems, no_h1 } = heading_problems(list)
 	if (no_h1)
@@ -462,7 +478,12 @@ function links_and_buttons(add: Add) {
 function form_fields(add: Add) {
 	const fields = document.querySelectorAll<HTMLInputElement>("input,select,textarea")
 	for (const field of fields) {
-		if (["hidden", "submit", "button", "reset", "image"].includes(field.type) || !shown(field))
+		// out of the tab order is a trap for bots, which nobody fills in
+		if (
+			["hidden", "submit", "button", "reset", "image"].includes(field.type) ||
+			field.tabIndex < 0 ||
+			!shown(field)
+		)
 			continue
 		if (
 			field.labels?.length ||
@@ -524,7 +545,11 @@ function page(add: Add) {
 			why: "Screen readers use it to pronounce the text. A developer sets it on the page’s html tag.",
 			el: null,
 		})
-	if (!document.title.trim() || /\b(undefined|null)\b/.test(document.title))
+	// on its own or between separators: "Null hypothesis" is a fine title
+	if (
+		!document.title.trim() ||
+		/(^|[|–—-]\s*)(undefined|null)(\s*[|–—-]|\s*$)/i.test(document.title)
+	)
 		add({
 			key: "page:title",
 			group: "page",
