@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+	draft_is_live,
 	fields_at,
 	at_reading_line,
 	is_heading,
@@ -639,5 +640,25 @@ describe("fields_at", () => {
 
 	test("a field seen nowhere can take a place no other field is seen at", () => {
 		expect(fields_at([[], ["Bookyourfreedemotoday"]], [hero, cta], 0)).toEqual([0])
+	})
+})
+
+describe("draft_is_live", () => {
+	const published_at = "2026-11-09T10:00:00Z"
+
+	test("a story left out of the reply has nothing to publish", () => {
+		expect(draft_is_live([], 1)).toBe(true)
+		expect(draft_is_live([{ id: 2, published_at, changes: [{}] }], 1)).toBe(true)
+	})
+
+	test("a story listed is live only when it was published and nothing differs", () => {
+		expect(draft_is_live([{ id: 1, published_at, changes: [] }], 1)).toBe(true)
+		expect(draft_is_live([{ id: 1, published_at, changes: [{}] }], 1)).toBe(false)
+		expect(draft_is_live([{ id: 1, published_at: null, changes: null }], 1)).toBe(false)
+	})
+
+	test("with no reply or no live copy to compare, it can't say so", () => {
+		expect(draft_is_live(undefined, 1)).toBe(false)
+		expect(draft_is_live([{ id: 1, published_at, changes: null }], 1)).toBe(false)
 	})
 })

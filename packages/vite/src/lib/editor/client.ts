@@ -3,7 +3,7 @@ import { tick } from "svelte"
 import { createSubscriber } from "svelte/reactivity"
 import type { ISbStoryData } from "@storyblok/svelte"
 import type { EditorUser } from "./server.js"
-import { find_blok, like_page, page_of, who_is_where } from "./content.js"
+import { draft_is_live, find_blok, like_page, page_of, who_is_where } from "./content.js"
 
 export type { EditorUser }
 
@@ -424,12 +424,14 @@ export async function check_live(id: number) {
 	const reply = await call<{ stories: Array<Pending> }>({ op: "changes", stories: [id] }).catch(
 		() => null
 	)
-	const story = reply?.stories.find((s) => s.id === id)
-	// couldn't tell: the timestamps are all there is, so a real change is never hidden
-	const same = !!story?.published_at && story.changes?.length === 0
+	note_live(id, updated_at, reply?.stories)
+	changed()
+}
+
+function note_live(id: number, updated_at: string | undefined, stories?: Array<Pending>) {
+	const same = draft_is_live(stories, id)
 	S.matches_live.set(id, { updated_at, same })
 	if (same) S.touched.delete(id)
-	changed()
 }
 
 export const editor = {
@@ -813,7 +815,8 @@ export type Pending = {
 /** Stories on this page, its own first, with changes that aren't live yet */
 export async function review() {
 	const ids = new Set<number>()
-	if (editor.story) ids.add(editor.story.id)
+	const own = editor.story
+	if (own) ids.add(own.id)
 	for (const id of S.touched) ids.add(id)
 	for (const node of document.querySelectorAll<HTMLElement>("[data-blok-c]")) {
 		try {
@@ -828,6 +831,8 @@ export async function review() {
 		stories: [...ids].slice(0, 20),
 	})
 	for (const id of S.touched) if (!stories.some((s) => s.id === id)) S.touched.delete(id)
+	// what's just been found out is what the badge and Publish go by, not what was last worked out
+	if (own) note_live(own.id, own.updated_at, stories)
 	changed()
 	return stories
 }

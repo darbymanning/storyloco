@@ -405,6 +405,21 @@ export function differences(published: unknown, draft: unknown): Array<Differenc
 export const same = (a: unknown, b: unknown) =>
 	JSON.stringify(meaningful(a)) === JSON.stringify(meaningful(b))
 
+/**
+ * Whether a story's draft is what's live, from the reply saying what Publish would send: one left
+ * out of it has nothing to send. No reply can't tell, so a real change is never hidden
+ */
+export function draft_is_live(
+	stories:
+		| ReadonlyArray<{ id: number; published_at: string | null; changes: unknown[] | null }>
+		| undefined,
+	id: number
+) {
+	if (!stories) return false
+	const story = stories.find((one) => one.id === id)
+	return !story || (!!story.published_at && story.changes?.length === 0)
+}
+
 const is_story = (value: unknown): value is Node =>
 	!!value &&
 	typeof value === "object" &&
