@@ -1165,10 +1165,12 @@
 
 	/*
 	 * holding the settings' name, the bar is a pill of its own, which morphs whole as it opens: glass,
-	 * the page blurred through it, a wash of the accent from the top and a catch of light on its edge
+	 * the page blurred through it, a wash of the accent from the top and a catch of light on its edge.
+	 * As it is holding staging's switch, though nothing morphs there, so its row still slides open
 	 */
 	.bar:has(.settings:not(:empty)),
-	.bar.open:has(.mode) {
+	.bar.open:has(.mode),
+	.bar:has(.versions) {
 		--sheen: inset 0 1px 0 rgb(255 255 255 / 0.1);
 
 		backdrop-filter: blur(20px) saturate(1.8);
@@ -1177,7 +1179,7 @@
 			color-mix(in srgb, var(--bg) 80%, transparent);
 		box-shadow: var(--sheen), var(--shadow);
 
-		& :is(.panel, .inner) {
+		&:not(:has(.versions)) :is(.panel, .inner) {
 			transition: none;
 		}
 	}
@@ -1615,13 +1617,6 @@
 
 		&[aria-busy="true"] {
 			cursor: progress;
-		}
-
-		/* on its own beside the folded badge, on the bar's glass, so it reads on any page */
-		.bar:not(.open) & {
-			backdrop-filter: blur(20px) saturate(1.8);
-			background: color-mix(in srgb, var(--bg) 82%, transparent);
-			box-shadow: var(--shadow);
 		}
 
 		& button {

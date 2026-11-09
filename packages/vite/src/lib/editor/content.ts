@@ -257,6 +257,25 @@ export function shows_rich(text: string, compact: string) {
 	return at <= text.length - pieces.at(-1)!.length
 }
 
+/**
+ * Which of several fields holding the same text the place at `at` shows, by the text beside each
+ * field showing in that place's part of the page. A field is at the places showing the most of
+ * that text, as a few of its words can turn up anywhere, and not at the others, so a place no field
+ * is at, like a button showing the template's default, is none of theirs. Fields seen nowhere
+ * could be anywhere.
+ */
+export function fields_at(neighbours: Array<Array<string>>, sections: Array<string>, at: number) {
+	const homes = neighbours.map((texts) => {
+		const seen = sections.map((section) =>
+			texts.reduce((sum, text) => (section.includes(text) ? sum + text.length : sum), 0)
+		)
+		const most = Math.max(...seen)
+		return most ? seen.flatMap((amount, i) => (amount === most ? [i] : [])) : []
+	})
+	const here = homes.flatMap((seen, i) => (seen.includes(at) ? [i] : []))
+	return here.length ? here : homes.flatMap((seen, i) => (seen.length ? [] : [i]))
+}
+
 /** A richtext document, as opposed to a string or a plugin's object */
 export const is_rich = (value: unknown) =>
 	!!value && typeof value === "object" && (value as Rich).type === "doc"
@@ -385,6 +404,21 @@ export function differences(published: unknown, draft: unknown): Array<Differenc
 /** Whether two values show the same, by the measure `differences` uses */
 export const same = (a: unknown, b: unknown) =>
 	JSON.stringify(meaningful(a)) === JSON.stringify(meaningful(b))
+
+/**
+ * Whether a story's draft is what's live, from the reply saying what Publish would send: one left
+ * out of it has nothing to send. No reply can't tell, so a real change is never hidden
+ */
+export function draft_is_live(
+	stories:
+		| ReadonlyArray<{ id: number; published_at: string | null; changes: unknown[] | null }>
+		| undefined,
+	id: number
+) {
+	if (!stories) return false
+	const story = stories.find((one) => one.id === id)
+	return !story || (!!story.published_at && story.changes?.length === 0)
+}
 
 const is_story = (value: unknown): value is Node =>
 	!!value &&

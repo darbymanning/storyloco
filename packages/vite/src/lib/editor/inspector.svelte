@@ -145,6 +145,7 @@
 		}
 	}
 	const frame = ({ rect, radius }: ReturnType<typeof shape>) => ({
+		boxSizing: "border-box",
 		inset: "auto",
 		top: `${rect.top}px`,
 		left: `${rect.left}px`,
@@ -166,9 +167,12 @@
 		morphing?.cancel()
 		const to = shape(bar)
 		const [a, b] = [from.rect, to.rect]
+		const top = bar.dataset.corner?.startsWith("t")
 		// growing, it's laid out whole at once and uncovered from the old shape, so nothing inside
-		// reflows or wraps on the way; shrinking to the pill, whose name fits any size it passes
-		const grows = b.width >= a.width && b.height >= a.height
+		// reflows or wraps on the way; shrinking to the pill, whose name fits any size it passes.
+		// By height alone: a long name's pill can be wider than the panel it opens into
+		const grows = b.height >= a.height
+		const pad = parseFloat(getComputedStyle(bar).paddingBlockStart)
 		const keyframes = grows
 			? [
 					{
@@ -178,19 +182,17 @@
 					// then on past its edges, uncovering its shadow too rather than it landing at the end
 					{ clipPath: `inset(-80px round ${to.radius + 80}px)` },
 				]
-			: // the pill's row waits in its corner, not the middle of the box closing on it, still
-				// centred on itself
-				[frame(from), frame(to)].map((f) => ({
-					...f,
-					flexWrap: "wrap",
-					alignContent: bar.dataset.corner?.startsWith("t") ? "flex-start" : "flex-end",
+			: // the pill's row waits in its corner, not the middle of the box closing on it: the height
+				// still to go is padding on the far side, so the row is on one line, as it ends up, throughout
+				[from, to].map((f) => ({
+					...frame(f),
+					[top ? "paddingBottom" : "paddingTop"]: `${f.rect.height - b.height + pad}px`,
 				}))
 		// ponytail: turned back mid-grow, it starts from the whole box, not the uncovered part
 		const timing = { duration: 340, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
 		morphing = bar.animate(keyframes, timing)
 		// what the new shape adds arrives after it: opening, the bar's buttons one after another,
 		// and folding, the name once the pill has nearly closed, each rising from the edge it's on
-		const top = bar.dataset.corner?.startsWith("t")
 		const arriving = grows
 			? [...bar.querySelectorAll<HTMLElement>(".panel .inner > *")]
 			: [title_el, fold_el].filter((el) => !!el)
