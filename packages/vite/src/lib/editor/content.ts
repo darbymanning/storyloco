@@ -770,3 +770,28 @@ export function blok_choices(
 			: []
 	})
 }
+
+/**
+ * What a window scrolled this far is reading: whatever a line across it falls in, or nearest it.
+ * The line runs from the window's top at the page's top to its bottom at the page's end, so a
+ * short first or last block gets its turn. First wins a tie.
+ */
+export function at_reading_line<T extends { top: number; bottom: number }>(
+	spans: ReadonlyArray<T>,
+	scrolled: number,
+	end: number,
+	height: number
+) {
+	const line = end > 0 ? height * Math.min(Math.max(scrolled / end, 0), 1) : 0
+	let nearest: T | undefined
+	let gap = Infinity
+	for (const span of spans) {
+		if (span.bottom <= 0 || span.top >= height) continue
+		const away = Math.max(span.top - line, line - span.bottom, 0)
+		if (away < gap) {
+			nearest = span
+			gap = away
+		}
+	}
+	return nearest
+}
