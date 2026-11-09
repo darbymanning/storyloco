@@ -682,6 +682,7 @@
 						<input
 							type="checkbox"
 							role="switch"
+							aria-label="Edit"
 							checked={editor.editing}
 							onchange={(event) => set_editing(event.currentTarget.checked)}
 						/>
@@ -1266,18 +1267,15 @@
 		}
 
 		/*
-		 * one line, spread across the panel: the status, saving and any problem are the badge's dot
-		 * and ring, and publishing the row's last button. Narrower still, say with people beside the
-		 * badge, it wraps rather than widening the panel
+		 * always one line, spread across the panel: the status, saving and any problem are the badge's
+		 * dot and ring, publishing the row's last button, and the switch says what it is in its tip.
+		 * No gap but the spare room, as the fullest row, with people beside the badge, only just fits
 		 */
 		& .inner {
-			column-gap: 0.375rem;
-			flex-wrap: wrap;
+			gap: 0;
 			justify-content: space-between;
-			row-gap: 0.375rem;
-			white-space: normal;
 
-			& :is(.status, .publish, .state) {
+			& :is(.status, .publish, .state, .label) {
 				display: none;
 			}
 
