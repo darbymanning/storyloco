@@ -832,9 +832,13 @@ function place_tag() {
 	const box = hovered.getBoundingClientRect()
 	tag.hidden =
 		hovered.hasAttribute("data-storyloco-selected") || box.bottom < 0 || box.top > innerHeight
-	const origin = page_origin()
+	const above = box.top - tag.offsetHeight
+	// held at the window's top it's fixed there: on the page, it would ride each scroll until put back
+	const pinned = above <= 0
+	tag.style.position = pinned ? "fixed" : ""
+	const origin = pinned ? { left: 0, top: 0 } : page_origin()
 	tag.style.left = `${Math.max(box.left, 0) - origin.left}px`
-	tag.style.top = `${Math.max(box.top - tag.offsetHeight, 0) - origin.top}px`
+	tag.style.top = `${Math.max(above, 0) - origin.top}px`
 }
 
 // --- text, edited where it is
