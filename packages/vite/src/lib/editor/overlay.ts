@@ -22,6 +22,7 @@ import {
 import {
 	allowed,
 	assets_in,
+	fields_at,
 	find_blok,
 	fresh_blok,
 	is_plans,
@@ -610,10 +611,13 @@ function matches(text: string, candidates: Iterable<Blok>, story: number) {
  */
 function showing(scope: Element, text: string) {
 	const out: Array<Node> = []
+	const own = text.replace(/\s+/g, "")
 	const walker = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT)
 	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
 		if (node instanceof Element) {
-			if (ours(node) || loose(node.textContent ?? "") !== text) continue
+			// spaces aside first: it's kept for the frame, and most elements stop here
+			if (compact_text(node) !== own || ours(node) || loose(node.textContent ?? "") !== text)
+				continue
 			if (![...node.children].some((child) => loose(child.textContent ?? "") === text))
 				out.push(node)
 		} else if (node instanceof Text && loose(node.data) === text) {
@@ -623,6 +627,53 @@ function showing(scope: Element, text: string) {
 	return out
 }
 
+/** The text a field's namesakes show, which a template sets near it: `hero_body` for `hero_action` */
+function neighbours(blok: Blok, field: string, own: string) {
+	const group = `${field.split("_")[0]}_`
+	return Object.entries(blok).flatMap(([key, value]) => {
+		if (key === field || !key.startsWith(group)) return []
+		const shown = is_rich(value)
+			? rich_compact(value)
+			: text_field(blok, key) && text_of(value)?.replace(/\s+/g, "")
+		return shown && shown.length > 3 && shown !== own && !shown.includes("\0") ? [shown] : []
+	})
+}
+
+/**
+ * Of the fields holding this text, those `shown` is, when the page shows it in several places: a
+ * place's part of the page runs up to, and not including, what holds another place too
+ */
+function placed<T extends { uid: string; field: string } | { name: true }>(
+	found: Array<T>,
+	candidates: Array<Blok>,
+	text: string,
+	shown?: Node
+) {
+	if (!found.length || !shown) return found
+	const scope = block_of(shown instanceof Element ? shown : shown.parentElement) ?? document.body
+	const own = text.replace(/\s+/g, "")
+	const all = compact_text(scope)
+	if (all.indexOf(own) === all.lastIndexOf(own)) return found
+	const places = showing(scope, text)
+	const at = places.findIndex((place) => place.contains(shown) || shown.contains(place))
+	if (places.length < 2 || at < 0) return found
+	const sections = places.map((place) => {
+		let section = place
+		for (
+			let up = section.parentNode;
+			up && up !== scope && !places.some((other) => other !== place && up!.contains(other));
+			up = up.parentNode
+		)
+			section = up
+		return compact_text(section)
+	})
+	const beside = found.map((source) => {
+		const blok = "uid" in source && candidates.find((one) => one._uid === source.uid)
+		return blok && "field" in source ? neighbours(blok, source.field, own) : []
+	})
+	return fields_at(beside, sections, at).map((index) => found[index])
+}
+
 /**
  * The one field showing this text, or, when several hold the same and the page shows each once,
  * the one at the same place among them as `shown` is among the page's: fields in the content's
@@ -630,12 +681,12 @@ function showing(scope: Element, text: string) {
  */
 function match(
 	text: string,
-	candidates: Iterable<Blok>,
+	candidates: Array<Blok>,
 	story: number,
 	shown?: Node,
 	near?: (source: Source) => boolean
 ) {
-	let found = matches(text, candidates, story)
+	let found = placed(matches(text, candidates, story), candidates, text, shown)
 	// several fields hold it: the ones this part of the page shows, like the header's menu over the footer's
 	if (found.length > 1 && near) {
 		const here = found.filter(near)
@@ -722,7 +773,8 @@ async function source_of(
 	// the one field among the block's and its nested bloks' that this part of the page shows, before
 	// the block's own fields win over its nested bloks', like a menu item over a footer heading
 	const regional = () => {
-		const here = matches(text, [blok!, ...inner_bloks(blok!)], id).filter(near)
+		const inside = [blok!, ...inner_bloks(blok!)]
+		const here = placed(matches(text, inside, id), inside, text, shown).filter(near)
 		return here.length === 1 ? here[0] : undefined
 	}
 	const own =
@@ -1970,7 +2022,7 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 
 let bar: {
 	show(target: Target | null, chosen?: boolean): void
-	aim_at(target: Target | null, chosen?: boolean): void
+	aim_at(target: Target | null, chosen?: boolean, selecting?: boolean): void
 	hide(): void
 }
 
@@ -2113,7 +2165,7 @@ function aim() {
 	const node = selected && element_of(selected.uid)
 	const box = node?.getBoundingClientRect()
 	const target = node && box && box.bottom > 0 && box.top < innerHeight && target_of(node)
-	bar.aim_at((target || in_view()) ?? null, !!target)
+	bar.aim_at((target || in_view()) ?? null, !!target, !!selected)
 }
 
 /**
@@ -2575,13 +2627,18 @@ function shown_at(uid: string, field: string, part?: string) {
 
 /** Text set straight into an element beside others, showing a field: no element of its own to mark */
 function loose_text(uid: string, field: string) {
-	const value = loose(
-		text_of((page_blok(uid) as Record<string, unknown> | undefined)?.[field]) ?? ""
-	)
-	if (!value) return null
+	const blok = page_blok(uid) as Blok | undefined
+	const value = loose(text_of(blok?.[field]) ?? "")
+	if (!blok || !value) return null
 	const walker = document.createTreeWalker(element_of(uid) ?? document.body, NodeFilter.SHOW_TEXT)
 	for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null)
-		if (loose(node.data) === value && node.parentElement && !ours(node.parentElement)) return node
+		if (
+			loose(node.data) === value &&
+			node.parentElement &&
+			!ours(node.parentElement) &&
+			placed([{ uid, field }], [blok], value, node).length
+		)
+			return node
 	return null
 }
 

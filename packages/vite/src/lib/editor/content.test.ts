@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+	fields_at,
 	at_reading_line,
 	is_heading,
 	is_link,
@@ -607,5 +608,36 @@ describe("at_reading_line", () => {
 
 	test("a page that doesn't scroll reads from the top", () => {
 		expect(at_reading_line(blocks, 0, 0, 800)).toBe(blocks[0])
+	})
+})
+
+describe("fields_at", () => {
+	const hero = "VisNetForecastCreateaccuratescenariosBookademo"
+	const cta = "BookyourfreedemotodaySeehowBookademo"
+	const beside = [["Createaccuratescenarios"], ["Bookyourfreedemotoday"]]
+
+	test("each place gets the field whose neighbours it's among, whatever order they're in", () => {
+		expect(fields_at(beside, [hero, cta], 0)).toEqual([0])
+		expect(fields_at(beside, [hero, cta], 1)).toEqual([1])
+		expect(fields_at(beside, [cta, hero], 0)).toEqual([1])
+	})
+
+	test("a neighbour's words turning up in another section don't make it home", () => {
+		const both = [["VisNet", "Createaccuratescenarios"], ["Bookyourfreedemotoday"]]
+		const mentions = "BookyourfreedemotodaySeehowVisNethelpsBookademo"
+		expect(fields_at(both, ["VisNetCreateaccuratescenariosBookademo", mentions], 1)).toEqual([1])
+	})
+
+	test("a place showing a default isn't the field that's only seen elsewhere", () => {
+		expect(fields_at([["Bookyourfreedemotoday"]], [hero, cta], 0)).toEqual([])
+		expect(fields_at([["Bookyourfreedemotoday"]], [hero, cta], 1)).toEqual([0])
+	})
+
+	test("with nothing to go on, every field is still a candidate", () => {
+		expect(fields_at([[], []], [hero, cta], 0)).toEqual([0, 1])
+	})
+
+	test("a field seen nowhere can take a place no other field is seen at", () => {
+		expect(fields_at([[], ["Bookyourfreedemotoday"]], [hero, cta], 0)).toEqual([0])
 	})
 })

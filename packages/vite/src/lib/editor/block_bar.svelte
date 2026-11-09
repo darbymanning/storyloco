@@ -100,8 +100,9 @@
 	}
 
 	// placed afresh as the edit bar's panel opens or folds, so it's beside the panel only while it's there
+	const showing = $derived(!!target)
 	$effect(() => {
-		const edit = target && document.querySelector("[data-storyloco=bar]")
+		const edit = showing && document.querySelector("[data-storyloco=bar]")
 		if (!edit) return
 		const watch = new ResizeObserver(() => place())
 		watch.observe(edit)
@@ -136,11 +137,14 @@
 		tick().then(place)
 	}
 
-	/** Point at the block in view, unless the bar's in use: it mustn't change under someone's hand */
-	export function aim_at(next: Target | null, clicked = false) {
+	/**
+	 * Point at the block in view, unless the bar's in use: it mustn't change under someone's hand,
+	 * though a clicked block that's no longer selected, `selecting` says, lets go of it
+	 */
+	export function aim_at(next: Target | null, clicked = false, selecting = false) {
 		if (busy || drop) return
 		const held = menu || bar?.matches(":hover, :has(:focus-visible)")
-		if (!chosen && target?.node.isConnected && held) return
+		if ((!chosen || selecting) && target?.node.isConnected && held) return
 		show(next, clicked)
 	}
 
@@ -195,6 +199,8 @@
 		if (!target || busy) return
 		const { story, uid, node, name } = target
 		const was_in = parent(target)
+		// the bar may only be offering this one: what's selected elsewhere stays selected
+		const has_selected = node.matches("[data-storyloco-selected], :has([data-storyloco-selected])")
 		busy = true
 		problem = null
 		node.dataset.storylocoBusy = ""
@@ -219,7 +225,8 @@
 		glide(before)
 		if (change.op === "remove") {
 			show(null)
-			select(was_in ?? null)
+			if (has_selected) select(was_in ?? null)
+			else aim()
 		} else if (next) {
 			select(next)
 			if (change.op !== "move") next.node.scrollIntoView({ block: "nearest" })
