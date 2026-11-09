@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from "svelte"
 	import { editor } from "./client.js"
-	import { next_frame, page_origin } from "./page.js"
+	import { next_frame } from "./page.js"
 
 	type Target = { node: HTMLElement; story: number; uid: string; name: string }
 	type Choice = { name: string; display_name: string }
@@ -14,6 +14,7 @@
 		select,
 		parent,
 		label: named,
+		aim,
 	}: {
 		/** Send a change; the reply, or why it didn't save */
 		act: (change: Record<string, unknown>) => Promise<{ uid?: string } | string>
@@ -28,15 +29,18 @@
 		parent: (target: Target) => Target | undefined
 		/** The component's name from the schema, once it's loaded */
 		label: (name: string) => string | undefined
+		/** Look again at which block to point at */
+		aim: () => void
 	} = $props()
 
 	let target = $state.raw<Target | null>(null)
 	let bar = $state<HTMLElement>()
 	let top = $state(0)
 	let left = $state(0)
-	let stuck = $state(false)
-	/* with the settings open, their header moves, duplicates and deletes the block; this keeps to the rest */
-	const docked = $derived(editor.settings_open)
+	/* a block clicked, rather than the one being read */
+	let chosen = $state(false)
+	/* with the settings open, their header moves, duplicates and deletes the block they're for; this keeps to the rest */
+	const docked = $derived(editor.settings_open && chosen)
 	let busy = $state(false)
 	let problem = $state<string | null>(null)
 
@@ -59,6 +63,9 @@
 		return words.charAt(0).toUpperCase() + words.slice(1)
 	}
 
+	/** The height of the bar's row, whatever's open beneath it */
+	const ROW = 36
+
 	/** Where a site's sticky or fixed header ends, so the bar never slides under it */
 	function header_bottom() {
 		let bottom = 0
@@ -78,29 +85,18 @@
 		return Math.min(bottom, innerHeight / 3)
 	}
 
-	/**
-	 * Inside the block's top corner. It's placed on the page rather than the window, so it scrolls
-	 * with the block as the page does, and is only fixed, below any header, while the block's top
-	 * has scrolled past and the rest is still in view: a sticky header of its own
-	 */
+	/** One place, the top of the window's middle, below any header and clear of the edit bar's panel */
 	function place() {
 		if (!target) return
-		const box = target.node.getBoundingClientRect()
-		const height = bar?.offsetHeight ?? 36
-		const floor = header_bottom() + 8
-		const inside = box.top + 8
-		const last = box.bottom - height - 8
-		stuck = inside < floor && last > floor
-		const origin = page_origin()
-		const width = bar?.offsetWidth ?? 240
-		const y = stuck ? floor : inside >= floor ? inside : Math.max(inside, last)
-		let x = Math.min(Math.max(box.left + 8, 8), innerWidth - width - 8)
-		// beside the edit bar's panel rather than under it, as a full-width block's corner is
+		top = header_bottom() + 8
+		let start = 8
+		let end = innerWidth - 8
 		const edit = document.querySelector("[data-storyloco=bar]")?.getBoundingClientRect()
-		if (edit && y < edit.bottom && y + height > edit.top && x < edit.right && x + width > edit.left)
-			x = edit.right + 8
-		top = stuck ? y : y - origin.top
-		left = stuck ? x : x - origin.left
+		if (edit && top < edit.bottom && top + ROW > edit.top) {
+			if (edit.left + edit.width / 2 < innerWidth / 2) start = edit.right + 8
+			else end = edit.left - 8
+		}
+		left = Math.max(8, start + (end - start - (bar?.offsetWidth ?? 240)) / 2)
 	}
 
 	// placed afresh as the edit bar's panel opens or folds, so it's beside the panel only while it's there
@@ -112,22 +108,40 @@
 		return () => watch.disconnect()
 	})
 
-	/** Pin to a selected block; `null` lets it go */
-	export function show(next: Target | null) {
-		if (target?.node === next?.node) return place()
-		menu = null
-		filter = ""
-		problem = null
-		target = next
-		row = []
-		if (next) {
-			siblings_of(next.story, next.uid)
-				.then((found) => target === next && (row = found))
-				.catch(() => {})
-			// ready before + is pressed
-			choices(next.story, next.uid).catch(() => {})
+	/** Outlined, as nothing else says which block it is; a clicked block has its own outline */
+	$effect(() => {
+		const node = !chosen && target?.node
+		if (!node) return
+		node.setAttribute("data-storyloco-aimed", "")
+		return () => node.removeAttribute("data-storyloco-aimed")
+	})
+
+	/** Point at a block; `null` lets it go */
+	export function show(next: Target | null, clicked = false) {
+		chosen = clicked
+		if (target?.node !== next?.node) {
+			menu = null
+			filter = ""
+			problem = null
+			target = next
+			row = []
+			if (next) {
+				siblings_of(next.story, next.uid)
+					.then((found) => target === next && (row = found))
+					.catch(() => {})
+				// ready before + is pressed
+				if (clicked) choices(next.story, next.uid).catch(() => {})
+			}
 		}
 		tick().then(place)
+	}
+
+	/** Point at the block in view, unless the bar's in use: it mustn't change under someone's hand */
+	export function aim_at(next: Target | null, clicked = false) {
+		if (busy || drop) return
+		const held = menu || bar?.matches(":hover, :has(:focus-visible)")
+		if (!chosen && target?.node.isConnected && held) return
+		show(next, clicked)
 	}
 
 	export const hide = () => show(null)
@@ -203,8 +217,10 @@
 			if (Math.abs(shift) > 1) scrollTo({ top: scrollY + shift, behavior: "instant" })
 		}
 		glide(before)
-		if (change.op === "remove") select(was_in ?? null)
-		else if (next) {
+		if (change.op === "remove") {
+			show(null)
+			select(was_in ?? null)
+		} else if (next) {
 			select(next)
 			if (change.op !== "move") next.node.scrollIntoView({ block: "nearest" })
 		}
@@ -320,6 +336,7 @@
 		if (event.key === "Escape" && menu) {
 			event.preventDefault()
 			menu = null
+			tick().then(aim)
 		}
 	}
 
@@ -327,6 +344,31 @@
 </script>
 
 <svelte:window onscroll={follow} onresize={place} />
+
+{#snippet tool(
+	tip: string,
+	d: string,
+	onclick: () => void,
+	{
+		end = false,
+		danger = false,
+		expanded,
+	}: { end?: boolean; danger?: boolean; expanded?: boolean } = {}
+)}
+	<span class="control" class:end>
+		<button
+			type="button"
+			class:danger
+			aria-label={tip}
+			aria-expanded={expanded}
+			disabled={busy}
+			{onclick}
+		>
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path {d} /></svg>
+		</button>
+		<span class="tip" aria-hidden="true">{tip}</span>
+	</span>
+{/snippet}
 
 {#if drop}
 	<div
@@ -344,105 +386,62 @@
 		bind:this={bar}
 		class="bar"
 		class:busy
+		class:quiet={menu || drop}
 		data-storyloco="block-bar"
 		role="toolbar"
 		tabindex="-1"
 		aria-label="{label(target.name)} block"
-		style:position={stuck ? "fixed" : "absolute"}
 		style:top="{top}px"
 		style:left="{left}px"
 		onkeydown={keydown}
+		onpointerleave={aim}
 	>
 		<div class="row">
 			{#if above}
-				<button
-					type="button"
-					aria-label="Select the {label(above.name)} it’s in"
-					title="Select the {label(above.name)} it’s in"
-					onclick={() => above && select(above)}
-				>
-					<svg viewBox="0 0 24 24" aria-hidden="true"
-						><path d="M14 9 9 4 4 9" /><path d="M20 20h-7a4 4 0 0 1-4-4V4" /></svg
-					>
-				</button>
+				{@render tool(
+					`Select the ${label(above.name)} it’s in`,
+					"M14 9 9 4 4 9M20 20h-7a4 4 0 0 1-4-4V4",
+					() => above && select(above)
+				)}
 			{/if}
-			<!-- dragging is for the pointer: Move up and down, here or in the settings, do it from the keyboard -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<span
-				class="name"
-				class:grip={!busy}
-				title="Drag to move {label(target.name)}"
-				onpointerdown={drag}
-				>{#if !busy}<svg class="dots" viewBox="0 0 24 24" aria-hidden="true"
-						><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle
-							cx="9"
-							cy="12"
-							r="1"
-						/><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle
-							cx="15"
-							cy="18"
-							r="1"
-						/></svg
-					>{/if}{label(target.name)}</span
-			>
+			<span class="control named">
+				<!-- dragging is for the pointer: Move up and down, here or in the settings, do it from the keyboard -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<span class="name" class:grip={!busy} onpointerdown={drag}
+					>{#if !busy}<svg class="dots" viewBox="0 0 24 24" aria-hidden="true"
+							><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle
+								cx="9"
+								cy="12"
+								r="1"
+							/><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle
+								cx="15"
+								cy="18"
+								r="1"
+							/></svg
+						>{/if}{label(target.name)}</span
+				>
+				<span class="tip" aria-hidden="true">Drag to move {label(target.name)}</span>
+			</span>
 			{#if !docked}
-				<button
-					type="button"
-					aria-label="Move up"
-					title="Move up"
-					disabled={busy}
-					onclick={() => run({ op: "move", by: -1 })}
-				>
-					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
-				</button>
-				<button
-					type="button"
-					aria-label="Move down"
-					title="Move down"
-					disabled={busy}
-					onclick={() => run({ op: "move", by: 1 })}
-				>
-					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-				</button>
-				<button
-					type="button"
-					aria-label="Duplicate"
-					title="Duplicate"
-					disabled={busy}
-					onclick={() => run({ op: "duplicate" })}
-				>
-					<svg viewBox="0 0 24 24" aria-hidden="true"
-						><rect x="8" y="8" width="13" height="13" rx="2" /><path
-							d="M4 16V5a1 1 0 0 1 1-1h11"
-						/></svg
-					>
-				</button>
+				{@render tool("Move up", "m18 15-6-6-6 6", () => run({ op: "move", by: -1 }))}
+				{@render tool("Move down", "m6 9 6 6 6-6", () => run({ op: "move", by: 1 }))}
+				{@render tool(
+					"Duplicate",
+					"M10 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM4 16V5a1 1 0 0 1 1-1h11",
+					() => run({ op: "duplicate" })
+				)}
 			{/if}
-			<button
-				type="button"
-				aria-label="Add a block after this one"
-				title="Add a block after this one"
-				aria-expanded={menu !== null}
-				disabled={busy}
-				onclick={open_menu}
-			>
-				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-			</button>
+			{@render tool("Add a block after this one", "M12 5v14M5 12h14", open_menu, {
+				end: true,
+				expanded: menu !== null,
+			})}
 			{#if !docked}
-				<button
-					type="button"
-					class="danger"
-					aria-label="Delete"
-					title="Delete"
-					disabled={busy}
-					onclick={() => run({ op: "remove" })}
-				>
-					<svg viewBox="0 0 24 24" aria-hidden="true"
-						><path
-							d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
-						/></svg
-					>
-				</button>
+				{@render tool(
+					"Delete",
+					"M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",
+					() => run({ op: "remove" }),
+					{ end: true, danger: true }
+				)}
 			{/if}
 		</div>
 
@@ -542,6 +541,71 @@
 		gap: 0.125rem;
 	}
 
+	.control {
+		display: flex;
+		flex: none;
+		position: relative;
+
+		&:has(:focus-visible) .tip {
+			opacity: 1;
+			translate: 0 0;
+		}
+
+		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
+		@media (hover: hover) {
+			&:hover .tip {
+				opacity: 1;
+				translate: 0 0;
+			}
+		}
+	}
+
+	/* towards the middle, so it isn't cut off by a narrow window */
+	.control.end .tip {
+		inset-inline: auto calc(50% - 0.9375rem);
+
+		&::after {
+			inset-inline: auto 0.625rem;
+		}
+	}
+
+	/* the edit bar's tips; the bar's at the top of the window, so they open downwards */
+	.tip {
+		background-color: var(--ink);
+		border-radius: 0.5rem;
+		color: var(--bg);
+		font-size: 0.75rem;
+		inset: calc(100% + 0.625rem) auto auto calc(50% - 0.9375rem);
+		opacity: 0;
+		padding: 0.5rem 0.625rem;
+		pointer-events: none;
+		position: absolute;
+		transition:
+			opacity 0.2s ease,
+			translate 0.2s ease;
+		translate: 0 -0.25rem;
+		white-space: nowrap;
+
+		&::after {
+			background-color: inherit;
+			block-size: 0.3125rem;
+			clip-path: polygon(50% 0, 100% 100%, 0 100%);
+			content: "";
+			inline-size: 0.625rem;
+			inset: auto auto 100% 0.625rem;
+			position: absolute;
+		}
+
+		/* they'd cover what's being chosen from, or dropped on */
+		.quiet & {
+			display: none;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			translate: none;
+		}
+	}
+
 	.drop {
 		background: var(--editor-accent, #05807f);
 		border-radius: 1px;
@@ -572,9 +636,17 @@
 		vertical-align: -0.1875rem;
 	}
 
+	/* the same width whatever it's called, so the buttons stay put as the block changes */
+	.control.named {
+		flex: 0 1 auto;
+		inline-size: 9rem;
+		min-inline-size: 0;
+	}
+
 	.row .name {
+		flex: 1;
 		font-weight: 600;
-		max-inline-size: 12rem;
+		min-inline-size: 0;
 		overflow: hidden;
 		padding-inline: 0.5rem 0.375rem;
 		text-overflow: ellipsis;

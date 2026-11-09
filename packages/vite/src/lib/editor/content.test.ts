@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+	at_reading_line,
 	is_heading,
 	is_link,
 	is_plans,
@@ -576,5 +577,35 @@ describe("who's where on the site", () => {
 		expect(ids(who_is_where({ ...base, people, guest: true, following: "3" }).elsewhere)).toEqual([
 			"b",
 		])
+	})
+})
+
+describe("at_reading_line", () => {
+	const blocks = [
+		{ top: 0, bottom: 100 },
+		{ top: 100, bottom: 700 },
+		{ top: 700, bottom: 800 },
+	]
+
+	test("the line runs down the window as the page does, so short first and last blocks get a turn", () => {
+		expect(at_reading_line(blocks, 0, 2000, 800)).toBe(blocks[0])
+		expect(at_reading_line(blocks, 1000, 2000, 800)).toBe(blocks[1])
+		expect(at_reading_line(blocks, 2000, 2000, 800)).toBe(blocks[2])
+	})
+
+	test("the nearest when the line's between blocks, and only those in the window", () => {
+		const gaps = [
+			{ top: -300, bottom: -10 },
+			{ top: 50, bottom: 300 },
+			{ top: 500, bottom: 900 },
+			{ top: 900, bottom: 1200 },
+		]
+		expect(at_reading_line(gaps, 1.2, 2, 800)).toBe(gaps[2])
+		expect(at_reading_line(gaps, 0, 2000, 800)).toBe(gaps[1])
+		expect(at_reading_line([gaps[0]], 0, 2000, 800)).toBeUndefined()
+	})
+
+	test("a page that doesn't scroll reads from the top", () => {
+		expect(at_reading_line(blocks, 0, 0, 800)).toBe(blocks[0])
 	})
 })

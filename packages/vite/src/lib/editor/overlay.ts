@@ -41,6 +41,7 @@ import {
 	text_of,
 	with_paragraph,
 	type Path,
+	at_reading_line,
 } from "./content.js"
 import {
 	enter,
@@ -64,8 +65,9 @@ import { share_text, type Surface } from "./together.js"
  * found from the element `attrs` marked, and its content from `bloks`; text and images match
  * their fields by what they show, so a site marks nothing up.
  *
- * Hovering a block outlines it and names it; clicking selects it, which pins its toolbar and
- * opens its settings. Text and images inside edit where they are.
+ * Hovering a block outlines it; clicking selects it, which gives it the toolbar and opens its
+ * settings. Until then the toolbar, one bar in one place, is for the block being read as the
+ * page scrolls. Text and images inside edit where they are.
  */
 
 type Blok = Record<string, unknown> & { _uid?: string; component?: string }
@@ -751,14 +753,14 @@ async function source_of(
 
 /*
  * In a layer, so a site restyles any of it without fighting specificity: `[data-field]` and
- * `[data-rich]` for editable text, `[data-storyloco-hover]` and `-selected` for blocks
+ * `[data-rich]` for editable text, `[data-storyloco-hover]`, `-aimed` and `-selected` for blocks
  */
 const STYLE = `[data-field],[data-rich]{cursor:text;pointer-events:auto;border-radius:2px;transition:opacity .2s;caret-color:var(--editor-accent,#05807f)}
 [data-field]:focus,[data-storyloco=rich],[data-storyloco-field]{outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:4px}
 [data-edit=saving]{opacity:.55}
 [data-edit=error]{box-shadow:0 0 0 2px var(--editor-danger,#e5484d)}
 [data-image]{outline:2px solid color-mix(in srgb,var(--editor-accent,#05807f) 60%,transparent);outline-offset:-2px}
-[data-storyloco-hover]{outline:1px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:-1px}
+[data-storyloco-hover],[data-storyloco-aimed]{outline:1px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent);outline-offset:-1px}
 [data-storyloco-selected]{outline:2px solid var(--editor-accent,#05807f)!important;outline-offset:-2px}
 [data-blok-c][data-storyloco-empty]{min-block-size:3.5rem;background:repeating-linear-gradient(-45deg,transparent 0 8px,color-mix(in srgb,var(--editor-accent,#05807f) 6%,transparent) 8px 16px)}
 [data-blok-c]:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:-2px}
@@ -786,8 +788,6 @@ button.storyloco-image[aria-expanded=true] .x{opacity:1;rotate:0deg;scale:1}
 [data-storyloco=drop][data-uploading] span{animation:storyloco-pulse .8s ease-in-out infinite alternate}
 @keyframes storyloco-pulse{to{opacity:.55}}
 [data-storyloco=field-ring]{position:absolute;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
-[data-storyloco=tag]{position:absolute;z-index:2147482997;pointer-events:none;padding:.125rem .5rem;border-radius:.375rem .375rem .375rem 0;background:var(--editor-accent,#05807f);color:var(--editor-accent-ink,#fff);font:600 .6875rem/1.4 system-ui,sans-serif;white-space:nowrap;max-inline-size:16rem;overflow:hidden;text-overflow:ellipsis;transition:opacity .12s}
-[data-storyloco=tag][hidden]{display:block;opacity:0}
 @keyframes storyloco-in{from{opacity:0;translate:0 -2px}}
 @media (prefers-reduced-motion:reduce){[data-storyloco],[data-storyloco] *{animation:none!important;transition-property:opacity!important}}`
 
@@ -800,45 +800,17 @@ function style() {
 	document.head.prepend(tag)
 }
 
-// --- hovering: an outline and a name
+// --- hovering: an outline
 
-let tag: HTMLElement | undefined
 let hovered: HTMLElement | null = null
 
-/** Outline a block and name it, just above its top edge */
-function hover(node: HTMLElement | null, name?: string) {
-	if (node === hovered) return place_tag()
+function hover(node: HTMLElement | null) {
+	if (node === hovered) return
 	hovered?.removeAttribute("data-storyloco-hover")
 	hovered = node
-	if (!tag) {
-		tag = document.createElement("div")
-		tag.dataset.storyloco = "tag"
-		tag.setAttribute("aria-hidden", "true")
-		document.body.append(tag)
-	}
-	if (!node) {
-		tag.hidden = true
-		return
-	}
+	if (!node) return
 	node.setAttribute("data-storyloco-hover", "")
-	tag.textContent = name ?? ""
-	place_tag()
 	wire_all(node)
-}
-
-function place_tag() {
-	if (!tag || !hovered) return
-	// the selected block has its toolbar there already
-	const box = hovered.getBoundingClientRect()
-	tag.hidden =
-		hovered.hasAttribute("data-storyloco-selected") || box.bottom < 0 || box.top > innerHeight
-	const above = box.top - tag.offsetHeight
-	// held at the window's top it's fixed there: on the page, it would ride each scroll until put back
-	const pinned = above <= 0
-	tag.style.position = pinned ? "fixed" : ""
-	const origin = pinned ? { left: 0, top: 0 } : page_origin()
-	tag.style.left = `${Math.max(box.left, 0) - origin.left}px`
-	tag.style.top = `${Math.max(above, 0) - origin.top}px`
 }
 
 // --- text, edited where it is
@@ -1129,7 +1101,7 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 		const value = tidy(source.multiline ? node.innerText : (node.textContent ?? ""))
 		// left as it was: the page's own rendering of it, since nothing reloads to put that back
 		settle(shown ?? value)
-		reselect()
+		aim()
 		typing_in = null
 		tell(selected ? { uid: selected.uid } : null)
 		// with someone else still typing in it, it stays joined to watch; otherwise leaving saves what changed
@@ -1979,7 +1951,7 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 		together: { room, seed: first && !room.doc.getXmlFragment("rich").length },
 		end: () => {
 			editing_rich = null
-			reselect()
+			aim()
 			tell(selected ? { uid: selected.uid } : null)
 			open = false
 			// leaving saves what's unsaved when it's this browser's to save
@@ -1996,7 +1968,11 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 
 // --- the selected block: its toolbar, and its settings
 
-let bar: { show(target: Target | null): void; hide(): void }
+let bar: {
+	show(target: Target | null, chosen?: boolean): void
+	aim_at(target: Target | null, chosen?: boolean): void
+	hide(): void
+}
 
 type Inspector = {
 	open(selection: Selection, keyboard?: boolean): void
@@ -2103,7 +2079,6 @@ function highlight(uid: string | null) {
 	for (const node of document.querySelectorAll("[data-storyloco-selected]"))
 		node.removeAttribute("data-storyloco-selected")
 	if (uid) element_of(uid)?.setAttribute("data-storyloco-selected", "")
-	place_tag()
 	// the others outline it in this person's colour, and the field in it being typed in
 	const field = typing_in?.uid === uid ? typing_in.field : undefined
 	const telling = `${uid}:${field ?? ""}`
@@ -2111,10 +2086,34 @@ function highlight(uid: string | null) {
 	told = telling
 }
 
-/** Put the toolbar back on the selected block, say after its text was edited */
-function reselect() {
+/** The page's own top-level block that the window is reading, which the toolbar offers until one is clicked */
+function in_view() {
+	const page = editor.story?.id
+	return at_reading_line(
+		[...document.querySelectorAll<HTMLElement>("[data-blok-c]")].flatMap((node) => {
+			const target = target_of(node)
+			if (!target || parent_of(target) || (page && target.story !== page)) return []
+			const { top, bottom } = node.getBoundingClientRect()
+			return bottom > top ? [{ target, top, bottom }] : []
+		}),
+		scrollY,
+		document.documentElement.scrollHeight - innerHeight,
+		innerHeight
+	)?.target
+}
+
+/** Whether the schema's been asked for, so the toolbar first shows with a block's proper name */
+let schema_asked = false
+
+/** Point the toolbar: at the selected block while it's in the window, otherwise at the one being read */
+function aim() {
+	if (!schema_asked || !active || !editor.user) return
+	// it stays out of the way of text being typed in
+	if (editing_rich || document.activeElement?.closest("[contenteditable]")) return
 	const node = selected && element_of(selected.uid)
-	bar.show((node && target_of(node)) ?? null)
+	const box = node?.getBoundingClientRect()
+	const target = node && box && box.bottom > 0 && box.top < innerHeight && target_of(node)
+	bar.aim_at((target || in_view()) ?? null, !!target)
 }
 
 /**
@@ -2126,7 +2125,9 @@ export async function select(selection: Selection | null, keyboard = false) {
 	selected = selection
 	highlight(selection?.uid ?? null)
 	const node = selection && element_of(selection.uid)
-	bar.show((node && target_of(node)) ?? null)
+	const target = node && target_of(node)
+	if (target) bar.show(target, true)
+	else aim()
 	if (node) {
 		// keep it clear of the settings, which take the lower part of a small screen
 		// only when none of it would show: a tall block clicked partway down stays where it is
@@ -2244,7 +2245,7 @@ function over(event: PointerEvent) {
 	const block = block_of(el)
 	// touch has no hover: a tap selects, and the settings carry what hovering would show
 	const mouse = event.pointerType === "mouse"
-	if (mouse) hover(block, block ? label_of(meta(block).name ?? "") : undefined)
+	if (mouse) hover(block)
 
 	if (el instanceof HTMLImageElement) {
 		if (mouse) spot_of(el).then((spot) => active && spot && offer(el, spot))
@@ -2679,6 +2680,10 @@ function arm(on: boolean) {
 		load_schema()
 			.then(() => active && prepare(true))
 			.catch(() => {})
+			.then(() => {
+				schema_asked = true
+				aim()
+			})
 		// the settings and the richtext editor, ready before the first click rather than after it
 		;(window.requestIdleCallback ?? ((run: () => void) => setTimeout(run, 300)))(() => {
 			if (!active) return
@@ -2721,7 +2726,8 @@ function stand_in_page() {
 async function detect() {
 	if (connected_story()) {
 		detected_story(null)
-		return stand_in_page()
+		stand_in_page()
+		return aim()
 	}
 	const counts = new Map<number, number>()
 	// the page's own blocks are in its <main>, when it has one: a header and footer from a story of
@@ -2732,7 +2738,10 @@ async function detect() {
 		if (id) counts.set(id, (counts.get(id) ?? 0) + 1)
 	}
 	const [story] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? []
-	if (!story) return detected_story(null)
+	if (!story) {
+		detected_story(null)
+		return aim()
+	}
 	const found = await call<{ story: Parameters<typeof detected_story>[0] }>({
 		op: "story",
 		story,
@@ -2741,6 +2750,7 @@ async function detect() {
 	stand_in_page()
 	// the others' lists of who's on this page say which story it is
 	here()
+	aim()
 }
 
 /** The save someone else made that the page last said so about, so it says so once */
@@ -2798,6 +2808,7 @@ export function install() {
 				return reply
 			},
 			choices: menu_for,
+			aim,
 			// the blocks in the same list, from the story: a site may wrap each block in an element of its own
 			siblings: async (story: number, uid: string) =>
 				(locate(await content_for(story), uid)?.list ?? []).map((blok) =>
@@ -2828,7 +2839,14 @@ export function install() {
 		const story = selected?.story ?? editor.story?.id
 		if (uid && story) select({ story, uid }, true)
 	})
-	addEventListener("scroll", next_frame(place_tag), { passive: true })
+	// once the page has come to rest, so the toolbar doesn't flicker through what's scrolled past
+	let settling: ReturnType<typeof setTimeout> | undefined
+	const settled = () => {
+		clearTimeout(settling)
+		settling = setTimeout(aim, 120)
+	}
+	addEventListener("scroll", settled, { passive: true })
+	addEventListener("resize", settled)
 	addEventListener("storyloco:panel-field", mark_field)
 	// a save re-renders the page, and the selected blok's element with it
 	on_saved(() => {
@@ -2837,7 +2855,7 @@ export function install() {
 		fetched = new Map()
 		known.clear()
 		if (selected) highlight(selected.uid)
-		if (selected && !document.activeElement?.closest("[contenteditable]")) reselect()
+		aim()
 		if (active) prepare(true)
 		inspector?.then((panel) => panel.refresh())
 	})

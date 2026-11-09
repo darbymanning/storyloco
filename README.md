@@ -395,9 +395,10 @@ fields up. With edit mode on (the badge's switch, or **E**):
 - **Text** edits where it is, matched to its field by what it shows. Body copy edits in place
   as rich text, with the site's own styles.
 - **Images** offer Replace: the space's library or an upload, with alt text and a focus point.
-- **Blocks** get a toolbar on hover to move, duplicate, add after or delete (with Undo), and a
-  click opens every field of the block from its schema, nested blocks included. Drag a block
-  by its name in the toolbar to put it anywhere in its list.
+- **Blocks** share one floating toolbar to move, duplicate, add after or delete (with Undo). It
+  offers the block being read as the page scrolls, and a click gives it to that block and opens
+  every field from its schema, nested blocks included. Drag a block by its name in the toolbar
+  to put it anywhere in its list.
 - **AI** suggests an image's alt text in the image picker, and rewrites a selection or
   paragraph of rich text shorter, friendlier, clearer, or with its spelling fixed.
 - **Other stories** shown on the page, like cards listing the latest articles, edit as those
