@@ -1,5 +1,6 @@
 import { mount, unmount } from "svelte"
 import BlockBar from "./block_bar.svelte"
+import History from "./history.svelte"
 import {
 	bloks,
 	call,
@@ -11,12 +12,15 @@ import {
 	editor,
 	kit,
 	last_problem,
+	block_place,
+	preview_move,
 	on_editing,
 	on_saved,
 	redo,
 	refresh,
 	send,
 	set_editing,
+	steps_saved,
 	undo,
 } from "./client.js"
 import {
@@ -28,7 +32,6 @@ import {
 	is_plans,
 	is_text,
 	is_rich,
-	locate,
 	rich_compact,
 	is_r2_file,
 	r2_summary,
@@ -841,6 +844,17 @@ button.storyloco-image[aria-expanded=true] .x{opacity:1;rotate:0deg;scale:1}
 @keyframes storyloco-pulse{to{opacity:.55}}
 [data-storyloco=field-ring]{position:absolute;z-index:2147482990;pointer-events:none;border-radius:4px;outline:1.5px solid color-mix(in srgb,var(--editor-accent,#05807f) 70%,transparent)}
 @keyframes storyloco-in{from{opacity:0;translate:0 -2px}}
+[data-storyloco-picked]{outline:2px solid var(--editor-accent,#05807f)!important;outline-offset:2px}
+[data-storyloco=confirm]{position:fixed;z-index:2147483002;translate:-50% -50%;display:grid;gap:.75rem;box-sizing:border-box;inline-size:max-content;max-inline-size:calc(100vw - 2rem);padding:.875rem;border-radius:.875rem;color-scheme:light dark;backdrop-filter:blur(20px) saturate(1.8);background:linear-gradient(color-mix(in srgb,var(--editor-accent,#05807f) 9%,transparent),transparent 12rem),color-mix(in srgb,var(--editor-bg,#fff) 80%,transparent);box-shadow:0 0 0 1px var(--editor-line,rgb(27 36 63/.12)),0 12px 32px rgb(0 0 0/.22);color:var(--editor-ink,#1b243f);font:500 .8125rem/1.35 system-ui,sans-serif;animation:storyloco-confirm .22s cubic-bezier(.2,.8,.2,1)}
+[data-storyloco=confirm] p{all:unset;display:block}
+[data-storyloco=confirm] small{display:block;margin-block-start:.125rem;font-size:.75rem;font-weight:400;color:var(--editor-muted,#6b7280)}
+[data-storyloco=confirm] div{display:flex;gap:.375rem;justify-content:flex-end}
+[data-storyloco=confirm] button{all:unset;cursor:pointer;padding:.375rem .75rem;border-radius:.5rem;box-shadow:inset 0 0 0 1px var(--editor-line,rgb(27 36 63/.12))}
+[data-storyloco=confirm] button:hover{background:color-mix(in srgb,var(--editor-ink,#1b243f) 7%,transparent)}
+[data-storyloco=confirm] button[data-do=remove]{background:var(--editor-danger,#e5484d);box-shadow:none;color:#fff}
+[data-storyloco=confirm] button[data-do=remove]:hover{background:color-mix(in srgb,var(--editor-danger,#e5484d) 88%,#000)}
+[data-storyloco=confirm] button:focus-visible{outline:2px solid var(--editor-accent,#05807f);outline-offset:2px}
+@keyframes storyloco-confirm{from{opacity:0;scale:.94}}
 @media (prefers-reduced-motion:reduce){[data-storyloco],[data-storyloco] *{animation:none!important;transition-property:opacity!important}}`
 
 function style() {
@@ -1139,7 +1153,6 @@ function wire(node: HTMLElement, text: Shows, source: Source) {
 	const moved = () => typing() && sharing?.moved()
 
 	const focus = () => {
-		bar.hide()
 		shown = text.data
 		node.replaceChildren(document.createTextNode(sharing?.value() ?? text.data))
 		share()
@@ -1708,6 +1721,82 @@ function offer(img: HTMLImageElement, spot: Spot) {
 	image_tools.hidden = false
 }
 
+/* An image clicked is picked, as text clicked has the caret: Backspace or Delete then takes it out, once that's confirmed */
+
+let picked: { img: HTMLImageElement; spot: Spot } | undefined
+let confirming: HTMLElement | undefined
+
+function unpick() {
+	picked?.img.removeAttribute("data-storyloco-picked")
+	picked = undefined
+	confirming?.remove()
+	confirming = undefined
+}
+
+/** Pick the image clicked, if it's a field's and can be taken out; anything else clicked lets go of the last */
+async function pick(el: Element) {
+	unpick()
+	if (!(el instanceof HTMLImageElement)) return
+	const spot = await spot_of(el)
+	if (!active || !el.isConnected || !spot?.asset.id || spot.path) return
+	unpick()
+	picked = { img: el, spot }
+	el.setAttribute("data-storyloco-picked", "")
+}
+
+/** Ask before taking the picked image out, over the image itself: a key pressed by accident mustn't lose it */
+function confirm_remove() {
+	if (!picked || confirming) return
+	const { img, spot } = picked
+	const was = document.activeElement as HTMLElement | null
+	const box = img.getBoundingClientRect()
+	const ask = document.createElement("div")
+	ask.dataset.storyloco = "confirm"
+	ask.setAttribute("role", "alertdialog")
+	ask.setAttribute("aria-label", "Remove this image?")
+	ask.innerHTML = `<p>Remove this image?<small>Undo brings it back.</small></p><div><button type="button" data-do="cancel">Cancel</button><button type="button" data-do="remove">Remove</button></div>`
+	// over the middle of as much of the image as shows, and within the window
+	const middle = (from: number, to: number, size: number) =>
+		Math.min(Math.max((Math.max(from, 0) + Math.min(to, size)) / 2, 80), size - 80)
+	ask.style.left = `${middle(box.left, box.right, innerWidth)}px`
+	ask.style.top = `${middle(box.top, box.bottom, innerHeight)}px`
+	const close = () => {
+		removeEventListener("pointerdown", outside, true)
+		removeEventListener("scroll", close)
+		ask.remove()
+		if (confirming === ask) confirming = undefined
+	}
+	const outside = (e: Event) => !ask.contains(e.target as Node) && close()
+	ask.addEventListener("click", (e) => {
+		const chosen = (e.target as HTMLElement).closest<HTMLElement>("[data-do]")?.dataset.do
+		if (!chosen) return
+		close()
+		if (chosen === "remove") {
+			unpick()
+			remove_image(spot)
+		} else was?.focus?.()
+	})
+	ask.addEventListener("keydown", (e) => {
+		e.stopPropagation()
+		if (e.key === "Escape") {
+			close()
+			was?.focus?.()
+		}
+		// between the two, with nowhere else to go
+		if (e.key === "Tab" || e.key.startsWith("Arrow")) {
+			e.preventDefault()
+			const other =
+				document.activeElement === ask.querySelector("[data-do=remove]") ? "cancel" : "remove"
+			ask.querySelector<HTMLElement>(`[data-do=${other}]`)!.focus()
+		}
+	})
+	addEventListener("pointerdown", outside, true)
+	addEventListener("scroll", close, { passive: true, once: true })
+	document.body.append(ask)
+	confirming = ask
+	ask.querySelector<HTMLElement>("[data-do=remove]")!.focus()
+}
+
 /* A file dragged over an image while editing: the image takes it, uploaded to the library */
 
 let target: HTMLImageElement | undefined
@@ -1935,7 +2024,6 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	const { blok, field } = (block && (await rich_now(node, block, text))) ?? (still ? was : {})
 	if (!field || !block || !blok?._uid) return void (editing_rich = null)
 	const source = { story: Number(meta(block).id), uid: blok._uid, field }
-	bar.hide()
 	const room = enter(room_key(source))
 	const loaded = await import("./richtext.js").catch(() => null)
 	const first = await room.ready
@@ -2024,12 +2112,17 @@ let bar: {
 	show(target: Target | null, chosen?: boolean): void
 	aim_at(target: Target | null, chosen?: boolean, selecting?: boolean): void
 	hide(): void
+	/** Where every block is, and then each gliding from there to where a change left it */
+	snapshot(): Map<string, DOMRect | null>
+	glide(before: Map<string, DOMRect | null>): void
 }
 
 type Inspector = {
 	open(selection: Selection, keyboard?: boolean): void
 	typing(at: { uid: string; field: string } | null): void
 	refresh(): void
+	/** A block moved among its siblings: any list of them the settings show follows at once */
+	moved(uid: string, by?: number, to?: number): void
 	close(): void
 	showing(): boolean
 	toggle(keyboard?: boolean): void
@@ -2112,6 +2205,7 @@ function inspect() {
 						schema: load_schema,
 						deleted,
 						peek,
+						gliding,
 					},
 				}) as unknown as Inspector
 		)
@@ -2120,6 +2214,19 @@ function inspect() {
 			inspector = undefined
 			throw e
 		}))
+}
+
+/**
+ * Where every block is now, for a change about to show at once; the function back is called once
+ * it has, and each block glides from where it was to where the change left it
+ */
+function gliding() {
+	const before = bar.snapshot()
+	return async () => {
+		// the site has redrawn within a frame or two
+		for (let i = 0; i < 2; i++) await new Promise(requestAnimationFrame)
+		bar.glide(before)
+	}
 }
 
 let selected: Selection | null = null
@@ -2160,8 +2267,6 @@ let schema_asked = false
 /** Point the toolbar: at the selected block while it's in the window, otherwise at the one being read */
 function aim() {
 	if (!schema_asked || !active || !editor.user) return
-	// it stays out of the way of text being typed in
-	if (editing_rich || document.activeElement?.closest("[contenteditable]")) return
 	const node = selected && element_of(selected.uid)
 	const box = node?.getBoundingClientRect()
 	const target = node && box && box.bottom > 0 && box.top < innerHeight && target_of(node)
@@ -2243,6 +2348,8 @@ export function toast(
 		document.body.append(toast_el)
 	}
 	const el = toast_el
+	// they share a place at the foot of the page
+	timeline?.hide()
 	clearTimeout(toast_timer)
 	const text = document.createElement("span")
 	text.textContent = message
@@ -2263,14 +2370,37 @@ export function toast(
 	toast_timer = setTimeout(() => (el.hidden = true), lasts)
 }
 
-/** Undo or redo the last change, saying which, with the way to take that back too */
+let timeline: { say(message: string, back: boolean): void; hide(): void } | undefined
+
+/** Undo or redo the last change, showing where that leaves things among the changes made */
 export async function step(back: boolean) {
+	timeline ??= mount(History, {
+		target: document.body,
+		props: {
+			go: async (back: boolean, times: number) => {
+				for (let i = 0; i < times; i++) await step(back)
+			},
+		},
+	}) as unknown as typeof timeline
+	// the toolbar's only there once a block's been marked: without it, nothing to glide
+	const before = bar?.snapshot()
 	const label = await (back ? undo() : redo())
-	if (!label) return toast(last_problem() ?? (back ? "Nothing to undo" : "Nothing to redo"))
-	toast(`${back ? "Undid" : "Redid"} ${label}`, {
-		label: back ? "Redo" : "Undo",
-		run: () => step(!back),
+	if (toast_el) toast_el.hidden = true
+	timeline!.say(
+		label
+			? `${back ? "Undid" : "Redid"} ${label}`
+			: (last_problem() ?? (back ? "Nothing to undo" : "Nothing to redo")),
+		back
+	)
+	if (!label) return
+	// shown at once, and saved behind: said only if that goes wrong
+	steps_saved().then(() => {
+		const problem = last_problem()
+		if (problem) toast(problem)
 	})
+	// the site has redrawn by the next frame: what moved glides to where it is now
+	await new Promise(requestAnimationFrame)
+	if (before) bar.glide(before)
 }
 
 /** Deleted, with a way back, from the toolbar or the settings alike */
@@ -2281,6 +2411,8 @@ export function deleted(name: string, _story: unknown, undoable: unknown, after?
 		// the delete is the newest change, so it's the one an undo takes back
 		run: async () => {
 			await undo()
+			// shown at once, and saved behind: what follows reads the story, so it waits for the save
+			await steps_saved()
 			after?.()
 		},
 	})
@@ -2328,10 +2460,10 @@ function follow_link(link: HTMLAnchorElement) {
 	void kit().goto(url.pathname + url.search + url.hash)
 }
 
-/** ⌘ or Ctrl held, which a click on a link follows: the pointer says so */
+/** ⌥ or Alt held, which a click on a link follows: the pointer says so */
 function held(event: KeyboardEvent | FocusEvent) {
 	const on =
-		"metaKey" in event && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
+		"altKey" in event && event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey
 	document.documentElement.toggleAttribute("data-storyloco-follow", active && on)
 }
 
@@ -2344,6 +2476,7 @@ function click(event: MouseEvent) {
 	if (ours(el)) return
 	const block = block_of(el)
 	const link = el.closest("a[href]")
+	pick(el)
 	if (!block) return
 	// its text, or text its padding put in place to type in, rather than the control itself
 	const typing_in = (control: Element) => {
@@ -2354,10 +2487,10 @@ function click(event: MouseEvent) {
 			(!!field && control.contains(field))
 		)
 	}
-	// in edit mode a link inside content picks what it shows; ⌘ or Ctrl follows it, here, as a
-	// visitor's click would, and with ⇧ or ⌥ too the browser does as it always does, like a new tab
+	// in edit mode a link inside content picks what it shows; ⌥ or Alt follows it, here, as a
+	// visitor's click would, and with ⌘, Ctrl or ⇧ the browser does as it always does, like a new tab
 	if (link && block.contains(link)) {
-		if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey) {
+		if (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
 			event.preventDefault()
 			event.stopPropagation()
 			return follow_link(link as HTMLAnchorElement)
@@ -2391,13 +2524,15 @@ function click(event: MouseEvent) {
 	selection_at(el).then(async (s) => {
 		await pending
 		if (!s) return
-		// typing in place keeps the toolbar out of the way; the settings follow along if open. The
+		// typing in place leaves the focus in the text, so the block's selected without its settings
+		// taking it; they follow along if open, and the toolbar is the block's as for any click. The
 		// press may have just given text a stand-in to type in, which has the focus by now
 		const typing =
 			el.closest("[contenteditable]") || wired.has(document.activeElement as HTMLElement)
 		if (rich || typing) {
 			selected = s
 			highlight(s.uid)
+			aim()
 			inspector?.then((panel) => panel.showing() && panel.open(s))
 		} else select(s)
 	})
@@ -2425,6 +2560,12 @@ function keydown(event: KeyboardEvent) {
 		inspector?.then((panel) => panel.toggle(true))
 		return
 	}
+	// a picked image goes with Backspace or Delete, as selected text would, once that's confirmed
+	if ((event.key === "Backspace" || event.key === "Delete") && plain && picked?.img.isConnected) {
+		event.preventDefault()
+		confirm_remove()
+		return
+	}
 	// ⌘Z and ⇧⌘Z, or Ctrl+Z and Ctrl+Y, outside a field, where typing has its own undo
 	const command = (event.metaKey || event.ctrlKey) && !event.altKey
 	if (command && (event.key.toLowerCase() === "z" || event.key === "y")) {
@@ -2441,6 +2582,7 @@ function keydown(event: KeyboardEvent) {
 		return
 	}
 	// Escape climbs out: to the block around the selected one, then to nothing
+	if (event.key === "Escape") unpick()
 	if (event.key === "Escape" && selected) {
 		event.preventDefault()
 		const node = element_of(selected.uid)
@@ -2731,6 +2873,7 @@ export function welcome() {
 
 function arm(on: boolean) {
 	active = on
+	if (!on) unpick()
 	if (on) {
 		present()
 		show_comments()
@@ -2857,7 +3000,26 @@ export function install() {
 		target: document.body,
 		props: {
 			act: async (change: Record<string, unknown>) => {
+				// a move shows at once, where the page can show it, and saves behind
+				const saved =
+					change.op === "move" &&
+					preview_move(
+						change.story,
+						String(change.uid),
+						typeof change.by === "number" ? change.by : undefined,
+						Number(change.to)
+					)
+				// and in the settings' list of blocks, if that's showing
+				if (change.op === "move")
+					inspector?.then((panel) =>
+						panel.moved(
+							String(change.uid),
+							typeof change.by === "number" ? change.by : undefined,
+							Number(change.to)
+						)
+					)
 				const reply = (await send(change)) as { uid?: string; undo?: unknown } | null
+				if (saved) saved()
 				// a list's length is what says it's full
 				menus.clear()
 				if (!reply) return last_problem() ?? "Couldn’t save"
@@ -2866,11 +3028,7 @@ export function install() {
 			},
 			choices: menu_for,
 			aim,
-			// the blocks in the same list, from the story: a site may wrap each block in an element of its own
-			siblings: async (story: number, uid: string) =>
-				(locate(await content_for(story), uid)?.list ?? []).map((blok) =>
-					typeof blok._uid === "string" ? (element_of(blok._uid) ?? null) : null
-				),
+			where: block_place,
 			find,
 			select: (target: Target | null) =>
 				select(target ? { story: target.story, uid: target.uid } : null),
@@ -2896,17 +3054,28 @@ export function install() {
 		const story = selected?.story ?? editor.story?.id
 		if (uid && story) select({ story, uid }, true)
 	})
-	// once the page has come to rest, so the toolbar doesn't flicker through what's scrolled past
+	// as the page scrolls, a frame at a time, so the toolbar names each block as it's reached; and
+	// once more when it's come to rest, for whatever the last frame left a moment out of date
 	let settling: ReturnType<typeof setTimeout> | undefined
 	const settled = () => {
 		clearTimeout(settling)
 		settling = setTimeout(aim, 120)
 	}
-	addEventListener("scroll", settled, { passive: true })
+	const scrolling = next_frame(aim)
+	addEventListener(
+		"scroll",
+		() => {
+			scrolling()
+			settled()
+		},
+		{ passive: true }
+	)
 	addEventListener("resize", settled)
 	addEventListener("storyloco:panel-field", mark_field)
 	// a save re-renders the page, and the selected blok's element with it
 	on_saved(() => {
+		// what it knew of its field, like the other images in its list, is from before the save
+		unpick()
 		swept = new WeakSet()
 		regions = new WeakMap()
 		fetched = new Map()
@@ -2933,6 +3102,7 @@ export function install() {
 	on_saved(live_check)
 	on_navigate(live_check)
 	on_navigate(() => {
+		unpick()
 		// what stood in for the last page's bloks, like a layout's <main> for its story, is found again for this one's
 		forget_stand_ins()
 		detect()

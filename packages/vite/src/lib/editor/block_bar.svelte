@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { tick } from "svelte"
+	import { cubicOut } from "svelte/easing"
+	import { fly } from "svelte/transition"
 	import { editor } from "./client.js"
 	import { next_frame } from "./page.js"
 
@@ -9,18 +11,16 @@
 	let {
 		act,
 		choices,
-		siblings: siblings_of,
 		find,
 		select,
 		parent,
 		label: named,
 		aim,
+		where,
 	}: {
 		/** Send a change; the reply, or why it didn't save */
 		act: (change: Record<string, unknown>) => Promise<{ uid?: string } | string>
 		choices: (story: number, uid: string) => Promise<{ full: boolean; components: Array<Choice> }>
-		/** The blocks in the same list as this one, in order, as the page shows them */
-		siblings: (story: number, uid: string) => Promise<Array<HTMLElement | null>>
 		/** The block on the page with this `_uid`, once the page has caught up with a change */
 		find: (uid: string) => Target | undefined
 		/** Select a block, or nothing */
@@ -31,6 +31,11 @@
 		label: (name: string) => string | undefined
 		/** Look again at which block to point at */
 		aim: () => void
+		/** Where a block is among its siblings, and what they are, on a page that can show it moved before that's saved */
+		where: (
+			story: number,
+			uid: string
+		) => { index: number; list: Array<{ uid: string; name: string }> } | undefined
 	} = $props()
 
 	let target = $state.raw<Target | null>(null)
@@ -63,9 +68,6 @@
 		return words.charAt(0).toUpperCase() + words.slice(1)
 	}
 
-	/** The height of the bar's row, whatever's open beneath it */
-	const ROW = 36
-
 	/** Where a site's sticky or fixed header ends, so the bar never slides under it */
 	function header_bottom() {
 		let bottom = 0
@@ -85,29 +87,12 @@
 		return Math.min(bottom, innerHeight / 3)
 	}
 
-	/** One place, the top of the window's middle, below any header and clear of the edit bar's panel */
+	/** One place, always: the middle of the top of the window, below any header, whatever else is open */
 	function place() {
 		if (!target) return
 		top = header_bottom() + 8
-		let start = 8
-		let end = innerWidth - 8
-		const edit = document.querySelector("[data-storyloco=bar]")?.getBoundingClientRect()
-		if (edit && top < edit.bottom && top + ROW > edit.top) {
-			if (edit.left + edit.width / 2 < innerWidth / 2) start = edit.right + 8
-			else end = edit.left - 8
-		}
-		left = Math.max(8, start + (end - start - (bar?.offsetWidth ?? 240)) / 2)
+		left = Math.max(8, (innerWidth - (bar?.offsetWidth ?? 240)) / 2)
 	}
-
-	// placed afresh as the edit bar's panel opens or folds, so it's beside the panel only while it's there
-	const showing = $derived(!!target)
-	$effect(() => {
-		const edit = showing && document.querySelector("[data-storyloco=bar]")
-		if (!edit) return
-		const watch = new ResizeObserver(() => place())
-		watch.observe(edit)
-		return () => watch.disconnect()
-	})
 
 	/** Outlined, as nothing else says which block it is; a clicked block has its own outline */
 	$effect(() => {
@@ -117,22 +102,35 @@
 		return () => node.removeAttribute("data-storyloco-aimed")
 	})
 
+	/**
+	 * Which way the name changes: 1 when the block now pointed at is further down the page than the
+	 * last, as when scrolling down, so its name comes up from below as the last one's leaves upwards;
+	 * -1 the other way round
+	 */
+	let way = $state(1)
+	const calm = matchMedia("(prefers-reduced-motion: reduce)").matches
+	// a whole line's height, kept solid: the two names roll past like one strip, each beside the
+	// other and never over it, where a short fade through each other reads as a smudge
+	const slide = (by: number) => ({
+		y: `${by * 100}%`,
+		opacity: 1,
+		duration: calm ? 0 : 260,
+		easing: cubicOut,
+	})
+
 	/** Point at a block; `null` lets it go */
 	export function show(next: Target | null, clicked = false) {
 		chosen = clicked
 		if (target?.node !== next?.node) {
+			if (target && next)
+				way =
+					target.node.compareDocumentPosition(next.node) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1
 			menu = null
 			filter = ""
 			problem = null
 			target = next
-			row = []
-			if (next) {
-				siblings_of(next.story, next.uid)
-					.then((found) => target === next && (row = found))
-					.catch(() => {})
-				// ready before + is pressed
-				if (clicked) choices(next.story, next.uid).catch(() => {})
-			}
+			// ready before + is pressed
+			if (next && clicked) choices(next.story, next.uid).catch(() => {})
 		}
 		tick().then(place)
 	}
@@ -142,7 +140,7 @@
 	 * though a clicked block that's no longer selected, `selecting` says, lets go of it
 	 */
 	export function aim_at(next: Target | null, clicked = false, selecting = false) {
-		if (busy || drop) return
+		if (busy || dragging) return
 		const held = menu || bar?.matches(":hover, :has(:focus-visible)")
 		if ((!chosen || selecting) && target?.node.isConnected && held) return
 		show(next, clicked)
@@ -155,45 +153,79 @@
 	const blocks = () => document.querySelectorAll<HTMLElement>("[data-blok-c]")
 
 	/** Where every block is, so after a change each can glide from there to its new place */
-	function snapshot() {
-		const where = new Map<string, DOMRect>()
+	export function snapshot() {
+		const where = new Map<string, DOMRect | null>()
 		for (const node of blocks()) {
 			const uid = uid_of(node)
-			if (uid) where.set(uid, node.getBoundingClientRect())
+			// a blok shown in two places, like a layout's header and footer, has no one place to glide from
+			if (uid) where.set(uid, where.has(uid) ? null : node.getBoundingClientRect())
 		}
 		return where
 	}
 
-	function glide(before: Map<string, DOMRect>) {
+	const EASE = "cubic-bezier(.2,.8,.2,1)"
+
+	/**
+	 * Each block glides from where it was on screen to where it is now. One inside another that
+	 * moved travels with it, and glides only by what it moved besides, so a block kept where it was
+	 * as the page shifted round it holds still. `lifted` is the block moved by hand: it stays in
+	 * front of the others as they make way
+	 */
+	export function glide(before: Map<string, DOMRect | null>, lifted?: HTMLElement) {
 		if (matchMedia("(prefers-reduced-motion: reduce)").matches) return
-		const moved = new Set<HTMLElement>()
+		const on_screen = (box: DOMRect) => box.bottom > 0 && box.top < innerHeight
+		/** How far each block is from where it was */
+		const shifts = new Map<HTMLElement, { dx: number; dy: number }>()
+		const moves: Array<{ node: HTMLElement; dx: number; dy: number }> = []
 		for (const node of blocks()) {
 			const uid = uid_of(node)
 			const was = uid ? before.get(uid) : undefined
+			if (was === null) continue
 			const now = node.getBoundingClientRect()
-			if (now.bottom < 0 || now.top > innerHeight) continue
 			if (!was) {
-				node.animate(
-					[
-						{ opacity: 0, scale: 0.98 },
-						{ opacity: 1, scale: 1 },
-					],
-					{ duration: 320, easing: "cubic-bezier(.2,.8,.2,1)" }
-				)
+				if (on_screen(now))
+					node.animate(
+						[
+							{ opacity: 0, scale: 0.98 },
+							{ opacity: 1, scale: 1 },
+						],
+						{ duration: 320, easing: EASE }
+					)
 				continue
 			}
-			const dx = was.left - now.left
-			const dy = was.top - now.top
-			// a block inside one that moved already travels with it
-			const outer = node.parentElement?.closest<HTMLElement>("[data-blok-c]")
-			if ((Math.abs(dx) < 1 && Math.abs(dy) < 1) || (outer && moved.has(outer))) continue
-			moved.add(node)
-			node.animate([{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }], {
-				duration: 360,
-				easing: "cubic-bezier(.2,.8,.2,1)",
-			})
+			const shift = { dx: was.left - now.left, dy: was.top - now.top }
+			shifts.set(node, shift)
+			// in document order, so the block around this one has been through already
+			let outer = node.parentElement?.closest<HTMLElement>("[data-blok-c]")
+			while (outer && !shifts.has(outer))
+				outer = outer.parentElement?.closest<HTMLElement>("[data-blok-c]")
+			const around = (outer && shifts.get(outer)) || { dx: 0, dy: 0 }
+			const dx = shift.dx - around.dx
+			const dy = shift.dy - around.dy
+			if ((Math.abs(dx) < 1 && Math.abs(dy) < 1) || !(on_screen(was) || on_screen(now))) continue
+			moves.push({ node, dx, dy })
 		}
+		if (!moves.length) return
+		// all together, so one carried by another that's moving keeps in step with it; further takes
+		// a little longer, so a tall block passing by is seen to pass
+		const furthest = Math.max(...moves.map(({ dx, dy }) => Math.hypot(dx, dy)))
+		const options = { duration: 360 + Math.min(furthest, 1200) / 4, easing: EASE }
+		for (const { node, dx, dy } of moves)
+			node.animate([{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }], options)
+		if (!lifted) return
+		// picked up, in front of what slides past, and set down as they settle
+		const position = getComputedStyle(lifted).position
+		const raised = { position: position === "static" ? "relative" : position, zIndex: 1 }
+		lifted.animate(
+			[
+				{ ...raised, boxShadow: "0 1.5rem 4rem rgb(0 0 0 / 0.22)" },
+				{ ...raised, boxShadow: "0 0 0 rgb(0 0 0 / 0)" },
+			],
+			options
+		)
 	}
+
+	const frame = () => new Promise(requestAnimationFrame)
 
 	async function run(change: Record<string, unknown>) {
 		if (!target || busy) return
@@ -201,12 +233,29 @@
 		const was_in = parent(target)
 		// the bar may only be offering this one: what's selected elsewhere stays selected
 		const has_selected = node.matches("[data-storyloco-selected], :has([data-storyloco-selected])")
+		// moving a block the bar was only offering leaves what's selected, and the settings, as they are
+		const follow = change.op !== "move" || chosen
 		busy = true
 		problem = null
-		node.dataset.storylocoBusy = ""
 		const before = snapshot()
 		const top_was = node.getBoundingClientRect().top
-		const reply = await act({ ...change, story, uid, name })
+		/** The block stays where it was on screen, so the others are what visibly make way round it */
+		const settle = (moved: HTMLElement) => {
+			const shift = moved.getBoundingClientRect().top - top_was
+			if (Math.abs(shift) > 1) scrollTo({ top: scrollY + shift, behavior: "instant" })
+			glide(before, moved)
+		}
+		const place_was = change.op === "move" ? where(story, uid)?.index : undefined
+		const saving = act({ ...change, story, uid, name })
+		// a move the page could show at once is in its content already, and saves behind: by where
+		// it is there, as on screen it may not have moved, held in place as the browser anchors a scroll
+		const at_once = place_was !== undefined && where(story, uid)?.index !== place_was
+		if (at_once) {
+			// the site has redrawn within a frame or two
+			for (let i = 0; i < 2; i++) await frame()
+			settle(find(uid)?.node ?? node)
+		} else node.dataset.storylocoBusy = ""
+		const reply = await saving
 		delete node.dataset.storylocoBusy
 		busy = false
 		if (typeof reply === "string") {
@@ -214,21 +263,20 @@
 			return
 		}
 		await tick()
-		await new Promise(requestAnimationFrame)
+		await frame()
 		// follow the block to where it went, or the one made, so the next click carries on from there
 		const next = reply.uid ? find(reply.uid) : undefined
-		if (change.op === "move" && next) {
-			// keep the moved block where it was on screen, so the others are what visibly make way
-			const shift = next.node.getBoundingClientRect().top - top_was
-			if (Math.abs(shift) > 1) scrollTo({ top: scrollY + shift, behavior: "instant" })
-		}
-		glide(before)
+		// one shown at once has glided already: measured again mid-glide, it would only glide twice
+		if (at_once) return void (next && (follow ? select(next) : show(next)))
+		if (change.op === "move" && next) settle(next.node)
+		else glide(before)
 		if (change.op === "remove") {
 			show(null)
 			if (has_selected) select(was_in ?? null)
 			else aim()
 		} else if (next) {
-			select(next)
+			if (follow) select(next)
+			else show(next)
 			if (change.op !== "move") next.node.scrollIntoView({ block: "nearest" })
 		}
 	}
@@ -265,23 +313,34 @@
 		}
 	}
 
-	/** The blocks in this one's list, fetched as it's selected so a drag can start straight away */
-	let row: Array<HTMLElement | null> = []
-
+	/** Where a dragged block would land: a line on the page, between the blocks it would go between */
 	let drop = $state<{ top: number; left: number; width: number; height: number } | null>(null)
+	const dragging = $derived(drop !== null)
+	/** Whether the block pointed at can be dragged to another place: it has siblings, on a page that can show it */
+	const draggable = $derived.by(() => {
+		const at = target && where(target.story, target.uid)
+		return !!at && at.list.length > 1
+	})
 
-	/** Drag the block by its name to another place among its siblings */
+	/**
+	 * Drag the block by its name to another place among its siblings: the page stays as it is, a
+	 * line on it showing where the block would go, between whichever two the pointer's nearest, and
+	 * the block moves there, the others making way, once it's let go
+	 */
 	function drag(event: PointerEvent) {
-		if (!target || busy || event.button !== 0) return
-		const { node } = target
-		const from = row.indexOf(node)
+		if (!target || busy || !draggable || event.button !== 0) return
+		const { node, story, uid } = target
+		const at = where(story, uid)
+		if (!at) return
+		const from = at.index
 		// the rest of the list, in its order; a blok that shows nothing has no element, but keeps its place
-		const rest = row.filter((_, i) => i !== from)
+		const rest = at.list.filter((_, i) => i !== from).map((sibling) => find(sibling.uid)?.node)
 		const shown = rest.flatMap((other, i) => (other?.isConnected ? [{ other, i }] : []))
-		if (from < 0 || !shown.length) return
+		if (!shown.length) return
 		event.preventDefault()
 		const handle = event.currentTarget as HTMLElement
 		handle.setPointerCapture(event.pointerId)
+		menu = null
 		// side by side, like cards in a row, or one under another
 		const across = (() => {
 			const a = node.getBoundingClientRect()
@@ -291,10 +350,37 @@
 		let to = -1
 		let last: PointerEvent | null = null
 		let scrolling = 0
+		const move = (e: PointerEvent) => {
+			last = e
+			const point = across ? e.clientX : e.clientY
+			const boxes = shown.map(({ other, i }) => ({ box: other.getBoundingClientRect(), i }))
+			const middle = ({ box }: { box: DOMRect }) =>
+				across ? box.left + box.width / 2 : box.top + box.height / 2
+			const next = boxes.findIndex((b) => middle(b) >= point)
+			const after = boxes[next]?.box
+			const before = (next < 0 ? boxes.at(-1) : boxes[next - 1])?.box
+			to = next < 0 ? rest.length : boxes[next].i
+			const edge = (after ?? before)!
+			// where it is already is nowhere to go: no line there
+			if (to === from) return void (drop = { top: 0, left: 0, width: 0, height: 0 })
+			drop = across
+				? {
+						left: after ? after.left - 3 : before!.right + 1,
+						top: edge.top,
+						width: 4,
+						height: edge.height,
+					}
+				: {
+						left: edge.left,
+						top: after ? after.top - 2 : before!.bottom - 2,
+						width: edge.width,
+						height: 4,
+					}
+		}
 		// held near the top or bottom of the window, the page scrolls, faster the nearer the edge
 		const edge = () => {
 			const y = last?.clientY ?? innerHeight / 2
-			const by = y < 64 ? y - 64 : y > innerHeight - 64 ? y - (innerHeight - 64) : 0
+			const by = y < 72 ? y - 72 : y > innerHeight - 72 ? y - (innerHeight - 72) : 0
 			if (by && last) {
 				scrollBy({ top: by / 3, behavior: "instant" })
 				move(last)
@@ -302,40 +388,20 @@
 			scrolling = requestAnimationFrame(edge)
 		}
 		scrolling = requestAnimationFrame(edge)
-		const move = (e: PointerEvent) => {
-			last = e
-			const at = across ? e.clientX : e.clientY
-			const boxes = shown.map(({ other, i }) => ({ box: other.getBoundingClientRect(), i }))
-			const middle = ({ box }: { box: DOMRect }) =>
-				across ? box.left + box.width / 2 : box.top + box.height / 2
-			const next = boxes.findIndex((b) => middle(b) >= at)
-			const after = boxes[next]?.box
-			const before = (next < 0 ? boxes.at(-1) : boxes[next - 1])?.box
-			to = next < 0 ? rest.length : boxes[next].i
-			const edge = (after ?? before)!
-			drop = across
-				? {
-						left: after ? after.left - 3 : before!.right + 1,
-						top: edge.top,
-						width: 2,
-						height: edge.height,
-					}
-				: {
-						left: edge.left,
-						top: after ? after.top - 3 : before!.bottom + 1,
-						width: edge.width,
-						height: 2,
-					}
-		}
-		const done = () => {
+		drop = { top: 0, left: 0, width: 0, height: 0 }
+		const up = () => done(true)
+		const cancel = () => done(false)
+		const done = (keep: boolean) => {
 			cancelAnimationFrame(scrolling)
 			handle.removeEventListener("pointermove", move)
+			handle.removeEventListener("pointerup", up)
+			handle.removeEventListener("pointercancel", cancel)
 			drop = null
-			if (to >= 0 && to !== from) run({ op: "move", to })
+			if (keep && to >= 0 && to !== from) run({ op: "move", to })
 		}
 		handle.addEventListener("pointermove", move)
-		handle.addEventListener("pointerup", done, { once: true })
-		handle.addEventListener("pointercancel", () => ((to = -1), done()), { once: true })
+		handle.addEventListener("pointerup", up)
+		handle.addEventListener("pointercancel", cancel)
 	}
 
 	/** Escape closes the menu first; the overlay takes it from there */
@@ -377,10 +443,10 @@
 	</span>
 {/snippet}
 
-{#if drop}
+{#if drop?.width}
 	<div
 		class="drop"
-		data-storyloco="drop"
+		data-storyloco="drop-line"
 		style:top="{drop.top}px"
 		style:left="{drop.left}px"
 		style:width="{drop.width}px"
@@ -393,7 +459,7 @@
 		bind:this={bar}
 		class="bar"
 		class:busy
-		class:quiet={menu || drop}
+		class:quiet={menu || dragging}
 		data-storyloco="block-bar"
 		role="toolbar"
 		tabindex="-1"
@@ -412,10 +478,11 @@
 				)}
 			{/if}
 			<span class="control named">
-				<!-- dragging is for the pointer: Move up and down, here or in the settings, do it from the keyboard -->
+				<!-- dragging is for the pointer: Move up and down do it from the keyboard -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<span class="name" class:grip={!busy} onpointerdown={drag}
-					>{#if !busy}<svg class="dots" viewBox="0 0 24 24" aria-hidden="true"
+				<span class="name" class:grip={draggable && !busy} onpointerdown={drag}>
+					{#if draggable}
+						<svg class="dots" viewBox="0 0 24 24" aria-hidden="true"
 							><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle
 								cx="9"
 								cy="12"
@@ -425,9 +492,17 @@
 								cy="18"
 								r="1"
 							/></svg
-						>{/if}{label(target.name)}</span
-				>
-				<span class="tip" aria-hidden="true">Drag to move {label(target.name)}</span>
+						>
+					{/if}
+					<span class="words">
+						{#key target.node}
+							<span class="word" in:fly={slide(way)} out:fly={slide(-way)}
+								>{label(target.name)}</span
+							>
+						{/key}
+					</span>
+				</span>
+				{#if draggable}<span class="tip" aria-hidden="true">Drag to move</span>{/if}
 			</span>
 			{#if !docked}
 				{@render tool("Move up", "m18 15-6-6-6 6", () => run({ op: "move", by: -1 }))}
@@ -531,7 +606,22 @@
 		max-inline-size: min(20rem, 100vw - 1rem);
 		padding: 0.25rem;
 		position: fixed;
+		/* it arrives: down a touch from above, as the window's top is where it lives */
+		transition:
+			opacity 0.25s ease,
+			translate 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+			scale 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 		z-index: 2147482999;
+
+		@starting-style {
+			opacity: 0;
+			scale: 0.96;
+			translate: 0 -0.5rem;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			transition: none;
+		}
 
 		& * {
 			box-sizing: border-box;
@@ -603,7 +693,7 @@
 			position: absolute;
 		}
 
-		/* they'd cover what's being chosen from, or dropped on */
+		/* they'd cover what's being chosen from */
 		.quiet & {
 			display: none;
 		}
@@ -613,13 +703,20 @@
 		}
 	}
 
-	.drop {
-		background: var(--editor-accent, #05807f);
-		border-radius: 1px;
-		box-shadow: 0 0 0 2px rgb(255 255 255 / 0.8);
-		pointer-events: none;
-		position: fixed;
-		z-index: 2147482999;
+	/* the same width whatever it's called, so the buttons stay put as the block changes */
+	.control.named {
+		flex: 0 1 auto;
+		inline-size: 9rem;
+		min-inline-size: 0;
+	}
+
+	.row .name {
+		align-items: center;
+		display: flex;
+		flex: 1;
+		font-weight: 600;
+		min-inline-size: 0;
+		padding-inline: 0.5rem 0.375rem;
 	}
 
 	.row .grip {
@@ -635,29 +732,49 @@
 	.row .dots {
 		block-size: 1rem;
 		color: var(--muted);
-		/* in line with the name, whatever a site's reset makes an svg */
-		display: inline-block;
 		fill: currentColor;
+		flex: none;
 		inline-size: 1rem;
 		margin-inline: -0.25rem 0.125rem;
-		vertical-align: -0.1875rem;
+		stroke: none;
 	}
 
-	/* the same width whatever it's called, so the buttons stay put as the block changes */
-	.control.named {
-		flex: 0 1 auto;
-		inline-size: 9rem;
-		min-inline-size: 0;
-	}
-
-	.row .name {
+	/* a line high and no more, so a name rolling in or out is cut off at its edge */
+	.row .words {
+		block-size: 1.25em;
+		display: grid;
 		flex: 1;
-		font-weight: 600;
+		line-height: 1.25;
 		min-inline-size: 0;
 		overflow: hidden;
-		padding-inline: 0.5rem 0.375rem;
+	}
+
+	/* one in the other's place while the name changes, the last leaving as the next arrives */
+	.row .word {
+		grid-area: 1 / 1;
+		min-inline-size: 0;
+		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* where a dragged block would land: a line on the page, in the accent, that glides from gap to gap */
+	.drop {
+		background: var(--editor-accent, #05807f);
+		border-radius: 999px;
+		box-shadow:
+			0 0 0 2px rgb(255 255 255 / 0.85),
+			0 2px 12px rgb(0 0 0 / 0.3);
+		pointer-events: none;
+		position: fixed;
+		transition:
+			top 0.12s ease,
+			left 0.12s ease;
+		z-index: 2147482998;
+
+		@media (prefers-reduced-motion: reduce) {
+			transition: none;
+		}
 	}
 
 	button {

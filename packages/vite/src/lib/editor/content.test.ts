@@ -555,6 +555,19 @@ describe("who's where on the site", () => {
 		expect(ids(old.elsewhere)).toEqual(["a"])
 	})
 
+	test("someone on another site of the same space isn't here: staging's guests don't show on a developer's machine", () => {
+		const people = [
+			tab("me", 1, "https://localhost:3473/"),
+			tab("guest", 2, "https://next.example.com/"),
+			tab("local", 3, "https://localhost:3473/about"),
+			tab("old-editor", 4, "/news"),
+		]
+		const seen = who_is_where({ ...base, page: "https://localhost:3473/", people, following: "2" })
+		expect(ids(seen.elsewhere)).toEqual(["local", "old-editor"])
+		expect(seen.here).toEqual([])
+		expect(seen.followed).toBeNull()
+	})
+
 	test("the latest tab doesn't compare this browser's clock with the room's", () => {
 		// moved a moment ago by a slow clock, against a later join by the room's
 		const people = [
