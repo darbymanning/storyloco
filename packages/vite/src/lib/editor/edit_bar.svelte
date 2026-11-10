@@ -1176,6 +1176,10 @@
 	 * As it is open on staging's switch, though nothing morphs there, so its row still slides open
 	 */
 	.bar:has(.settings:not(:empty)),
+	/* reading rather than editing, there's no name to hold, but whoever else is here and Publish sit
+	   beside the badge all the same: the same pill round them, or they'd float loose over the page */
+	.bar:has(.people),
+	.bar:has(.publish.outside),
 	.bar.open:has(.mode),
 	.bar.open:has(.versions) {
 		--sheen: inset 0 1px 0 rgb(255 255 255 / 0.1);
