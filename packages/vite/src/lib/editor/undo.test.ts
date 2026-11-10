@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test"
-import { send, undo } from "./client.js"
+import { send, track, undo } from "./client.js"
 
 /** The blok's fields on the "server", and every change sent, as the editor hook would see them */
 let blok: Record<string, string> = {}
@@ -39,4 +39,21 @@ test("another field is an edit of its own", async () => {
 	expect(sent.at(-1)?.values).toEqual({ subtitle: "Hi" })
 	await undo().catch(() => {})
 	expect(sent.at(-1)?.values).toEqual({ title: "Hello" })
+})
+
+test("undoing a change to the page's own story shows it as it was at once, before it saves", async () => {
+	const story = { id: 1, content: { _uid: "root", title: "Hello" } }
+	const showed: Array<unknown> = []
+	const forget = track({
+		story: story as never,
+		show: (content) => showed.push(content),
+	})
+	await typed("Hello world")
+	const sends = sent.length
+	const undoing = undo()
+	// shown before anything's sent
+	expect(showed).toEqual([story.content])
+	expect(sent.length).toBe(sends)
+	expect(await undoing.catch(() => null)).toBe("edit")
+	forget()
 })

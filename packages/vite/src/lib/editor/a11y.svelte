@@ -326,11 +326,22 @@
 		--accent: var(--editor-accent, #05807f);
 		--danger: var(--editor-danger, #e5484d);
 
-		backdrop-filter: blur(20px) saturate(1.8);
-		background:
-			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
-			color-mix(in srgb, var(--bg) 88%, transparent);
 		border-radius: 1rem;
+
+		/* the glass is a layer of its own behind the list, so scrolling the list doesn't blur the page again each frame */
+		&::before {
+			backdrop-filter: blur(20px) saturate(1.8);
+			background:
+				linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+				color-mix(in srgb, var(--bg) 88%, transparent);
+			border-radius: inherit;
+			content: "";
+			inset: 0;
+			pointer-events: none;
+			position: absolute;
+			z-index: -1;
+		}
+
 		box-shadow:
 			0 0 0 1px var(--line),
 			0 12px 32px rgb(27 36 63 / 0.18);
@@ -439,8 +450,11 @@
 	}
 
 	.list {
+		/* scrolled on the compositor, in a layer of its own */
+		contain: paint;
 		min-block-size: 0;
 		overflow: auto;
+		will-change: scroll-position;
 		padding: 0.25rem 0.5rem 0.75rem;
 	}
 

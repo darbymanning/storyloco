@@ -9,7 +9,7 @@
 	import { SvelteMap } from "svelte/reactivity"
 	import { tick, untrack } from "svelte"
 	import type { Attachment } from "svelte/attachments"
-	import { call, editor, last_problem, send, set_settings_open } from "./client.js"
+	import { call, editor, last_problem, preview_move, send, set_settings_open } from "./client.js"
 	import {
 		blok_choices,
 		is_heading,
@@ -77,6 +77,7 @@
 		schema,
 		deleted,
 		peek,
+		gliding,
 	}: {
 		select: (selection: Selection | null) => void
 		highlight: (uid: string | null) => void
@@ -103,6 +104,8 @@
 		) =>
 			| { blok: Record<string, unknown>; trail: Loaded["trail"]; components: Map<string, unknown> }
 			| undefined
+		/** Notes where the page's blocks are; called once a change shows, they glide to where it left them */
+		gliding: () => () => void
 	} = $props()
 
 	let selection = $state.raw<Selection | null>(null)
@@ -237,7 +240,11 @@
 	$effect(() => {
 		const at = page
 		if (picked || !editor.editing) return
-		untrack(() => (at ? show(at) : clear()))
+		if (at) return untrack(() => show(at))
+		// the page lets go of its story for a moment each time it reads its data again, as after a
+		// save: only one that stays gone empties the panel, or its fields would blink out and back
+		const gone = setTimeout(clear, 400)
+		return () => clearTimeout(gone)
 	})
 
 	/** The field typed in on the page, which the settings mark so it's clear what's changing */
@@ -359,6 +366,25 @@
 		} else {
 			loaded = null
 			load(next)
+		}
+	}
+
+	/**
+	 * A block was moved among its siblings, from the page's toolbar or from here, a step with `by`
+	 * or to a place with `to`: a list of blocks showing here that holds it shows it there at once,
+	 * as the page does, rather than once the save has landed
+	 */
+	export function moved(uid: string, by?: number, to?: number) {
+		for (const [key, value] of Object.entries(values)) {
+			const list = kids(value)
+			const index = list.findIndex((kid) => kid?._uid === uid)
+			if (index < 0) continue
+			const next = by !== undefined ? index + by : Number(to)
+			if (!(next >= 0 && next < list.length) || next === index) return
+			const reordered = [...list]
+			reordered.splice(next, 0, ...reordered.splice(index, 1))
+			values[key] = reordered
+			return
 		}
 	}
 
@@ -571,7 +597,12 @@
 		const parent = loaded.trail.at(-2)?.uid
 		const name = loaded.blok.component
 		acting = true
+		// a move shows on the page at once, where the page can show it, and saves behind
+		const glide = op === "move" ? gliding() : undefined
+		const shown = op === "move" ? preview_move(story, uid, by) : undefined
+		if (shown) glide?.()
 		const reply = (await send({ op, story, uid, by })) as { uid?: string; undo?: unknown } | null
+		shown?.()
 		acting = false
 		if (!reply) return (problem = last_problem() ?? "Couldn’t change it")
 		if (op === "duplicate" && reply.uid) select({ story, uid: reply.uid })
@@ -592,7 +623,13 @@
 		saving[key] = true
 		const { story } = selection
 		const kid_name = kids(values[key]).find((kid) => kid._uid === uid)?.component ?? ""
+		// a move shows on the page at once, as it does in the list here, and saves behind
+		const glide = op === "move" ? gliding() : undefined
+		const shown = op === "move" ? preview_move(story, uid, by, to) : undefined
+		if (op === "move") moved(uid, by, to)
+		if (shown) glide?.()
 		const reply = (await send({ op, story, uid, by, to })) as { undo?: unknown } | null
+		shown?.()
 		saving[key] = false
 		if (!reply) failed[key] = last_problem() ?? "Couldn’t change it"
 		else {
@@ -609,7 +646,27 @@
 		null
 	)
 
-	function drag(event: PointerEvent, key: string, from: number, moved: (to: number) => unknown) {
+	/** The page showing a dragged block where it would land: the way to have it show what's saved again */
+	let landing: (() => void) | undefined
+
+	/** Show the page with a dragged block at this place among its siblings, the others gliding out of its way */
+	function land(uid: string, to: number) {
+		if (!selection) return
+		const glide = gliding()
+		const shown = preview_move(selection.story, uid, undefined, to)
+		if (!shown) return
+		landing = shown
+		glide()
+	}
+
+	function drag(
+		event: PointerEvent,
+		key: string,
+		from: number,
+		moved: (to: number) => unknown,
+		/** called as the row passes each place, for whatever follows it live, like the page */
+		passing?: (to: number) => void
+	) {
 		if (event.button !== 0) return
 		event.preventDefault()
 		const handle = event.currentTarget as HTMLElement
@@ -623,6 +680,7 @@
 		const move = (e: PointerEvent) => {
 			const dy = e.clientY - start
 			const to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / step)))
+			if (to !== dragging?.to) passing?.(to)
 			dragging = { key, from, to, dy, step }
 		}
 		const up = () => done(true)
@@ -634,6 +692,11 @@
 			const ended = dragging
 			dragging = null
 			if (keep && ended && ended.to !== from) await moved(ended.to)
+			// let go where it started, or not let go at all: the page goes back with it
+			else if (landing) passing?.(from)
+			// what the page was shown while dragging gives way to what's saved
+			landing?.()
+			landing = undefined
 		}
 		handle.addEventListener("pointermove", move)
 		handle.addEventListener("pointerup", up)
@@ -1655,7 +1718,14 @@
 					<span
 						class="grip"
 						title="Drag to reorder"
-						onpointerdown={(e) => drag(e, key, i, (to) => move_kid(key, i, to))}
+						onpointerdown={(e) =>
+							drag(
+								e,
+								key,
+								i,
+								(to) => move_kid(key, i, to),
+								(to) => land(kid._uid, to)
+							)}
 						><svg viewBox="0 0 24 24" aria-hidden="true"
 							><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle
 								cx="9"

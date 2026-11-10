@@ -680,6 +680,8 @@ function usable_page(page: string) {
  * Everyone else on the site, one entry a person however many tabs they have open: those on this
  * page, those elsewhere, and whoever's followed, by the tab they're using. Someone just connected
  * hasn't said where they are yet. A guest sees only their own page, and whoever they follow.
+ * The room is the whole space's, so it holds whoever has any site of it open: only those on this
+ * one count, or someone on staging, or a developer's own machine, would show on the live site.
  */
 export function who_is_where<T extends Connected>({
 	people,
@@ -697,10 +699,13 @@ export function who_is_where<T extends Connected>({
 	guest?: boolean
 }) {
 	const my_user = people.find((person) => person.id === me)?.user.id
+	// a bare path, from here or from a tab on an older editor, is this site's
+	const site = new URL(page ?? "/", "https://site.invalid")
 	const users = new Map<string, Array<T>>()
 	for (const person of people) {
 		if (!person.page || person.id === me || person.user.id === my_user) continue
 		if (!usable_page(person.page)) continue
+		if (new URL(person.page, site).origin !== site.origin) continue
 		const key = String(person.user.id)
 		users.set(key, [...(users.get(key) ?? []), person])
 	}

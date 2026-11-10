@@ -502,6 +502,24 @@
 			.join("")
 			.toUpperCase()
 
+	/*
+	 * The badge's parts are each found out separately: who's signed in, who else is here, the page's
+	 * name, whether there's anything to publish. Shown as each arrived, it would grow and reshuffle
+	 * four times in a second, so it waits for them and arrives once, whole; not for long, though,
+	 * as any of them may be a while, or never come
+	 */
+	let arrived = $state(false)
+	const known = $derived(
+		!editor.user || (here.me !== null && (!story || story.status !== "checking"))
+	)
+	$effect(() => {
+		if (known) arrived = true
+	})
+	$effect(() => {
+		const late = setTimeout(() => (arrived = true), 1500)
+		return () => clearTimeout(late)
+	})
+
 	/* What the badge's dot says while folded up */
 	const signal = $derived(
 		editor.problem
@@ -525,7 +543,8 @@
 {#if shown}
 	<div
 		bind:this={bar}
-		class={["bar", { open: opened, dragging: offset.x || offset.y }]}
+		class={["bar", { open: opened, dragging: offset.x || offset.y, arriving: !arrived }]}
+		inert={!arrived}
 		data-storyloco="bar"
 		data-corner={corner}
 		style:--clear="{clear}px"
@@ -623,21 +642,6 @@
 			</span>
 		{/if}
 
-		{#if editor.staging && !editor.user && !editor.guest}
-			<!-- staging's drafts or what's live, beside the badge so it always says which -->
-			<span
-				class="versions"
-				role="group"
-				aria-label="Content to show"
-				aria-busy={switching !== null}
-			>
-				<button type="button" aria-pressed={showing_draft} onclick={() => view(true)}>Draft</button>
-				<button type="button" aria-pressed={!showing_draft} onclick={() => view(false)}
-					>Published</button
-				>
-			</span>
-		{/if}
-
 		{#if editor.user}
 			<!-- the block settings: their name beside the badge, or the panel above the row when open -->
 			<div
@@ -660,6 +664,22 @@
 
 		<div class="panel" inert={!opened}>
 			<div class="inner">
+				{#if editor.staging && !editor.user && !editor.guest}
+					<!-- staging's drafts or what's live: behind the badge with Edit, so folded it's the badge alone -->
+					<span
+						class="versions"
+						role="group"
+						aria-label="Content to show"
+						aria-busy={switching !== null}
+					>
+						<button type="button" aria-pressed={showing_draft} onclick={() => view(true)}
+							>Draft</button
+						>
+						<button type="button" aria-pressed={!showing_draft} onclick={() => view(false)}
+							>Published</button
+						>
+					</span>
+				{/if}
 				{#if story && LABELS[story.status]}
 					<div class="status" data-status={story.status}>
 						{LABELS[story.status]}
@@ -743,25 +763,6 @@
 						</button>
 						<span class="tip" aria-hidden="true">Comment · C</span>
 					</span>
-					<span class="control">
-						<button
-							class="round"
-							type="button"
-							aria-label="Check accessibility"
-							onclick={() => {
-								open = false
-								import("./overlay.js").then((o) => o.accessibility())
-							}}
-						>
-							<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-								<circle cx="16" cy="4" r="1" />
-								<path
-									d="m18 19 1-7-6 1M5 8l3-3 5.5 3-2.36 3.5M4.24 14.5a5 5 0 0 0 6.88 6M13.76 17.5a5 5 0 0 0-6.88-6"
-								/>
-							</svg>
-						</button>
-						<span class="tip" aria-hidden="true">Accessibility</span>
-					</span>
 					{#each [true, false] as back (back)}
 						{@const what = back ? history.undo : history.redo}
 						<span class="control">
@@ -769,7 +770,7 @@
 								class="round"
 								type="button"
 								aria-label={back ? "Undo" : "Redo"}
-								disabled={!what || editor.saving}
+								disabled={!what}
 								onclick={() => import("./overlay.js").then((o) => o.step(back))}
 							>
 								<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -874,7 +875,7 @@
 						<span class="tip" aria-hidden="true">Leave: see the site as visitors do</span>
 					</span>
 				{:else}
-					<button class="action" type="button" onclick={signin}>
+					<button class="action last" type="button" onclick={signin}>
 						<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
 							<path
 								d="M21.17 6.81a1 1 0 0 0-3.99-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5zM15 5l4 4"
@@ -1127,6 +1128,12 @@
 			transition: none;
 		}
 
+		/* not yet whole: held back, so it arrives once rather than a piece at a time */
+		&.arriving {
+			opacity: 0;
+			scale: 0.96;
+		}
+
 		/* Right-hand corners open towards the page, and top ones show their tooltips below */
 		&[data-corner="bl"] {
 			inset: auto auto calc(var(--o) + var(--clear)) var(--o);
@@ -1166,11 +1173,11 @@
 	/*
 	 * holding the settings' name, the bar is a pill of its own, which morphs whole as it opens: glass,
 	 * the page blurred through it, a wash of the accent from the top and a catch of light on its edge.
-	 * As it is holding staging's switch, though nothing morphs there, so its row still slides open
+	 * As it is open on staging's switch, though nothing morphs there, so its row still slides open
 	 */
 	.bar:has(.settings:not(:empty)),
 	.bar.open:has(.mode),
-	.bar:has(.versions) {
+	.bar.open:has(.versions) {
 		--sheen: inset 0 1px 0 rgb(255 255 255 / 0.1);
 
 		backdrop-filter: blur(20px) saturate(1.8);
@@ -1255,13 +1262,10 @@
 		}
 
 		& .person {
-			block-size: 1.5rem;
-			font-size: 0.5625rem;
-			inline-size: 1.5rem;
+			--lap: 0.5rem;
+			--size: 1.5rem;
 
-			& + .person {
-				margin-inline-start: -0.625rem;
-			}
+			font-size: 0.5625rem;
 		}
 
 		& .panel {
@@ -1321,11 +1325,6 @@
 
 			& .people {
 				margin-inline: 0.25rem -0.5rem;
-			}
-
-			/* they run right to left here, so each overlaps the one on its right */
-			& .person + .person {
-				margin-inline: 0 -0.625rem;
 			}
 
 			& .panel {
@@ -1603,6 +1602,11 @@
 
 		&:hover {
 			color: var(--accent);
+		}
+
+		/* the row's last thing: off the pill's rounded end, as far as the switch is from the badge */
+		&.last {
+			margin-inline-end: 0.75rem;
 		}
 	}
 
@@ -1914,15 +1918,18 @@
 	}
 
 	.person {
+		/* how big each face is, how far the next sits over it, and the clear space left between the two */
+		--size: 1.75rem;
+		--lap: 0.4375rem;
+		--gap: 0.15625rem;
+		/* where the next face's middle is, from this one's leading edge */
+		--next: calc(var(--size) * 1.5 - var(--lap));
+
 		align-items: center;
-		background: var(--c, var(--muted));
-		block-size: 1.75rem;
+		background: none;
+		block-size: var(--size);
 		border: 0;
 		border-radius: 50%;
-		/* their colour round the face, which a photo would otherwise hide */
-		box-shadow:
-			0 0 0 2px var(--bg),
-			0 0 0 3.5px var(--c, var(--muted));
 		color: #fff;
 		cursor: pointer;
 		display: flex;
@@ -1930,14 +1937,13 @@
 		padding: 0;
 		font-size: 0.6875rem;
 		font-weight: 600;
-		inline-size: 1.75rem;
+		inline-size: var(--size);
 		justify-content: center;
 		position: relative;
 		/* someone arriving springs in; leaving shrinks away, and the rest close up */
 		transition:
 			scale 0.5s var(--overshoot),
-			opacity 0.3s ease,
-			box-shadow 0.2s ease;
+			opacity 0.3s ease;
 
 		@starting-style {
 			opacity: 0;
@@ -1945,16 +1951,53 @@
 		}
 
 		& + & {
-			margin-inline-start: -0.375rem;
+			margin-inline-start: calc(-1 * var(--lap));
+		}
+
+		/* right to left in the right-hand corners, so each sits over the one on its right */
+		[data-corner$="r"] & {
+			--next: calc(var(--lap) - var(--size) / 2);
+
+			& + & {
+				margin-inline: 0 calc(-1 * var(--lap));
+			}
+		}
+
+		&.more {
+			background: color-mix(in srgb, var(--ink) 14%, transparent);
+			color: var(--ink);
 		}
 
 		& .face {
+			background: var(--c, var(--muted));
 			block-size: 100%;
 			border-radius: 50%;
 			display: grid;
 			inline-size: 100%;
 			overflow: hidden;
 			place-items: center;
+			position: relative;
+			transition: filter 0.3s ease;
+
+			/* their colour round the face, which a photo would otherwise hide */
+			&::after {
+				border: 1.5px solid var(--c, var(--muted));
+				border-radius: inherit;
+				content: "";
+				inset: 0;
+				pointer-events: none;
+				position: absolute;
+			}
+		}
+
+		/* the next face sits over this one: a bite out of this one where it does, with clear space
+		   round it, so the glass shows between them rather than a ring painted in its colour */
+		&:has(+ &) .face {
+			mask: radial-gradient(
+				circle calc(var(--size) / 2 + var(--gap)) at var(--next) 50%,
+				transparent calc(100% - 0.5px),
+				#000 100%
+			);
 		}
 
 		&:focus-visible .tip {
@@ -1970,11 +2013,13 @@
 			}
 		}
 
+		/* followed: their colour, heavier, and in front of the others */
 		&[aria-pressed="true"] {
-			box-shadow:
-				0 0 0 2px var(--bg),
-				0 0 0 4px var(--c);
 			z-index: 1;
+
+			& .face::after {
+				border-width: 2.5px;
+			}
 		}
 
 		&:focus-visible {
@@ -1983,10 +2028,12 @@
 		}
 
 		/* elsewhere on the site: there, but not here with you */
-		&.away:not(:hover, :focus-visible, [aria-pressed="true"]) {
-			box-shadow: 0 0 0 2px var(--bg);
-			opacity: 0.6;
-			scale: 0.86;
+		&.away:not(:hover, :focus-visible, [aria-pressed="true"]) .face {
+			filter: saturate(0.4) opacity(0.75);
+
+			&::after {
+				border-color: transparent;
+			}
 		}
 
 		.tip {
