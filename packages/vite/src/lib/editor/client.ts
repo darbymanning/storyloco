@@ -3,7 +3,7 @@ import { tick } from "svelte"
 import { createSubscriber } from "svelte/reactivity"
 import type { ISbStoryData } from "@storyblok/svelte"
 import type { EditorUser } from "./server.js"
-import { draft_is_live, find_blok, like_page, page_of, who_is_where } from "./content.js"
+import { draft_is_live, find_blok, like_page, locate, page_of, who_is_where } from "./content.js"
 
 export type { EditorUser }
 
@@ -95,7 +95,8 @@ export type Notice = {
 }
 
 type Change = Record<string, unknown>
-type Done = { change: Change; label: string; at?: number }
+/** `before`: the page's content as it showed before the change, when it's the page's own story, to show again at once */
+type Done = { change: Change; label: string; at?: number; before?: unknown }
 type Blok = { _uid?: string }
 
 /**
@@ -419,14 +420,24 @@ function status_of({ id, published_at, updated_at }: ISbStoryData): Status {
 }
 
 /** Compare a story's draft with what's live, so its status says whether there's anything to publish */
-export async function check_live(id: number) {
-	const updated_at = (S.connected?.story ?? S.detected)?.updated_at
+export async function check_live(id: number): Promise<void> {
+	const turn = (checks.get(id) ?? 0) + 1
+	checks.set(id, turn)
+	const stamp = () => (S.connected?.story ?? S.detected)?.updated_at
+	const updated_at = stamp()
 	const reply = await call<{ stories: Array<Pending> }>({ op: "changes", stories: [id] }).catch(
 		() => null
 	)
+	// asked again since: that answer is the one to go by, whichever comes back first
+	if (checks.get(id) !== turn) return
 	note_live(id, updated_at, reply?.stories)
 	changed()
+	// saved again while this was asked, with nothing since to check it: or it would say "checking" for good
+	if (stamp() !== updated_at && (S.connected?.story ?? S.detected)?.id === id) return check_live(id)
 }
+
+/** How many times each story's been checked, so an earlier check answering late isn't taken for the latest */
+const checks = new Map<number, number>()
 
 function note_live(id: number, updated_at: string | undefined, stories?: Array<Pending>) {
 	const same = draft_is_live(stories, id)
@@ -698,9 +709,69 @@ const LABELS: Record<string, string> = {
 	duplicate: "duplicate",
 }
 
+/** A story of the page's saved since its data was last read, which Storyblok may not be serving yet */
+let unread: number | null = null
+
+/** What the page is showing in place of its story's content, ahead of a save */
+let ahead: unknown
+
+/** The story that's for */
+let ahead_of: number | undefined
+
+/** Show the page's story with this content, or as it's saved again with `null` */
+function show(content: unknown) {
+	ahead = content ?? undefined
+	ahead_of = S.connected?.story?.id
+	S.connected?.show?.(content)
+}
+
+/*
+ * The page connects its story afresh each time its data is read, and what it reads straight after
+ * a save can be the draft from before it: what it was shown ahead of the save goes onto the new
+ * connection as it's made, before it's drawn, so the page never steps back to how it was
+ */
+let connection: View | null = null
+S.subscribers.add(() => {
+	const view = S.connected
+	if (view === connection) return
+	connection = view
+	if (!view || ahead === undefined) return
+	// once the page's own effect that made the connection has finished, and still before it's drawn:
+	// read and set from inside that effect, the connection's state would become something the
+	// effect depends on, and setting it would run the effect again, without end
+	queueMicrotask(() => {
+		if (S.connected === view && ahead !== undefined && view.story?.id === ahead_of)
+			view.show?.(ahead)
+	})
+})
+
+const frame = () => new Promise((done) => requestAnimationFrame(done))
+
+/**
+ * Storyblok serves a draft a moment after it's saved, so a page read straight after a save can
+ * get the one before, and be a save behind from then on: read again until the page's story is as
+ * new as what's saved
+ */
+async function catch_up(story: number) {
+	const saved = await call<{ story: { updated_at: string } }>({ op: "story", story })
+		.then((found) => Date.parse(found.story.updated_at))
+		.catch(() => 0)
+	for (let wait = 300; saved && wait <= 2400; wait *= 2) {
+		// the page connects its story again as it redraws
+		await frame()
+		const view = S.connected
+		if (view?.story?.id !== story || !(Date.parse(view.story.updated_at ?? "") < saved)) break
+		await new Promise((done) => setTimeout(done, wait))
+		await kit().refresh()
+	}
+}
+
 /** The page's data again, as after a save, for a change made somewhere else */
 export async function refresh() {
+	const story = unread
+	unread = null
 	await kit().refresh()
+	if (story !== null && typeof requestAnimationFrame !== "undefined") await catch_up(story)
 	for (const listener of S.saved_listeners) listener()
 }
 
@@ -720,6 +791,10 @@ export async function send(
 	/** `false` while the change is being typed where it shows: the page already shows it, and reloading everything for each pause is what drags */
 	{ again = true }: { again?: boolean } = {}
 ) {
+	// the page's content before the change, to show again at once if it's undone: from before it
+	// was shown ahead of this save, if it was, or Undo would show the change itself
+	const before =
+		previewed && previewed.story === change.story ? previewed.content : shown_content(change.story)
 	const { undos, redos } = S
 	S.pending++
 	changed()
@@ -728,18 +803,17 @@ export async function send(
 		S.problem = null
 		const back = reply.undo as Change | undefined
 		const label = LABELS[String(change.op)]
-		if (back && label && as !== "shared") {
-			if (as === "undo") redos.push({ change: back, label })
-			else if (as === "change" && same_edit(undos.at(-1), back)) {
-				undos.at(-1)!.at = Date.now()
-				redos.length = 0
-			} else {
-				undos.push({ change: back, label, at: as === "change" ? Date.now() : undefined })
+		// a step back or forward has its way back in place already: `retrace` fills it in
+		if (back && label && as === "change") {
+			if (same_edit(undos.at(-1), back)) undos.at(-1)!.at = Date.now()
+			else {
+				undos.push({ change: back, label, before, at: Date.now() })
 				if (undos.length > 100) undos.shift()
-				if (as === "change") redos.length = 0
 			}
+			redos.length = 0
 		}
 		if (label && typeof change.story === "number") S.touched.add(change.story)
+		if (back && S.connected?.story?.id === change.story) unread = change.story as number
 		for (const listener of S.sent_listeners) listener(change)
 		if (again) await refresh()
 		return reply
@@ -755,21 +829,113 @@ export async function send(
 /** Why the last change didn't save, for the overlay's own messages */
 export const last_problem = () => S.problem
 
-/** Undo the last change made from this page; what it undid, or null with nothing to undo or if it failed */
-export async function undo() {
-	const done = S.undos.pop()
-	if (!done) return null
-	changed()
-	return (await send(done.change, "undo")) ? done.label : null
+/** The page's content as it shows now, if `story` is the one the page connected and can show another's in place */
+function shown_content(story: unknown) {
+	const view = S.connected
+	return view?.show && view.story && view.story.id === story ? view.story.content : undefined
 }
 
-/** Make the last undone change again */
-export async function redo() {
-	const done = S.redos.pop()
-	if (!done) return null
-	changed()
-	return (await send(done.change, "redo")) ? done.label : null
+/**
+ * Show the page's own story with a change made to its content, before the change has saved; the
+ * way to show what's saved again, or nothing when the page can't show it or the change does nothing
+ */
+export function preview(story: unknown, change: (content: Record<string, unknown>) => boolean) {
+	const content = shown_content(story)
+	if (!content) return
+	// a copy: what's there is the page's own, and what Undo shows again
+	const next = JSON.parse(JSON.stringify(content))
+	if (!change(next)) return
+	// the first of several, as a drag shows one for each place it passes
+	previewed ??= { story, content }
+	show(next)
+	return () => {
+		previewed = undefined
+		// unless something else has been shown since, which is that's to clear
+		if (ahead === next) show(null)
+	}
 }
+
+/** The page's content as it was before a change was shown ahead of its save, for that change's Undo */
+let previewed: { story: unknown; content: unknown } | undefined
+
+/** What a step back or forward last showed, so finishing only clears that */
+let stepped: unknown
+
+/**
+ * Show a block in its new place among its siblings before the move has saved: a step up or down
+ * with `by`, or to a place with `to`. The way to show what's saved again, or nothing when the
+ * page can't show it or the block wouldn't move
+ */
+export function preview_move(story: unknown, uid: string, by?: number, to?: number) {
+	return preview(story, (content) => {
+		const place = locate(content, uid)
+		if (!place) return false
+		const { list, index } = place
+		const next = by !== undefined ? index + by : Number(to)
+		if (!(next >= 0 && next < list.length) || next === index) return false
+		list.splice(next, 0, ...list.splice(index, 1))
+		return true
+	})
+}
+
+/** Where a block is among its siblings, and what each of them is, on a page that can show a move at once */
+export function block_place(story: unknown, uid: string) {
+	const place = locate(shown_content(story), uid)
+	return (
+		place && {
+			index: place.index,
+			list: place.list.map((blok) => ({ uid: String(blok._uid), name: String(blok.component) })),
+		}
+	)
+}
+
+/** Steps back and forward save one after another, in the order they were made */
+let saving_steps: Promise<unknown> = Promise.resolve()
+let steps_waiting = 0
+
+/** Every step back or forward so far has saved, or failed to */
+export const steps_saved = () => saving_steps
+
+/**
+ * Take the last change off `from` and make its opposite. The page shows it at once when it's the
+ * page's own story, from the content kept with the change, and the save follows; several in a row
+ * each show straight away, and the page's data is read again once, after the last has saved
+ */
+async function retrace(from: Array<Done>, as: "undo" | "redo") {
+	const done = from.pop()
+	if (!done) return null
+	const here = shown_content(done.change.story)
+	const instant = here !== undefined && done.before !== undefined
+	if (instant) show((stepped = done.before))
+	// its way back, in its place at once so the next step can be it: what that is comes with the save
+	const to = as === "undo" ? S.redos : S.undos
+	const other: Done = { change: { story: done.change.story }, label: done.label, before: here }
+	to.push(other)
+	changed()
+	steps_waiting++
+	const saved = saving_steps.then(async () => {
+		steps_waiting--
+		// the way back of a step that didn't save: there's nothing to send
+		const reply = done.change.op ? await send(done.change, as, { again: !steps_waiting }) : null
+		const back = reply?.undo as Change | undefined
+		if (back) other.change = back
+		else if (to.includes(other)) to.splice(to.indexOf(other), 1)
+		// one that didn't save: the page goes back to showing what's really there
+		if (!reply && instant) await refresh().catch(() => {})
+		// unless something else has been shown since, like a block moved meanwhile: that's its to clear
+		if (instant && !steps_waiting && ahead === stepped) show(null)
+		changed()
+		return reply
+	})
+	saving_steps = saved.catch(() => {})
+	return instant || (await saved) ? done.label : null
+}
+
+/** Undo the last change made from this page; what it undid, or null with nothing to undo or if it failed */
+export const undo = () => retrace(S.undos, "undo")
+
+/** Make the last undone change again */
+export const redo = () => retrace(S.redos, "redo")
 
 export const history = {
 	get undo() {
@@ -779,6 +945,14 @@ export const history = {
 	get redo() {
 		watch()
 		return S.redos.at(-1)?.label ?? null
+	},
+	/** What each change was, oldest first: those made, then those undone, the next to redo first */
+	get steps() {
+		watch()
+		return {
+			done: S.undos.map((step) => step.label),
+			undone: S.redos.map((step) => step.label).reverse(),
+		}
 	},
 }
 

@@ -24,6 +24,7 @@ import CollaborationCaret from "@tiptap/extension-collaboration-caret"
 import { yXmlFragmentToProsemirrorJSON } from "@tiptap/y-tiptap"
 import { call } from "./client.js"
 import { quietly, type Room } from "./live.js"
+import { page_origin } from "./page.js"
 
 /*
  * Richtext edited as Storyblok stores it. The extensions take Storyblok's names and attributes
@@ -1174,8 +1175,20 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 		const box = editor.view.dom.getBoundingClientRect()
 		const width = bar.offsetWidth
 		const height = bar.offsetHeight
-		bar.style.left = `${Math.min(Math.max(box.left, 8), innerWidth - width - 8)}px`
-		bar.style.top = `${box.top - height - 10 >= 8 ? box.top - height - 10 : Math.min(Math.max(8, box.top + 8), box.bottom - height - 8)}px`
+		const left = Math.min(Math.max(box.left, 8), innerWidth - width - 8)
+		// above the text, staying at the top of the window as the text's start scrolls past it, and
+		// leaving with the text's end: one unbroken path, with no jump down into the text on the way
+		// the block's own toolbar keeps the top of the window: this stays clear beneath it
+		const above = document.querySelector("[data-storyloco=block-bar]")?.getBoundingClientRect()
+		const floor = above ? above.bottom + 8 : 8
+		const top = Math.min(Math.max(floor, box.top - height - 10), box.bottom - height - 8)
+		// held at the top of the window it's fixed there; anywhere else it's on the page, so the
+		// browser scrolls it with the text rather than this following a frame behind, which bounces
+		const held = top === floor
+		const origin = held ? { top: 0, left: 0 } : page_origin()
+		bar.style.position = held ? "fixed" : "absolute"
+		bar.style.left = `${left - origin.left}px`
+		bar.style.top = `${top - origin.top}px`
 	}
 
 	render()
