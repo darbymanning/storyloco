@@ -6,6 +6,7 @@ import { HubspotForms } from '../../hubspot_form/src/forms.svelte.js'
 import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon, ClipboardListIcon } from '@lucide/svelte'
 import { format_date, format_elapse } from 'kitto'
 import type { Asset } from '../../asset/types.js'
+import { plugin_link } from '../../vite/src/lib/link.js'
 
 type Plugin = FieldPluginResponse<Link | null>
 
@@ -102,14 +103,38 @@ export class LinkManager {
 
 				// maintain state when rerendering after selecting a story
 				if (this.initial && state.data?.content) {
-					this.content = state.data.content
+					// a field switched from Storyblok's own link holds its old links in that shape
+					this.content = plugin_link(state.data.content as never) as unknown as Link
 					this.initial = false
+					this.name_story()
 				} else if (state.data?.content === null) {
 					// initialize with default content if none exists
 					this.content = { type: 'internal' }
 				}
 			},
 		})
+	}
+
+	/** An old link's story by its uuid, for its name: shown, not saved until something changes */
+	private name_story = async () => {
+		const story = this.content.type === 'internal' ? this.content.story : undefined
+		if (!story?.uuid || story.name || !this.token) return
+		const url = new URL(`https://api.storyblok.com/v2/cdn/stories/${story.uuid}`)
+		url.searchParams.set('find_by', 'uuid')
+		url.searchParams.set('version', 'draft')
+		url.searchParams.set('token', this.token)
+		url.searchParams.set('cv', Date.now().toString())
+		const response = await fetch(url).catch(() => null)
+		if (!response?.ok || this.content.type !== 'internal') return
+		const { story: found } = (await response.json()) as ISbStories['data'] & {
+			story: ISbStories['data']['stories'][number]
+		}
+		this.content.story = {
+			id: found.id,
+			uuid: found.uuid,
+			name: found.name,
+			published_at: found.published_at,
+		}
 	}
 
 	update = () => {

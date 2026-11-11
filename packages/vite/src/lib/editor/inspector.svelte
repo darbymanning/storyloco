@@ -27,6 +27,7 @@
 		same,
 		theme_choices,
 	} from "./content.js"
+	import { plugin_link } from "../link.js"
 	import type { Inserts, RichDoc, RichField } from "./richtext.js"
 	import type { Selection } from "./overlay.js"
 	import { enter, leave, quietly, select as live_select, shared } from "./live.js"
@@ -2387,7 +2388,7 @@
 {/snippet}
 
 {#snippet Link_(key: string, field: Field, id: string)}
-	{@const value = object_of(values[key])}
+	{@const value = plugin_link(object_of(values[key]))}
 	{@const type = text(value.type) || "external"}
 	{@const keep = (patch: Value) => change(key, { ...value, type, ...patch })}
 	{@const story = object_of(value.story)}

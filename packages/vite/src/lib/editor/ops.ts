@@ -24,6 +24,7 @@ import {
 	type Place,
 } from "./content.js"
 import { format_currency } from "../currency.js"
+import { plugin_link } from "../link.js"
 
 /*
  * What the Site Editor can do to a space, as the person signed in: read and change stories, assets
@@ -650,11 +651,13 @@ async function plugin_value(
 		}
 		case "link": {
 			if (!object(value)) bad()
+			// a field switched from Storyblok's own link still holds its old links in that shape
+			const stored = plugin_link(was)
 			const type = value.type
 			const target =
 				value.target === undefined || TARGETS.has(String(value.target)) ? value.target : bad()
 			// a story it no longer links to goes, native fields too, or `resolve_links` would still send it there
-			const kept = Object.fromEntries(Object.entries(was).filter(([k]) => !STORY_LINK.has(k)))
+			const kept = Object.fromEntries(Object.entries(stored).filter(([k]) => !STORY_LINK.has(k)))
 			const base = { ...kept, type, text: str(value.text, 500), target }
 			if (type === "external") {
 				const url = str(value.url, 2000)
@@ -674,27 +677,27 @@ async function plugin_value(
 				}
 			if (type === "internal") {
 				const chosen = object(value.story) && id(value.story.id) ? value.story.id : undefined
-				const same = chosen !== undefined && object(was.story) && was.story.id === chosen
+				const same = chosen !== undefined && object(stored.story) && stored.story.id === chosen
 				// the page it was already, or else one Storyblok has
 				const found = chosen === undefined || same ? undefined : await find_story(chosen)
 				const story = found
 					? { id: found.id, uuid: found.uuid, name: found.name, published_at: found.published_at }
 					: same
-						? (was.story as Node)
+						? (stored.story as Node)
 						: undefined
 				// a native link's fields, so `resolve_links` keeps its path current after the story moves
 				const native = story && {
 					fieldtype: "multilink",
 					linktype: "story",
 					id: story.uuid,
-					cached_url: found ? found.full_slug : was.cached_url,
+					cached_url: found ? found.full_slug : stored.cached_url,
 				}
 				return { ...base, suffix: str(value.suffix, 500), story, ...native }
 			}
 			// an asset link's file is chosen in Storyblok; its words and target are editable here
-			if (type === "asset" && was.type === "asset") return { ...base, asset: was.asset }
+			if (type === "asset" && stored.type === "asset") return { ...base, asset: stored.asset }
 			// as is a form link's HubSpot form
-			if (type === "form" && was.type === "form") return { ...base, form: was.form }
+			if (type === "form" && stored.type === "form") return { ...base, form: stored.form }
 			return bad()
 		}
 		case "plans": {
