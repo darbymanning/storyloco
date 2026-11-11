@@ -2008,6 +2008,37 @@ let editing_rich: (() => void) | null = null
 /** The richtext the last press is in, as it's found */
 let finding_rich: Promise<HTMLElement | undefined> | undefined
 
+/**
+ * A blok as it's saved, kept for a moment: rich text starts from what's saved rather than what
+ * the page last showed, and waiting on that from the press is most of what makes it slow to open.
+ * Asked for as the text is pointed at, it's mostly here by the time it's pressed
+ */
+const saved_bloks = new Map<string, { at: number; blok: Promise<Blok | undefined> }>()
+function saved_blok(story: number, uid: string) {
+	const key = `${story}:${uid}`
+	const kept = saved_bloks.get(key)
+	// ponytail: only this tab's saves clear it, so it's kept no longer than pointing at text and
+	// pressing it takes; anyone else's save in that time is missed, as one a moment after would be
+	if (kept && performance.now() - kept.at < 3000) return kept.blok
+	const blok = call<{ blok: Blok }>({ op: "blok", story, uid })
+		.then((found) => found.blok)
+		.catch(() => undefined)
+	saved_bloks.set(key, { at: performance.now(), blok })
+	return blok
+}
+
+/** Rich text pointed at: its editor's code and its blok as saved, on their way before it's pressed */
+function warm(node: HTMLElement) {
+	const block = block_of(node)
+	const uid = riches.get(node)?.blok._uid
+	if (!block || !uid) return
+	void import("./richtext.js").catch(() => null)
+	void saved_blok(Number(meta(block).id), uid)
+}
+
+let warming: HTMLElement | undefined
+let warm_soon: ReturnType<typeof setTimeout> | undefined
+
 async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	// taken before anything is awaited: one click arrives twice (pointer and click), and both would
 	// otherwise get past this to open two editors on the one field
@@ -2025,8 +2056,10 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 	if (!field || !block || !blok?._uid) return void (editing_rich = null)
 	const source = { story: Number(meta(block).id), uid: blok._uid, field }
 	const room = enter(room_key(source))
-	const loaded = await import("./richtext.js").catch(() => null)
-	const first = await room.ready
+	// everything it waits on, at once rather than one after another
+	const fetching = saved_blok(source.story, source.uid)
+	const schemas = load_schema().catch(() => null)
+	const [loaded, first] = await Promise.all([import("./richtext.js").catch(() => null), room.ready])
 	// edit mode went off meanwhile, or the editor didn't load (say after a deploy): let go
 	if (!loaded || !active) {
 		editing_rich = null
@@ -2035,14 +2068,13 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 		return
 	}
 	const { edit_in_place, holds, shared_doc } = loaded
-	const schema = (await load_schema().catch(() => null))?.get(blok.component ?? "")?.schema[field]
-	const inserts = await rich_inserts(schema).catch(() => undefined)
+	const schema = (await schemas)?.get(blok.component ?? "")?.schema[field]
+	const inserting = rich_inserts(schema).catch(() => undefined)
 	// the first one in starts it from what's saved, not what the page last showed
 	const saved = first
-		? await call<{ blok: Blok }>({ op: "blok", story: source.story, uid: source.uid })
-				.then(({ blok }) => blok[field] as Record<string, unknown> | undefined)
-				.catch(() => undefined)
+		? ((await fetching)?.[field] as Record<string, unknown> | undefined)
 		: undefined
+	const inserts = await inserting
 	if (!active) {
 		editing_rich = null
 		leave_room(room)
@@ -2065,6 +2097,8 @@ async function edit_rich(node: HTMLElement, at: { x: number; y: number }) {
 		const values = { [source.field]: value }
 		const change = { op: "fields", story: source.story, uid: source.uid, values }
 		const ok = await send(change, together ? "shared" : "change", { again: !open })
+		// what was kept of it as saved is from before this
+		saved_bloks.delete(`${source.story}:${source.uid}`)
 		if (ok && open) behind = true
 		delete node.dataset.edit
 		if (ok)
@@ -2144,8 +2178,11 @@ function peek({ story, uid }: Selection) {
 	if (!components.size) return
 	const node = element_of(uid)
 	const content = known.get(story)
+	// an element can stand for two bloks, a block that shows another story and that story's own
+	// root: only the one asked for will do, or the panel opens on the other's fields for a moment
+	const marked = node && (bloks.get(node) as Blok | undefined)
 	const blok =
-		(node && (bloks.get(node) as Blok | undefined)) ??
+		(marked?._uid === uid ? marked : undefined) ??
 		(page_blok(uid) as Blok | undefined) ??
 		(content && (find_blok(content, uid) as Blok | undefined))
 	if (!blok?.component) return
@@ -2436,7 +2473,16 @@ function over(event: PointerEvent) {
 		return
 	}
 
-	if (!editing_rich) finding_rich = rich_at(el)
+	if (!editing_rich) {
+		finding_rich = rich_at(el)
+		// once the pointer's stayed on it a moment: one swept over on the way elsewhere isn't read
+		void finding_rich.then((found) => {
+			if (found === warming) return
+			clearTimeout(warm_soon)
+			warming = found
+			if (found) warm_soon = setTimeout(() => active && warm(found), 120)
+		})
+	}
 
 	// a held key means press what's there, as it follows a link
 	const held = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
@@ -3029,6 +3075,11 @@ export function install() {
 			choices: menu_for,
 			aim,
 			where: block_place,
+			open: async (target: Target) => {
+				await select({ story: target.story, uid: target.uid })
+				// select says so when the settings can't load
+				if (!editor.settings_open) (await inspector?.catch(() => null))?.toggle()
+			},
 			find,
 			select: (target: Target | null) =>
 				select(target ? { story: target.story, uid: target.uid } : null),
@@ -3076,6 +3127,7 @@ export function install() {
 	on_saved(() => {
 		// what it knew of its field, like the other images in its list, is from before the save
 		unpick()
+		saved_bloks.clear()
 		swept = new WeakSet()
 		regions = new WeakMap()
 		fetched = new Map()

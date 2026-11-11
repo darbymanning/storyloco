@@ -129,11 +129,56 @@
 	const faces = $derived(card ? 2 : 4)
 	const opened = $derived(settings ? card : open)
 
+	// edit mode switched off from the open panel leaves its row open, as the switch is in it: the
+	// bar would otherwise fold away from under the pointer
+	let panel_was_open = false
+	$effect(() => {
+		if (!settings && panel_was_open) open = true
+		panel_was_open = card
+	})
+
+	/** The panel's contents arriving one after another, as it opens: from its name, or as edit mode's switched on */
+	let unfolding = $state(false)
+	let card_was: boolean | undefined
+	$effect(() => {
+		const shown = card
+		// only as it opens, not as a page loads with it open already
+		if (card_was === false && shown) {
+			clearTimeout(unfolded)
+			unfolding = true
+			unfolded = setTimeout(() => (unfolding = false), 1400)
+		}
+		card_was = shown
+	})
+	let unfolded: ReturnType<typeof setTimeout> | undefined
+	let edit_was: boolean | undefined
+	$effect(() => {
+		const on = settings
+		// and only then does the bar ease its height: folding to a name and opening from one are the
+		// settings' own morph, which a height easing of the bar's own would pull against
+		if (edit_was !== undefined && edit_was !== on) {
+			clearTimeout(toggled)
+			toggling = true
+			toggled = setTimeout(() => (toggling = false), 600)
+		}
+		edit_was = on
+	})
+	let toggling = $state(false)
+	let toggled: ReturnType<typeof setTimeout> | undefined
+
 	/* Badge, S key and the settings' own button alike */
 	function toggle() {
-		if (settings) import("./overlay.js").then((o) => o.toggle_settings())
-		else open = !open
+		if (settings) return void import("./overlay.js").then((o) => o.toggle_settings())
+		open = !open
+		// only as it's opened by hand: its row's there too when edit mode's switched, and shouldn't arrive again
+		clearTimeout(arriving_done)
+		arriving = open
+		if (open) arriving_done = setTimeout(() => (arriving = false), 800)
 	}
+
+	/** The row's buttons arriving one after another, as the bar's opened with edit mode off */
+	let arriving = $state(false)
+	let arriving_done: ReturnType<typeof setTimeout> | undefined
 
 	const story = $derived(editor.story)
 
@@ -174,7 +219,26 @@
 		return null
 	}
 
+	/**
+	 * The bar gliding to where it's just been put, from where its badge was: moved clear of a cookie
+	 * banner that's appeared, or back once it's gone, it travels there rather than being there at once
+	 */
+	async function travel(was: DOMRect | undefined) {
+		if (!was || !arrived || matchMedia("(prefers-reduced-motion: reduce)").matches) return
+		await tick()
+		const now = bar?.querySelector(".badge")?.getBoundingClientRect()
+		if (!bar || !now) return
+		const [dx, dy] = [was.left - now.left, was.top - now.top]
+		if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+		bar.animate([{ translate: `${dx}px ${dy}px` }, { translate: "0 0" }], {
+			duration: 450,
+			easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+		})
+	}
+
 	function place(saved: Corner | null) {
+		const was = bar?.querySelector(".badge")?.getBoundingClientRect()
+		const [corner_was, clear_was] = [corner, clear]
 		const theirs = nextjs()
 		// a corner of its own unless someone chose to share Next.js's
 		if (!saved && theirs?.corner === corner) corner = corner[0] === "b" ? "br" : "tr"
@@ -191,6 +255,9 @@
 		// clear of it by 12px, past the bar's own 1rem offset
 		const edge = below ? (corner[0] === "b" ? innerHeight - below.top : below.bottom) : 0
 		clear = below ? Math.max(edge + 12 - 16, 0) : 0
+		// only when this is what moved it: its badge moves as the panel opens and folds too, and a
+		// bar dropped in a corner glides there from the drop itself
+		if ((corner !== corner_was || clear !== clear_was) && !offset.x && !offset.y) travel(was)
 	}
 
 	function remember() {
@@ -543,7 +610,17 @@
 {#if shown}
 	<div
 		bind:this={bar}
-		class={["bar", { open: opened, dragging: offset.x || offset.y, arriving: !arrived }]}
+		class={[
+			"bar",
+			{
+				open: opened,
+				dragging: offset.x || offset.y,
+				arriving: !arrived,
+				staggered: arriving,
+				unfolding,
+				toggling,
+			},
+		]}
 		inert={!arrived}
 		data-storyloco="bar"
 		data-corner={corner}
@@ -587,7 +664,9 @@
 			{/if}
 		</button>
 
-		{#if everyone.length}
+		<!-- reading rather than editing, the badge is alone until it's opened: who else is here, and
+		     publishing, are for whoever's working on the page -->
+		{#if everyone.length && (settings || opened)}
 			<span class="people" role="group" aria-label="Also on this site">
 				{#each everyone.slice(0, faces) as person (person.user.id)}
 					{@const name = person.user.name ?? "Someone"}
@@ -650,7 +729,7 @@
 			></div>
 		{/if}
 
-		{#if (waiting || published) && !opened}
+		{#if (waiting || published) && !opened && settings}
 			<button
 				class="publish outside"
 				type="button"
@@ -747,22 +826,6 @@
 						</button>
 						<span class="tip" aria-hidden="true">Notifications</span>
 					</span>
-					<span class="control">
-						<button
-							class="round"
-							type="button"
-							aria-label="Comment"
-							onclick={() => {
-								open = false
-								import("./overlay.js").then((o) => o.comment())
-							}}
-						>
-							<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-								<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z" />
-							</svg>
-						</button>
-						<span class="tip" aria-hidden="true">Comment · C</span>
-					</span>
 					{#each [true, false] as back (back)}
 						{@const what = back ? history.undo : history.redo}
 						<span class="control">
@@ -786,22 +849,6 @@
 							</span>
 						</span>
 					{/each}
-					<span class="control">
-						<button
-							class="round"
-							type="button"
-							aria-label="Share the draft"
-							onclick={() => {
-								open = false
-								import("./overlay.js").then((o) => o.tool("share"))
-							}}
-						>
-							<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-								<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M16 6l-4-4-4 4M12 2v13" />
-							</svg>
-						</button>
-						<span class="tip" aria-hidden="true">Share the draft</span>
-					</span>
 					<span class="control">
 						<button
 							class="round"
@@ -1184,15 +1231,30 @@
 	.bar.open:has(.versions) {
 		--sheen: inset 0 1px 0 rgb(255 255 255 / 0.1);
 
-		backdrop-filter: blur(20px) saturate(1.8);
-		background:
-			linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
-			color-mix(in srgb, var(--bg) 80%, transparent);
+		background: none;
 		box-shadow: var(--sheen), var(--shadow);
 
-		&:not(:has(.versions)) :is(.panel, .inner) {
-			transition: none;
+		/* the glass is a layer behind what's in the bar, not the bar itself: blurring what's behind
+		   it itself, nothing in it could, and what opens out of it over the page, like what's waiting
+		   to publish, would have the page showing sharp through it */
+		&::before {
+			backdrop-filter: blur(20px) saturate(1.8);
+			background:
+				linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), transparent 12rem),
+				color-mix(in srgb, var(--bg) 80%, transparent);
+			border-radius: inherit;
+			content: "";
+			inset: 0;
+			pointer-events: none;
+			position: absolute;
+			z-index: -1;
 		}
+	}
+
+	/* holding the settings' name it morphs whole, so its row doesn't slide as well; open on anything
+	   else, with edit mode off or on staging's switch, the row slides out from the badge */
+	.bar:has(.settings:not(:empty)) :is(.panel, .inner) {
+		transition: none;
 	}
 
 	/*
@@ -1202,25 +1264,236 @@
 	 * edit mode on grows the panel above it and nothing in the row moves
 	 */
 	.bar.open:has(.mode):not(:has(:global(.inspector:not(.folded)))) {
-		border-radius: 1rem;
-		min-inline-size: min(22rem, 100% - 2 * var(--o));
-		padding: 0.375rem;
+		/* as round as the badge it opens from, and no rounder: half its row's height, as the panel's
+		   corners are, so that sinking back from the panel it's a panel getting shorter and not a blob */
+		border-radius: 1.5rem;
+	}
 
-		& .panel {
-			flex: 1;
+	/*
+	 * and with no name to hold, as with edit mode off, nothing morphs it open: its row is laid out
+	 * as wide as it will be from the start, folded or not, and only uncovered as the bar opens, so
+	 * nothing in it is spaced out again on the way
+	 */
+	.bar:has(.mode):not(:has(.settings:not(:empty))) {
+		/* a height it can grow from, as tall as its row: left to its contents, there'd be nothing to
+		   ease from when the settings' panel opens above it */
+		/* its row along the edge the panel keeps it at, the bottom, or the top in a top corner: in the
+		   middle, as it is at rest, it would drop the height of the panel as that sinks away */
+		align-items: flex-end;
+		block-size: 3rem;
+		border-radius: 1.5rem;
+		box-sizing: border-box;
+
+		&[data-corner^="t"] {
+			align-items: flex-start;
 		}
 
-		& .inner {
-			column-gap: 0.375rem;
-			justify-content: space-between;
+		/* the room the settings' panel leaves round its row, so the badge is in the same place in both */
+		padding: 0.375rem;
+	}
 
-			& :is(.status, .publish, .state) {
-				display: none;
-			}
+	/* edit mode switched on or off with the row open: the panel grows up out of the row, and sinks
+	   back into it, rather than being there or gone at once. Only while it's being switched: folding
+	   to a name and opening from one are the settings' own morph */
+	.bar.toggling:has(.mode) {
+		transition:
+			background-color 0.25s ease,
+			box-shadow 0.25s ease,
+			opacity 0.25s ease,
+			scale 0.25s ease,
+			block-size 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 
-			& .last {
-				display: flex;
-			}
+		&.dragging {
+			transition: none;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			transition: none;
+		}
+	}
+
+	.bar:has(.mode):not(:has(.settings:not(:empty))) .panel {
+		/* as tall as the badge beside it, its row in the middle of that: kept to the bar's edge with
+		   the badge, the two still line up */
+		align-items: center;
+		block-size: 2.25rem;
+		/* a row of a set width would hold its track open: none of it until it's opened */
+		grid-template-columns: minmax(0, 0fr);
+	}
+
+	.bar.open:has(.mode):not(:has(.settings:not(:empty))) .panel {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.bar:has(.mode):not(:has(.settings:not(:empty))) .inner {
+		box-sizing: border-box;
+		/* the settings' row exactly: no gap but the spare room, across the same width, so each
+		   button is where it is with the panel open above it */
+		gap: 0;
+		inline-size: calc(min(22rem, 100vw - 2 * var(--o)) - 3rem);
+		justify-content: space-between;
+		padding-inline: 0.625rem 0.375rem;
+
+		[data-corner$="r"] & {
+			padding-inline: 0.375rem 0.625rem;
+		}
+
+		& :is(.status, .publish, .state) {
+			display: none;
+		}
+
+		& .last {
+			display: flex;
+		}
+	}
+
+	/* opening, each thing in the row arrives a moment after the one before it, out from the badge */
+	.bar.staggered.open:has(.mode):not(:has(.settings:not(:empty))) .inner > * {
+		animation: arrive 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+
+		&:nth-child(2) {
+			animation-delay: 40ms;
+		}
+
+		&:nth-child(3) {
+			animation-delay: 80ms;
+		}
+
+		&:nth-child(4) {
+			animation-delay: 120ms;
+		}
+
+		&:nth-child(5) {
+			animation-delay: 160ms;
+		}
+
+		&:nth-child(6) {
+			animation-delay: 200ms;
+		}
+
+		&:nth-child(7) {
+			animation-delay: 240ms;
+		}
+
+		&:nth-child(n + 8) {
+			animation-delay: 280ms;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			animation: none;
+		}
+	}
+
+	/* edit mode switched on: the panel's fields, and the blocks in a list of them, come in one after
+	   another as it grows up from the row, rather than all being there in a box that's still opening */
+	.bar.unfolding :global(.inspector :is(.fields > *, .kids > li)) {
+		animation: settle 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+
+		@media (prefers-reduced-motion: reduce) {
+			animation: none;
+		}
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(1)) {
+		animation-delay: 60ms;
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(2)) {
+		animation-delay: 130ms;
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(3)) {
+		animation-delay: 200ms;
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(4)) {
+		animation-delay: 270ms;
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(5)) {
+		animation-delay: 340ms;
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(6)) {
+		animation-delay: 410ms;
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(7)) {
+		animation-delay: 480ms;
+	}
+
+	.bar.unfolding :global(.inspector .fields > :nth-child(8)) {
+		animation-delay: 550ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(1)) {
+		animation-delay: 120ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(2)) {
+		animation-delay: 155ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(3)) {
+		animation-delay: 190ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(4)) {
+		animation-delay: 225ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(5)) {
+		animation-delay: 260ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(6)) {
+		animation-delay: 295ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(7)) {
+		animation-delay: 330ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(8)) {
+		animation-delay: 365ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(9)) {
+		animation-delay: 400ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(10)) {
+		animation-delay: 435ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(11)) {
+		animation-delay: 470ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(12)) {
+		animation-delay: 505ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(13)) {
+		animation-delay: 540ms;
+	}
+
+	.bar.unfolding :global(.inspector .kids > li:nth-child(14)) {
+		animation-delay: 575ms;
+	}
+
+	@keyframes settle {
+		from {
+			opacity: 0;
+			translate: 0 0.5rem;
+		}
+	}
+
+	@keyframes arrive {
+		from {
+			opacity: 0;
+			scale: 0.7;
+			translate: -0.5rem 0;
 		}
 	}
 
@@ -1231,7 +1504,8 @@
 	.bar:has(:global(.inspector:not(.folded))) {
 		align-items: center;
 		block-size: calc(100dvh - 2 * var(--o) - var(--clear));
-		border-radius: 1rem;
+		/* round the badge in its corner: the row's own radius, as when it's a pill with no panel */
+		border-radius: 1.5rem;
 		box-shadow:
 			var(--sheen),
 			var(--shadow),
@@ -1249,7 +1523,7 @@
 		& .settings {
 			align-self: stretch;
 			border-block-end: 1px solid var(--line);
-			border-radius: 1rem 1rem 0 0;
+			border-radius: 1.5rem 1.5rem 0 0;
 			grid-area: 1 / 1 / 2 / -1;
 			margin: 0 -0.375rem 0.375rem;
 			overflow: hidden;
@@ -1278,14 +1552,14 @@
 
 		/*
 		 * always one line, spread across the panel: the status, saving and any problem are the badge's
-		 * dot and ring, publishing the row's last button, and the switch says what it is in its tip.
-		 * No gap but the spare room, as the fullest row, with people beside the badge, only just fits
+		 * dot and ring, and publishing the row's last button. No gap but the spare room, as the fullest
+		 * row has people beside the badge
 		 */
 		& .inner {
 			gap: 0;
 			justify-content: space-between;
 
-			& :is(.status, .publish, .state, .label) {
+			& :is(.status, .publish, .state) {
 				display: none;
 			}
 

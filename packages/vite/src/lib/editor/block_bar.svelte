@@ -1,8 +1,5 @@
 <script lang="ts">
 	import { tick } from "svelte"
-	import { cubicOut } from "svelte/easing"
-	import { fly } from "svelte/transition"
-	import { editor } from "./client.js"
 	import { next_frame } from "./page.js"
 
 	type Target = { node: HTMLElement; story: number; uid: string; name: string }
@@ -17,7 +14,10 @@
 		label: named,
 		aim,
 		where,
+		open,
 	}: {
+		/** Show the block's settings, opening them if they're folded */
+		open: (target: Target) => void
 		/** Send a change; the reply, or why it didn't save */
 		act: (change: Record<string, unknown>) => Promise<{ uid?: string } | string>
 		choices: (story: number, uid: string) => Promise<{ full: boolean; components: Array<Choice> }>
@@ -44,8 +44,6 @@
 	let left = $state(0)
 	/* a block clicked, rather than the one being read */
 	let chosen = $state(false)
-	/* with the settings open, their header moves, duplicates and deletes the block they're for; this keeps to the rest */
-	const docked = $derived(editor.settings_open && chosen)
 	let busy = $state(false)
 	let problem = $state<string | null>(null)
 
@@ -103,28 +101,21 @@
 	})
 
 	/**
-	 * Which way the name changes: 1 when the block now pointed at is further down the page than the
-	 * last, as when scrolling down, so its name comes up from below as the last one's leaves upwards;
-	 * -1 the other way round
+	 * The names the bar can show, one under another, and which of them is the block pointed at: its
+	 * siblings in their order, so going from one to the next slides the one strip, however fast,
+	 * where each name coming and going on its own would run into the last. A block with no siblings
+	 * the page can tell of is a strip of one
 	 */
-	let way = $state(1)
-	const calm = matchMedia("(prefers-reduced-motion: reduce)").matches
-	// a whole line's height, kept solid: the two names roll past like one strip, each beside the
-	// other and never over it, where a short fade through each other reads as a smudge
-	const slide = (by: number) => ({
-		y: `${by * 100}%`,
-		opacity: 1,
-		duration: calm ? 0 : 260,
-		easing: cubicOut,
+	const names = $derived.by(() => {
+		if (!target) return null
+		const at = where(target.story, target.uid)
+		return at ?? { index: 0, list: [{ uid: target.uid, name: target.name }] }
 	})
 
 	/** Point at a block; `null` lets it go */
 	export function show(next: Target | null, clicked = false) {
 		chosen = clicked
 		if (target?.node !== next?.node) {
-			if (target && next)
-				way =
-					target.node.compareDocumentPosition(next.node) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1
 			menu = null
 			filter = ""
 			problem = null
@@ -477,11 +468,11 @@
 					() => above && select(above)
 				)}
 			{/if}
-			<span class="control named">
-				<!-- dragging is for the pointer: Move up and down do it from the keyboard -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<span class="name" class:grip={draggable && !busy} onpointerdown={drag}>
-					{#if draggable}
+			{#if draggable}
+				<span class="control">
+					<!-- dragging is for the pointer: Move up and down do it from the keyboard -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<span class="grip" class:held={busy} onpointerdown={drag}>
 						<svg class="dots" viewBox="0 0 24 24" aria-hidden="true"
 							><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle
 								cx="9"
@@ -493,38 +484,47 @@
 								r="1"
 							/></svg
 						>
-					{/if}
-					<span class="words">
-						{#key target.node}
-							<span class="word" in:fly={slide(way)} out:fly={slide(-way)}
-								>{label(target.name)}</span
-							>
-						{/key}
 					</span>
+					<span class="tip" aria-hidden="true">Drag to move</span>
 				</span>
-				{#if draggable}<span class="tip" aria-hidden="true">Drag to move</span>{/if}
-			</span>
-			{#if !docked}
-				{@render tool("Move up", "m18 15-6-6-6 6", () => run({ op: "move", by: -1 }))}
-				{@render tool("Move down", "m6 9 6 6 6-6", () => run({ op: "move", by: 1 }))}
-				{@render tool(
-					"Duplicate",
-					"M10 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM4 16V5a1 1 0 0 1 1-1h11",
-					() => run({ op: "duplicate" })
-				)}
 			{/if}
+			<span class="control named">
+				<!-- its name is the way to its settings, open or folded -->
+				<button type="button" class="name" onclick={() => target && open(target)}>
+					<span class="words">
+						{#if names}
+							<!-- another list of siblings is another strip, there at once rather than slid to -->
+							{#key names.list[0]?.uid}
+								<span class="strip" style:--at={names.index}>
+									{#each names.list as sibling, i (sibling.uid)}
+										<span class="word" aria-hidden={i === names.index ? undefined : "true"}
+											>{label(sibling.name)}</span
+										>
+									{/each}
+								</span>
+							{/key}
+						{/if}
+					</span>
+				</button>
+				<span class="tip" aria-hidden="true">Open its settings</span>
+			</span>
+			{@render tool("Move up", "m18 15-6-6-6 6", () => run({ op: "move", by: -1 }))}
+			{@render tool("Move down", "m6 9 6 6 6-6", () => run({ op: "move", by: 1 }))}
+			{@render tool(
+				"Duplicate",
+				"M10 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM4 16V5a1 1 0 0 1 1-1h11",
+				() => run({ op: "duplicate" })
+			)}
 			{@render tool("Add a block after this one", "M12 5v14M5 12h14", open_menu, {
 				end: true,
 				expanded: menu !== null,
 			})}
-			{#if !docked}
-				{@render tool(
-					"Delete",
-					"M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",
-					() => run({ op: "remove" }),
-					{ end: true, danger: true }
-				)}
-			{/if}
+			{@render tool(
+				"Delete",
+				"M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3",
+				() => run({ op: "remove" }),
+				{ end: true, danger: true }
+			)}
 		</div>
 
 		{#if problem}<p class="problem" role="alert">{problem}</p>{/if}
@@ -711,21 +711,36 @@
 	}
 
 	.row .name {
-		align-items: center;
-		display: flex;
 		flex: 1;
 		font-weight: 600;
+		justify-content: flex-start;
 		min-inline-size: 0;
-		padding-inline: 0.5rem 0.375rem;
+		padding-inline: 0.375rem;
+		text-align: start;
 	}
 
+	/* the one part of the bar that drags the block */
 	.row .grip {
+		align-items: center;
+		block-size: 1.75rem;
+		border-radius: 0.5rem;
 		cursor: grab;
+		display: flex;
+		inline-size: 1.25rem;
+		justify-content: center;
 		touch-action: none;
 		user-select: none;
 
+		&:hover {
+			background: color-mix(in srgb, var(--ink) 7%, transparent);
+		}
+
 		&:active {
 			cursor: grabbing;
+		}
+
+		&.held {
+			cursor: progress;
 		}
 	}
 
@@ -735,23 +750,35 @@
 		fill: currentColor;
 		flex: none;
 		inline-size: 1rem;
-		margin-inline: -0.25rem 0.125rem;
 		stroke: none;
 	}
 
-	/* a line high and no more, so a name rolling in or out is cut off at its edge */
+	/* as tall as the bar, edge to edge, so a name sliding away is cut off by the bar itself rather
+	   than a line's height in the middle of it */
 	.row .words {
-		block-size: 1.25em;
-		display: grid;
+		--slot: 2.25rem;
+
+		block-size: var(--slot);
 		flex: 1;
-		line-height: 1.25;
+		margin-block: -0.25rem;
 		min-inline-size: 0;
-		overflow: hidden;
+		overflow: clip;
 	}
 
-	/* one in the other's place while the name changes, the last leaving as the next arrives */
+	/* every name, each in a slot the bar's height, slid to the one that's pointed at */
+	.row .strip {
+		display: grid;
+		grid-auto-rows: var(--slot);
+		transition: translate 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+		translate: 0 calc(var(--at) * -1 * var(--slot));
+
+		@media (prefers-reduced-motion: reduce) {
+			transition: none;
+		}
+	}
+
 	.row .word {
-		grid-area: 1 / 1;
+		align-self: center;
 		min-inline-size: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
