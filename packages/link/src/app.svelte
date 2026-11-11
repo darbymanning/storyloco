@@ -13,7 +13,7 @@
 	} from '../types.js'
 	import FormList from '../../hubspot_form/src/form_list.svelte'
 	import StoryList from './story_list.svelte'
-	import { looks_like_email } from './email.js'
+	import { looks_like_email } from '../../vite/src/lib/link.js'
 	import { ChevronDownIcon, XIcon, CircleAlertIcon } from '@lucide/svelte'
 	import PublishedIcon from './published.svelte'
 	import DraftIcon from './draft.svelte'

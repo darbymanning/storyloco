@@ -43,6 +43,9 @@ export function plugin_link(value: Value): Value {
 	return url ? { type: "external", url, ...kept } : { type: "external" }
 }
 
+/** The `rel`s an external link can carry, in the order they're written */
+export const RELS = ["noopener", "noreferrer", "nofollow"]
+
 /** The kinds of link the link field plugin makes, in the order it offers them by default */
 export const LINK_TYPES = ["internal", "external", "email", "asset", "form"] as const
 export type LinkType = (typeof LINK_TYPES)[number]
@@ -75,4 +78,28 @@ export function link_types_of(option: unknown): Array<LinkType> | null {
 		.map((name) => NAMES[name])
 		.filter((type): type is LinkType => !!type)
 	return types.length ? [...new Set(types)] : null
+}
+
+/**
+ * Whether an address looks deliverable: something, one `@`, then a domain with a dot in it and
+ * no spaces. Loose on purpose: `+` tags, subdomains, long or unicode TLDs and apostrophes all
+ * pass, as they're valid, and the mail server is the real judge. It only catches what's plainly
+ * not an address, like a missing `@` or domain, a space, or `name@example`.
+ */
+export const looks_like_email = (value: string) =>
+	/^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(value.trim())
+
+/** A `mailto:` link, with whichever of its parts are filled in; the body's line breaks as CRLF (RFC 6068) */
+export function mailto(
+	email: string,
+	parts: { subject?: string; body?: string; cc?: string; bcc?: string } = {}
+) {
+	const query = Object.entries(parts)
+		.filter(([, value]) => value)
+		.map(
+			([key, value]) =>
+				`${key}=${encodeURIComponent(key === "body" ? value!.replace(/\r?\n/g, "\r\n") : value!)}`
+		)
+		.join("&")
+	return `mailto:${email.trim()}${query ? `?${query}` : ""}`
 }

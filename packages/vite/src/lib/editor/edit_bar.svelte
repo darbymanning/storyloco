@@ -784,6 +784,7 @@
 						role="group"
 						aria-label="Content to show"
 						aria-busy={switching !== null}
+						style:--i={showing_draft ? 0 : 1}
 					>
 						<button type="button" aria-pressed={showing_draft} onclick={() => view(true)}
 							>Draft</button
@@ -1379,9 +1380,8 @@
 		box-sizing: border-box;
 		/* the settings' row exactly: no gap but the spare room, across the same width, so each
 		   button is where it is with the panel open above it */
-		gap: 0;
+		gap: 0.25rem;
 		inline-size: calc(min(22rem, 100vw - 2 * var(--o)) - 3rem);
-		justify-content: space-between;
 		padding-inline: 0.625rem 0.375rem;
 
 		[data-corner$="r"] & {
@@ -1617,8 +1617,7 @@
 		 * row has people beside the badge
 		 */
 		& .inner {
-			gap: 0;
-			justify-content: space-between;
+			gap: 0.25rem;
 
 			& :is(.status, .publish, .state) {
 				display: none;
@@ -1949,10 +1948,31 @@
 	.versions {
 		background: color-mix(in srgb, var(--ink) 6%, transparent);
 		border-radius: 999px;
-		display: flex;
+		display: grid;
 		flex: none;
+		/* the same width each, so the pill under them slides from one to the other without resizing */
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		isolation: isolate;
 		margin-inline: 0.375rem;
 		padding: 0.125rem;
+		position: relative;
+
+		&::before {
+			background: color-mix(in srgb, var(--ink) 12%, transparent);
+			border-radius: 999px;
+			content: "";
+			inline-size: calc(50% - 0.125rem);
+			inset-block: 0.125rem;
+			inset-inline-start: 0.125rem;
+			position: absolute;
+			transition: translate 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+			translate: calc(100% * var(--i)) 0;
+			z-index: -1;
+
+			@media (prefers-reduced-motion: reduce) {
+				transition: none;
+			}
+		}
 
 		&[aria-busy="true"] {
 			cursor: progress;
@@ -1975,7 +1995,6 @@
 			}
 
 			&[aria-pressed="true"] {
-				background: color-mix(in srgb, var(--ink) 12%, transparent);
 				color: var(--ink);
 				cursor: default;
 			}
@@ -2021,6 +2040,8 @@
 		cursor: pointer;
 		display: flex;
 		gap: 0.375rem;
+		/* the mode to one side, and what there is to do grouped at the other */
+		margin-inline-end: auto;
 		position: relative;
 
 		/* every box property its knob is placed by, set here: a site's form styles (a forms plugin's
