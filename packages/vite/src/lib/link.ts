@@ -42,3 +42,37 @@ export function plugin_link(value: Value): Value {
 	}
 	return url ? { type: "external", url, ...kept } : { type: "external" }
 }
+
+/** The kinds of link the link field plugin makes, in the order it offers them by default */
+export const LINK_TYPES = ["internal", "external", "email", "asset", "form"] as const
+export type LinkType = (typeof LINK_TYPES)[number]
+
+// the names an editor might reach for, as well as the plugin's own
+const NAMES: Record<string, LinkType> = {
+	internal: "internal",
+	story: "internal",
+	page: "internal",
+	external: "external",
+	url: "external",
+	email: "email",
+	mail: "email",
+	asset: "asset",
+	file: "asset",
+	form: "form",
+	hubspot: "form",
+}
+
+/**
+ * The link types a link field's `link_types` option allows, in its order, so its first is what a
+ * new link starts as: `internal, url, form`, any case, commas or spaces between. Names it doesn't
+ * know are passed over; `null` when it names none at all, which leaves every type to the field.
+ */
+export function link_types_of(option: unknown): Array<LinkType> | null {
+	if (typeof option !== "string") return null
+	const types = option
+		.toLowerCase()
+		.split(/[\s,]+/)
+		.map((name) => NAMES[name])
+		.filter((type): type is LinkType => !!type)
+	return types.length ? [...new Set(types)] : null
+}

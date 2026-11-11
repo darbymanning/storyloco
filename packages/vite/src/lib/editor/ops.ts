@@ -24,7 +24,7 @@ import {
 	type Place,
 } from "./content.js"
 import { format_currency } from "../currency.js"
-import { plugin_link } from "../link.js"
+import { link_types_of, plugin_link } from "../link.js"
 
 /*
  * What the Site Editor can do to a space, as the person signed in: read and change stories, assets
@@ -657,6 +657,10 @@ async function plugin_value(
 			const target =
 				value.target === undefined || TARGETS.has(String(value.target)) ? value.target : bad()
 			// a story it no longer links to goes, native fields too, or `resolve_links` would still send it there
+			// a kind of link the field's `link_types` option leaves out, unless it was that already
+			const allowed = link_types_of(r2_option(field, "link_types"))
+			if (allowed && type !== stored.type && !allowed.some((kind) => kind === type))
+				bad("doesn’t take that kind of link")
 			const kept = Object.fromEntries(Object.entries(stored).filter(([k]) => !STORY_LINK.has(k)))
 			const base = { ...kept, type, text: str(value.text, 500), target }
 			if (type === "external") {

@@ -6,8 +6,12 @@ interface BaseLink {
 	text?: string
 }
 
-/** `form` shows only on a field with HubSpot connected (`MOXY_HUBSPOT_SECRET_ID`) */
-export const link_types = ['asset', 'external', 'email', 'internal', 'form'] as const
+/**
+ * In the order the field offers them, as Storyblok's own link field does; a field's `link_types`
+ * option can narrow and reorder them. `form` shows only with HubSpot connected
+ * (`MOXY_HUBSPOT_SECRET_ID`), `asset` only with R2.
+ */
+export const link_types = ['internal', 'external', 'email', 'asset', 'form'] as const
 export const target_options = ['_self', '_blank', '_parent', '_top', '_new'] as const
 export const rel_options = [
 	'noopener',
