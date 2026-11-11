@@ -347,8 +347,9 @@ function extensions(shows: Shows = { colour: false }) {
 
 // --- the format bar
 
-const STYLE = `[data-storyloco=format]{position:fixed;z-index:2147483001;display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;backdrop-filter:blur(20px) saturate(1.8);background:color-mix(in srgb,var(--editor-pill,var(--editor-ink,#1b243f)) 82%,transparent);color:#fff;font:500 13px/1 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .15s,translate .15s;animation:storyloco-format .16s ease-out}
-[data-storyloco=format][data-fixed]{position:static;flex:none;inset-inline:auto;margin:-6px -10px 4px;padding:4px 6px;width:auto;max-width:none;flex-wrap:wrap;border-radius:0;background:none;backdrop-filter:none;border-bottom:1px solid var(--line,rgb(127 127 127/.25));color:inherit;box-shadow:none;animation:none}
+const STYLE = `[data-storyloco=format]{position:fixed;z-index:2147483001;display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;color:#fff;font:500 13px/1 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .15s,translate .15s;animation:storyloco-format .16s ease-out}
+[data-storyloco=format]:not([data-fixed])::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;backdrop-filter:blur(20px) saturate(1.8);background:color-mix(in srgb,var(--editor-pill,var(--editor-ink,#1b243f)) 82%,transparent)}
+[data-storyloco=format][data-fixed]{position:static;flex:none;inset-inline:auto;margin:-6px -10px 4px;padding:4px 6px;width:auto;max-width:none;flex-wrap:wrap;border-radius:0;border-bottom:1px solid var(--line,rgb(127 127 127/.25));color:inherit;box-shadow:none;animation:none}
 [data-storyloco=format][data-fixed] button{opacity:.72;transition:opacity .15s,background-color .15s}
 [data-storyloco=format][data-fixed] button:is(:hover,[aria-pressed=true],[aria-expanded=true]){opacity:1}
 [data-storyloco=format] button{all:unset;box-sizing:border-box;display:grid;place-items:center;min-width:28px;height:28px;padding:0 6px;border-radius:8px;cursor:pointer;font:inherit}

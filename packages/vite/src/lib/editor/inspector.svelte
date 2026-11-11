@@ -177,14 +177,16 @@
 		const grows = b.height >= a.height
 		const pad = parseFloat(getComputedStyle(bar).paddingBlockStart)
 		const keyframes = grows
-			? [
+			? // clipped, the bar's what its glass layer sees behind it, and that's nothing: the bar blurs
+				// the page itself on the way, or it'd open clear and frost over at the end
+				[
 					{
 						clipPath: `inset(${a.top - b.top}px ${b.right - a.right}px ${b.bottom - a.bottom}px ${a.left - b.left}px round ${from.radius}px)`,
 					},
 					{ clipPath: `inset(0 round ${to.radius}px)`, offset: 0.8 },
 					// then on past its edges, uncovering its shadow too rather than it landing at the end
 					{ clipPath: `inset(-80px round ${to.radius + 80}px)` },
-				]
+				].map((f) => ({ ...f, backdropFilter: "blur(20px) saturate(1.8)" }))
 			: // the pill's row waits in its corner, not the middle of the box closing on it: the height
 				// still to go is padding on the far side, so the row is on one line, as it ends up, throughout
 				[from, to].map((f) => ({
@@ -346,9 +348,37 @@
 		show(next, keyboard)
 	}
 
+	/**
+	 * Which way the fields change places: 1 going into a block, so its fields come in from the far
+	 * side as the last ones leave by the near one, like the next card along; -1 back out to a block
+	 * it's in, or the page, the other way; 0 for another of the same block's tabs, which is nowhere
+	 * else to go
+	 */
+	let way = $state(0)
+	let way_done: ReturnType<typeof setTimeout> | undefined
+	const calm = matchMedia("(prefers-reduced-motion: reduce)").matches
+	function pass(_: Element, { leaving = false }: { leaving?: boolean } = {}) {
+		const by = way
+		return {
+			duration: calm ? 0 : leaving ? 180 : 320,
+			easing: (t: number) => 1 - (1 - t) ** 3,
+			css: (t: number, u: number) =>
+				`opacity:${t};translate:${by ? `${(leaving ? -by : by) * u * 2.5}rem 0` : `0 ${u * 0.25}rem`}`,
+		}
+	}
+
 	function show(next: Selection, keyboard = false) {
 		if (keyboard) tick().then(() => (folded ? fold_el : title_el)?.focus())
 		if (selection?.story === next.story && selection.uid === next.uid) return
+		// one of the blocks this one's in, the page, or back where a picked story was gone into from:
+		// back out; anything else is further in
+		const returning =
+			came_from?.story === next.story && came_from.steps.some((step) => step.uid === next.uid)
+		way = returning || loaded?.trail.slice(0, -1).some((step) => step.uid === next.uid) ? -1 : 1
+		// out of the story it led into, it's no longer the way anywhere
+		if (came_from && next.story !== came_from.into) came_from = null
+		clearTimeout(way_done)
+		way_done = setTimeout(() => (way = 0), 600)
 		flush()
 		selection = next
 		saving = {}
@@ -543,7 +573,8 @@
 
 	// --- child bloks
 
-	async function add_child(key: string) {
+	/** Choose a block to add to a list: at its end, or straight after the one with `after` for its `_uid` */
+	async function add_child(key: string, after?: string) {
 		if (!selection) return
 		const list = await call<{
 			full: boolean
@@ -559,26 +590,29 @@
 			failed[key] = "This list is full"
 			return
 		}
-		adding = { key, components: list.components, filter: "" }
+		adding = { key, after, components: list.components, filter: "" }
 		await tick()
 		document.querySelector<HTMLInputElement>("[data-storyloco=inspector] .adding input")?.focus()
 	}
 
 	let adding = $state<{
 		key: string
+		/** the block it goes after, when it's put between two rather than at the end */
+		after?: string
 		components: Array<{ name: string; display_name: string }>
 		filter: string
 	} | null>(null)
 
 	async function insert(key: string, name: string) {
 		if (!selection) return
+		const after = adding?.after
 		adding = null
 		saving[key] = true
 		const reply = (await send({
 			op: "insert",
 			story: selection.story,
-			uid: selection.uid,
-			field: key,
+			// after a block, as the page's own toolbar adds one, or at the end of the field's list
+			...(after ? { uid: after } : { uid: selection.uid, field: key }),
 			component: name,
 		})) as {
 			uid?: string
@@ -755,6 +789,73 @@
 		}
 		return named
 	}
+
+	/**
+	 * Go into a story a field picks, to edit it: its own fields, as for a block of the page's. It's
+	 * the one story wherever it's picked, so what's changed there changes everywhere it shows
+	 */
+	let opening = $state<string | null>(null)
+	async function open_story(story: Story, key: string) {
+		opening = story.uuid
+		delete failed[key]
+		const found = await call<{ content: Blok }>({ op: "content", story: story.id }).catch(
+			() => null
+		)
+		opening = null
+		if (!found?.content._uid) return void (failed[key] = `Couldn’t open ${story.name}`)
+		// the way back: the blocks down to the one that picked it, as they are in the story it was picked in
+		came_from =
+			selection && loaded
+				? { story: selection.story, into: story.id, steps: loaded.trail, name: story_name(loaded) }
+				: null
+		select({ story: story.id, uid: found.content._uid })
+	}
+
+	/**
+	 * Where a story a field picks was gone into from, for as long as the panel's in that story: its
+	 * own blocks' trail starts at its own root, which says nothing of how it was got to
+	 */
+	let came_from = $state.raw<{
+		story: number
+		into: number
+		steps: Array<{ uid: string; component: string }>
+		/** the name of the story it was picked in, for the first of its steps */
+		name?: string
+	} | null>(null)
+
+	/** The name of the story a blok's in, when it's known: the page's own, or as the server gave it */
+	const story_name = (of: Loaded) =>
+		(of.story.id === editor.story?.id ? editor.story.name : of.story.name) || undefined
+	/**
+	 * What a step of the trail is called: the first is its story, by its name, as "Page" is only
+	 * the kind of thing every page is; the rest are blocks, by theirs
+	 */
+	const crumb = (step: { component: string }, i: number, name?: string) =>
+		(i === 0 && name) || component_label(step.component)
+	const back = $derived(came_from && selection?.story === came_from.into ? came_from : null)
+
+	/** Every step of the header's line, the block itself last */
+	const line = $derived([...(back?.steps ?? []), ...(loaded?.trail ?? [])].map((step) => step.uid))
+	let line_was: string[] = []
+	let fresh_was: string[] = []
+	/**
+	 * The steps that weren't in the line before it changed, in order: only these come in, one after
+	 * the other, so "Home" stays put as "› Hero" arrives beside it
+	 */
+	const fresh = $derived.by(() => {
+		// a block that's still loading has no line yet, and one that's read again has the line it had
+		if (!loaded || line.join() === line_was.join()) return fresh_was
+		const was = line_was
+		line_was = line
+		return (fresh_was = line.filter((uid) => !was.includes(uid)))
+	})
+	/** A step's turn to come in, or nothing when it was there already. Its arrow goes just before it */
+	const turn = (uid: string | undefined, arrow = false) => {
+		const at = uid ? fresh.indexOf(uid) : -1
+		return at < 0 ? undefined : at * 2 + (arrow ? 0 : 1)
+	}
+	/** The step after one, which the arrow after it leads to */
+	const next = (uid: string) => line[line.indexOf(uid) + 1]
 
 	let picking = $state<{
 		key: string
@@ -1304,10 +1405,23 @@
 							></span
 						>
 					{/if}
-					<span class="pick">
-						<span>{names.get(uuid)?.name ?? "…"}</span>
-						{#if names.get(uuid)}<small>/{names.get(uuid)?.full_slug}</small>{/if}
-					</span>
+					{#if names.get(uuid)}
+						{@const story = names.get(uuid)!}
+						<!-- a row to go into, as a block in a list is: it looked like one, and went nowhere -->
+						<button
+							type="button"
+							class="pick"
+							title="Edit {story.name}: changes show wherever it’s used"
+							disabled={opening === uuid}
+							onclick={() => open_story(story, key)}
+						>
+							<span>{story.name}</span>
+							<small>/{story.full_slug}</small>
+							<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+						</button>
+					{:else}
+						<span class="pick"><span>…</span></span>
+					{/if}
 					<span class="tools">
 						<button
 							type="button"
@@ -1317,7 +1431,10 @@
 									key,
 									chosen.filter((u) => u !== uuid)
 								)}
-							><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+							><svg viewBox="0 0 24 24" aria-hidden="true"
+								><path
+									d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+								/></svg
 							></button
 						>
 					</span>
@@ -1510,7 +1627,10 @@
 						><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></button
 					>
 					<button type="button" aria-label="Remove" onclick={() => keep(list.toSpliced(i, 1))}
-						><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+						><svg viewBox="0 0 24 24" aria-hidden="true"
+							><path
+								d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+							/></svg
 						></button
 					>
 				</span>
@@ -1700,6 +1820,40 @@
 	{/if}
 {/snippet}
 
+{#snippet Chooser(key: string)}
+	{#if adding}
+		{@const shown = adding.components.filter((c) =>
+			`${c.display_name} ${c.name}`.toLowerCase().includes(adding!.filter.trim().toLowerCase())
+		)}
+		<div class="adding">
+			<!-- a way out of it for a press that wasn't meant, as Escape is from the keyboard -->
+			<div class="find">
+				<input placeholder="Find a block" aria-label="Find a block" bind:value={adding.filter} />
+				<button
+					type="button"
+					class="round"
+					aria-label="Cancel"
+					data-tip="Cancel"
+					onclick={() => (adding = null)}
+				>
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+				</button>
+			</div>
+			<ul>
+				{#each shown as c (c.name)}
+					<li>
+						<button type="button" onclick={() => insert(key, c.name)}
+							>{c.display_name === c.name ? label(c.name) : c.display_name}</button
+						>
+					</li>
+				{:else}
+					<li class="help">No blocks match</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet Bloks(key: string, field: Field, id: string)}
 	{@const list = kids(values[key])}
 	{@render Label(key, field, id)}
@@ -1776,31 +1930,31 @@
 						></button
 					>
 					<button type="button" aria-label="Delete" onclick={() => child(key, "remove", kid._uid)}
-						><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+						><svg viewBox="0 0 24 24" aria-hidden="true"
+							><path
+								d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+							/></svg
 						></button
 					>
 				</span>
+				{#if i < list.length - 1 && adding?.after !== kid._uid}
+					<!-- in the gap after it: a block added here rather than at the end -->
+					<button
+						type="button"
+						class="between"
+						aria-label="Add a block after {component_label(kid.component)}"
+						onclick={() => add_child(key, kid._uid)}
+						><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button
+					>
+				{/if}
 			</li>
+			{#if adding?.key === key && adding.after === kid._uid}
+				<li class="chooser">{@render Chooser(key)}</li>
+			{/if}
 		{/each}
 	</ol>
-	{#if adding?.key === key}
-		{@const shown = adding.components.filter((c) =>
-			`${c.display_name} ${c.name}`.toLowerCase().includes(adding!.filter.trim().toLowerCase())
-		)}
-		<div class="adding">
-			<input placeholder="Find a block" aria-label="Find a block" bind:value={adding.filter} />
-			<ul>
-				{#each shown as c (c.name)}
-					<li>
-						<button type="button" onclick={() => insert(key, c.name)}
-							>{c.display_name === c.name ? label(c.name) : c.display_name}</button
-						>
-					</li>
-				{:else}
-					<li class="help">No blocks match</li>
-				{/each}
-			</ul>
-		</div>
+	{#if adding?.key === key && !adding.after}
+		{@render Chooser(key)}
 	{:else}
 		<button type="button" class="button quiet add" onclick={() => add_child(key)}
 			>+ Add a block</button
@@ -1938,7 +2092,9 @@
 											for (const r of t.tbody) r.body.splice(c, 1)
 										})}
 									><svg viewBox="0 0 24 24" aria-hidden="true"
-										><path d="M18 6 6 18M6 6l12 12" /></svg
+										><path
+											d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+										/></svg
 									></button
 								>
 							</th>
@@ -1969,7 +2125,9 @@
 									aria-label="Remove row {r + 1}"
 									onclick={() => edit_table(key, (t) => t.tbody.splice(r, 1))}
 									><svg viewBox="0 0 24 24" aria-hidden="true"
-										><path d="M18 6 6 18M6 6l12 12" /></svg
+										><path
+											d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+										/></svg
 									></button
 								>
 							</td>
@@ -2109,7 +2267,10 @@
 					class="round"
 					aria-label="Remove"
 					onclick={() => keep(rows.toSpliced(i, 1))}
-					><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+					><svg viewBox="0 0 24 24" aria-hidden="true"
+						><path
+							d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+						/></svg
 					></button
 				>
 				<input
@@ -2307,7 +2468,10 @@
 							class="round"
 							aria-label="Remove {floor.name || 'floor'}"
 							onclick={() => plans_edit(key, (list) => list[t].floors.splice(f, 1))}
-							><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+							><svg viewBox="0 0 24 24" aria-hidden="true"
+								><path
+									d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+								/></svg
 							></button
 						>
 					</div>
@@ -2368,7 +2532,10 @@
 								aria-label="Remove {room.name || 'room'}"
 								onclick={() =>
 									plans_edit(key, (list) => list[t].floors[f].dimensions[d].rooms.splice(r, 1))}
-								><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg
+								><svg viewBox="0 0 24 24" aria-hidden="true"
+									><path
+										d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+									/></svg
 								></button
 							>
 						</div>
@@ -2514,38 +2681,66 @@
 		bind:this={panel_el}
 	>
 		<header>
-			{#if !folded && loaded && loaded.trail.length > 1}
-				<nav class="trail" aria-label="Where this block is">
-					{#each loaded.trail.slice(0, -1) as step (step.uid)}
-						<button
-							type="button"
-							onpointerenter={() => highlight(step.uid)}
-							onpointerleave={() => highlight(selection?.uid ?? null)}
-							onclick={() => selection && select({ story: selection.story, uid: step.uid })}
-							>{component_label(step.component)}</button
-						>
-						<span aria-hidden="true">›</span>
-					{/each}
-				</nav>
-			{:else if !folded && loaded && is_page}
-				<p class="trail">{component_label(loaded.blok.component)}</p>
-			{/if}
 			<div class="title">
-				<h2 tabindex="-1" bind:this={title_el}>
-					{#if loaded}{is_page && editor.story?.name
-							? editor.story.name
-							: component_label(loaded.blok.component)}{:else}<span
-							class="bone title-bone"
-							aria-label="Loading"
-						></span>{/if}
-				</h2>
+				<!-- where it is and what it is, read as one line: Home › Hero -->
+				<div class="name" style:--way={way}>
+					{#if !folded && loaded && (loaded.trail.length > 1 || back)}
+						<nav class="trail" aria-label="Where this block is">
+							{#if back}
+								<!-- the blocks it was got to through, in the story that picks it -->
+								{#each back.steps as step, i (step.uid)}
+									<button
+										type="button"
+										class:fresh={turn(step.uid) !== undefined}
+										style:--turn={turn(step.uid)}
+										onpointerenter={() => highlight(step.uid)}
+										onpointerleave={() => highlight(selection?.uid ?? null)}
+										onclick={() => select({ story: back.story, uid: step.uid })}
+										>{crumb(step, i, back.name)}</button
+									>
+									<span
+										aria-hidden="true"
+										class:fresh={turn(next(step.uid), true) !== undefined}
+										style:--turn={turn(next(step.uid), true)}>›</span
+									>
+								{/each}
+							{/if}
+							{#each loaded.trail.slice(0, -1) as step, i (step.uid)}
+								<button
+									type="button"
+									class:fresh={turn(step.uid) !== undefined}
+									style:--turn={turn(step.uid)}
+									onpointerenter={() => highlight(step.uid)}
+									onpointerleave={() => highlight(selection?.uid ?? null)}
+									onclick={() => selection && select({ story: selection.story, uid: step.uid })}
+									>{crumb(step, i, story_name(loaded))}</button
+								>
+								<span
+									aria-hidden="true"
+									class:fresh={turn(next(step.uid), true) !== undefined}
+									style:--turn={turn(next(step.uid), true)}>›</span
+								>
+							{/each}
+						</nav>
+					{/if}
+					<h2 tabindex="-1" bind:this={title_el}>
+						{#if loaded}{#key loaded.blok._uid}<span
+									class="now"
+									class:fresh={turn(loaded.blok._uid) !== undefined}
+									style:--turn={turn(loaded.blok._uid)}
+									>{is_page && editor.story?.name
+										? editor.story.name
+										: component_label(loaded.blok.component)}</span
+								>{/key}{:else}<span class="bone title-bone" aria-label="Loading"></span>{/if}
+					</h2>
+				</div>
 				{#if !folded && loaded && loaded.trail.length > 1}
 					<div class="actions" role="group" aria-label="Block">
 						<button
 							type="button"
 							class="round"
 							aria-label="Move up"
-							title="Move up"
+							data-tip="Move up"
 							disabled={acting}
 							onclick={() => act("move", -1)}
 						>
@@ -2555,7 +2750,7 @@
 							type="button"
 							class="round"
 							aria-label="Move down"
-							title="Move down"
+							data-tip="Move down"
 							disabled={acting}
 							onclick={() => act("move", 1)}
 						>
@@ -2565,7 +2760,7 @@
 							type="button"
 							class="round"
 							aria-label="Duplicate"
-							title="Duplicate"
+							data-tip="Duplicate"
 							disabled={acting}
 							onclick={() => act("duplicate")}
 						>
@@ -2579,7 +2774,7 @@
 							type="button"
 							class="round danger"
 							aria-label="Delete"
-							title="Delete"
+							data-tip="Delete"
 							disabled={acting}
 							onclick={() => act("remove")}
 						>
@@ -2597,7 +2792,7 @@
 					aria-expanded={!folded}
 					aria-controls="storyloco-settings"
 					aria-label={folded ? "Open the settings" : "Fold the settings"}
-					title={folded ? "Open the settings (S)" : "Fold the settings (S)"}
+					data-tip={folded ? undefined : "Fold the settings · S"}
 					bind:this={fold_el}
 					onclick={() => toggle()}
 				>
@@ -2605,6 +2800,11 @@
 					<svg viewBox="0 0 24 24" aria-hidden="true"
 						><path d={folded ? "m7 15 5 5 5-5M7 9l5-5 5 5" : "m7 20 5-5 5 5M7 4l5 5 5-5"} /></svg
 					>
+					<!-- folded, its ::after is the whole pill to press, so its tip is an element of its own,
+					     placed from one the size of the button, which the pill's placed from, can't be -->
+					{#if folded}<span class="anchor" aria-hidden="true"
+							><span class="tip">Open the settings · S</span></span
+						>{/if}
 				</button>
 			</div>
 			{#if !folded && elsewhere}
@@ -2653,7 +2853,7 @@
 					</div>
 				{:else if current}
 					{#key `${loaded.blok._uid}:${current.name}`}
-						<div class="fields">
+						<div class="fields" in:pass out:pass={{ leaving: true }}>
 							{#each current.fields as [key, field] (key)}
 								{@render Control(key, field)}
 							{/each}
@@ -2725,6 +2925,9 @@
 	/* Folded: the block's name and a button to open it, beside the badge */
 	.inspector.folded {
 		grid-template-rows: auto;
+		/* its button's tip opens out of it; a long name's still cut short, by the name itself */
+		min-inline-size: 0;
+		overflow: visible;
 		position: relative;
 
 		& header {
@@ -2759,13 +2962,57 @@
 		padding: 0.875rem 0.875rem 0 1rem;
 	}
 
+	/* the way to it and its name on one line, wrapping to a second when the way's long */
+	.name {
+		align-items: baseline;
+		display: flex;
+		flex: 1;
+		flex-wrap: wrap;
+		/* as far from the last arrow as a step's own padding and gap put it from its arrow */
+		gap: 0 0.375rem;
+		min-inline-size: 0;
+	}
+
+	/* a step that's new to the line, and the name at its end, come in from the way things went:
+	   deeper from the right, back from the left */
+	.trail > .fresh,
+	.now.fresh {
+		animation: storyloco-crumb 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+		animation-delay: calc(var(--turn, 0) * 70ms);
+	}
+
+	.now {
+		display: inline-block;
+	}
+
+	/* folded, a long name's cut short with an ellipsis, which only text in the line gets */
+	.inspector.folded .now {
+		display: inline;
+	}
+
+	@keyframes storyloco-crumb {
+		from {
+			opacity: 0;
+			translate: calc(var(--way, 1) * 0.5rem) 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.trail > .fresh,
+		.now.fresh {
+			animation: none;
+		}
+	}
+
+	/* its buttons' padding is room to press, not an indent: the first starts where the title would */
 	.trail {
-		align-items: center;
+		align-items: baseline;
 		color: var(--muted);
 		display: flex;
 		flex-wrap: wrap;
-		font-size: 0.75rem;
+		font-size: 0.875rem;
 		gap: 0.25rem;
+		margin-inline-start: -0.125rem;
 
 		& button {
 			background: none;
@@ -2789,9 +3036,9 @@
 		justify-content: space-between;
 
 		& h2 {
-			flex: 1;
-			font-size: 1rem;
+			font-size: 0.875rem;
 			font-weight: 600;
+			min-inline-size: 0;
 		}
 	}
 
@@ -2875,13 +3122,24 @@
 	}
 
 	.body {
-		overflow: auto;
+		/* one place for whatever it shows, so a block's fields arriving are beside the ones leaving
+		   rather than under them; and nothing sideways to scroll to as they pass */
+		align-content: start;
+		display: grid;
+		overflow: hidden auto;
 		overscroll-behavior: contain;
 		padding: 1rem;
+
+		& > * {
+			/* each as tall as itself: stretched to the taller of two passing, a short one's fields
+			   would be spread out down it, and snap back together as the tall one went */
+			align-self: start;
+			grid-area: 1 / 1;
+			min-inline-size: 0;
+		}
 	}
 
 	.fields {
-		animation: fade 0.2s ease;
 		display: grid;
 		gap: 1.125rem;
 	}
@@ -3582,7 +3840,38 @@
 			flex: 1;
 			min-inline-size: 0;
 			padding: 0.4375rem 0.625rem;
+		}
 
+		/* one that's a way in: its name and path, and a chevron at the end as a block's row has */
+		& button.pick {
+			background: none;
+			border: 0;
+			color: inherit;
+			column-gap: 0.25rem;
+			cursor: pointer;
+			font: inherit;
+			grid-template-columns: minmax(0, 1fr) auto;
+			text-align: start;
+
+			&:disabled {
+				cursor: progress;
+				opacity: 0.6;
+			}
+
+			& svg {
+				align-self: center;
+				block-size: 0.875rem;
+				fill: none;
+				grid-area: 1 / 2 / span 2;
+				inline-size: 0.875rem;
+				stroke: var(--muted);
+				stroke-linecap: round;
+				stroke-linejoin: round;
+				stroke-width: 2;
+			}
+		}
+
+		& .pick {
 			& > * {
 				overflow: hidden;
 				text-overflow: ellipsis;
@@ -3613,6 +3902,17 @@
 	.adding {
 		display: grid;
 		gap: 0.25rem;
+
+		& .find {
+			align-items: center;
+			display: flex;
+			gap: 0.25rem;
+
+			& input {
+				flex: 1;
+				min-inline-size: 0;
+			}
+		}
 	}
 
 	.rich {
@@ -3850,6 +4150,63 @@
 		display: grid;
 		gap: 0.25rem;
 
+		/* where a block's being chosen for the gap it's in: not a row, so none of a row's look */
+		& li.chooser {
+			background: none;
+			display: block;
+			padding-block: 0.25rem;
+		}
+
+		/* across the gap after a row, and a little of the rows either side so it's not a sliver to hit:
+		   a line through the gap and a + on it, there once the pointer's between the two */
+		& .between {
+			background: none;
+			block-size: 0.875rem;
+			border: 0;
+			cursor: pointer;
+			display: grid;
+			inset: calc(100% - 0.3125rem) 0 auto;
+			opacity: 0;
+			padding: 0;
+			place-items: center;
+			position: absolute;
+			transition: opacity 0.15s ease;
+			z-index: 1;
+
+			&::before {
+				background: var(--accent);
+				block-size: 2px;
+				border-radius: 1px;
+				content: "";
+				grid-area: 1 / 1;
+				inline-size: 100%;
+			}
+
+			& svg {
+				background: var(--accent);
+				block-size: 1rem;
+				border-radius: 50%;
+				box-sizing: border-box;
+				fill: none;
+				grid-area: 1 / 1;
+				inline-size: 1rem;
+				padding: 0.1875rem;
+				stroke: var(--editor-accent-ink, #fff);
+				stroke-linecap: round;
+				stroke-width: 3;
+			}
+
+			&:hover,
+			&:focus-visible {
+				opacity: 1;
+			}
+		}
+
+		/* a row being dragged past the gaps isn't adding to them */
+		& .shifting .between {
+			display: none;
+		}
+
 		& li {
 			align-items: center;
 			background: var(--field);
@@ -4019,6 +4376,137 @@
 		&.add {
 			justify-self: start;
 		}
+	}
+
+	/* the edit bar's tips, for the panel's own buttons: below them, as the panel's top edge is just
+	   above, and from their trailing edge, as they're at the panel's. A row's tools say what's in
+	   their label; the header's, which say more than theirs, what's in `data-tip` */
+	.round[data-tip],
+	.tools button[aria-label] {
+		position: relative;
+
+		&::after {
+			background: var(--ink);
+			border-radius: 0.5rem;
+			color: var(--bg);
+			content: attr(aria-label);
+			font-size: 0.75rem;
+			font-weight: 500;
+			/* a little past the button's edge, so its arrow is clear of its rounded corner */
+			inset: calc(100% + 0.5rem) -0.25rem auto auto;
+			padding: 0.5rem 0.625rem;
+			white-space: nowrap;
+		}
+
+		/* its arrow, as the bar's tips have, pointing up at the middle of the button */
+		&::before {
+			background: var(--ink);
+			block-size: 0.3125rem;
+			clip-path: polygon(50% 0, 100% 100%, 0 100%);
+			content: "";
+			inline-size: 0.625rem;
+			inset: calc(100% + 0.1875rem + 1px) auto auto calc(50% - 0.3125rem);
+		}
+
+		&::before,
+		&::after {
+			opacity: 0;
+			pointer-events: none;
+			position: absolute;
+			transition:
+				opacity 0.2s ease,
+				translate 0.2s ease;
+			translate: 0 -0.25rem;
+			z-index: 2;
+		}
+
+		&:focus-visible::before,
+		&:focus-visible::after {
+			opacity: 1;
+			translate: 0 0;
+		}
+
+		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
+		@media (hover: hover) {
+			&:hover::before,
+			&:hover::after {
+				opacity: 1;
+				translate: 0 0;
+			}
+		}
+	}
+
+	.round[data-tip]::after {
+		content: attr(data-tip);
+	}
+
+	/* the folded pill's tip, as the bar's own beside it: away from the screen's edge the pill is at,
+	   its arrow over the button */
+	/* over the button's icon, the size of the button */
+	.fold :is(svg, .anchor) {
+		grid-area: 1 / 1;
+	}
+
+	.fold .anchor {
+		pointer-events: none;
+		place-self: stretch;
+		position: relative;
+	}
+
+	.fold .tip {
+		background: var(--ink);
+		border-radius: 0.5rem;
+		color: var(--bg);
+		font-size: 0.75rem;
+		font-weight: 500;
+		inset: auto auto calc(100% + 0.75rem) calc(50% - 0.9375rem);
+		opacity: 0;
+		padding: 0.5rem 0.625rem;
+		pointer-events: none;
+		position: absolute;
+		transition:
+			opacity 0.2s ease,
+			translate 0.2s ease;
+		translate: 0 0.25rem;
+		white-space: nowrap;
+		z-index: 2;
+
+		&::after {
+			background: inherit;
+			block-size: 0.3125rem;
+			clip-path: polygon(0 0, 100% 0, 50% 100%);
+			content: "";
+			inline-size: 0.625rem;
+			inset: 100% auto auto 0.625rem;
+			position: absolute;
+		}
+
+		:global([data-corner^="t"]) & {
+			inset: calc(100% + 0.75rem) auto auto calc(50% - 0.9375rem);
+			translate: 0 -0.25rem;
+
+			&::after {
+				clip-path: polygon(50% 0, 100% 100%, 0 100%);
+				inset: auto auto 100% 0.625rem;
+			}
+		}
+	}
+
+	.fold:focus-visible .tip {
+		opacity: 1;
+		translate: 0 0;
+	}
+
+	@media (hover: hover) {
+		.fold:hover .tip {
+			opacity: 1;
+			translate: 0 0;
+		}
+	}
+
+	/* a row's tip opens over the row beneath, which would otherwise be drawn on top of it */
+	.kids li:is(:hover, :focus-within) {
+		z-index: 2;
 	}
 
 	.round {
