@@ -212,7 +212,6 @@ export class LinkManager {
 		if (form) this.content.form = form
 		else delete this.content.form
 		this.update()
-		this.set_modal_open(false)
 	}
 
 	search = async (event: Event) => {
@@ -308,7 +307,8 @@ export class LinkManager {
 		if (this.content.email) {
 			const params = new URLSearchParams()
 			if (this.content.subject) params.set('subject', this.content.subject)
-			if (this.content.body) params.set('body', this.content.body)
+			// line breaks as CRLF, as mailto links want them (RFC 6068)
+			if (this.content.body) params.set('body', this.content.body.replace(/\r?\n/g, '\r\n'))
 			if (this.content.cc) params.set('cc', this.content.cc)
 			if (this.content.bcc) params.set('bcc', this.content.bcc)
 
@@ -342,7 +342,15 @@ export class LinkManager {
 		return str.charAt(0).toUpperCase() + str.slice(1)
 	}
 
-	type_label = (type: LinkType) => (type === 'form' ? 'HubSpot form' : this.title_case(type))
+	/** As Storyblok's own link field names them, so the two read alike side by side */
+	type_label = (type: LinkType) =>
+		({
+			internal: 'Internal link',
+			external: 'URL',
+			email: 'Email',
+			asset: 'Asset',
+			form: 'HubSpot form',
+		})[type]
 
 	date = (date?: string | null): string => {
 		if (!date) return 'N/A'

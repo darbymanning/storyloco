@@ -17,5 +17,7 @@
 		"isolatedModules": true,
 		"moduleDetection": "force"
 	},
-	"include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]
+	"include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"],
+	// tests run under bun, which brings its own types
+	"exclude": ["src/**/*.test.ts"]
 }
