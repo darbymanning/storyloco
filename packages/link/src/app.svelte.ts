@@ -1,7 +1,9 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { ISbStories } from '@storyblok/js'
-import type { Link, LinkType, Rel, Target } from '../types.js'
-import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon } from '@lucide/svelte'
+import { link_types, type Link, type LinkType, type Rel, type Target } from '../types.js'
+import type { HubspotForm } from '../../hubspot_form/types.js'
+import { HubspotForms } from '../../hubspot_form/src/forms.svelte.js'
+import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon, ClipboardListIcon } from '@lucide/svelte'
 import { format_date, format_elapse } from 'kitto'
 import type { Asset } from '../../asset/types.js'
 
@@ -16,7 +18,7 @@ export class LinkManager {
 
 	// story search state
 	stories = $state<ISbStories['data']['stories']>([])
-	timeout = $state<NodeJS.Timeout | null>(null)
+	timeout = $state<ReturnType<typeof setTimeout> | null>(null)
 	loading = $state(false)
 
 	// pagination
@@ -40,6 +42,7 @@ export class LinkManager {
 		['external', ExternalLinkIcon],
 		['email', MailIcon],
 		['internal', LinkIcon],
+		['form', ClipboardListIcon],
 	])
 
 	target_map = new Map<Target, string>([
@@ -57,6 +60,28 @@ export class LinkManager {
 	is_modal_open = $derived(this.plugin?.type === 'loaded' && this.plugin.data?.isModalOpen)
 	token = $derived(this.plugin?.data?.token || import.meta.env.VITE_STORYBLOK_API_TOKEN)
 	Icon = $derived(this.icon_map.get(this.content.type))
+
+	// the HubSpot space plugin fills this in on fields it connects
+	#hubspot_secret = $derived.by(() =>
+		this.plugin?.type === 'loaded' ? this.plugin.data.options.MOXY_HUBSPOT_SECRET_ID : undefined
+	)
+	// as the asset field reckons it set up: both R2 options filled in
+	#r2 = $derived.by(() => {
+		const options = this.plugin?.type === 'loaded' ? this.plugin.data.options : {}
+		return !!options.MOXY_R2_SECRET_ID && !!options.R2_BUCKET
+	})
+	/** Asset and form links only where R2 and HubSpot are connected, though a saved one still shows */
+	types = $derived.by(() =>
+		link_types.filter(
+			(type) =>
+				type === this.content.type ||
+				(type === 'asset' ? this.#r2 : type === 'form' ? !!this.#hubspot_secret : true)
+		)
+	)
+	// listed only once a form link needs them, not on every link field
+	hubspot = new HubspotForms(() =>
+		this.content.type === 'form' ? this.#hubspot_secret : undefined
+	)
 
 	constructor() {
 		this.initialize_plugin()
@@ -102,6 +127,10 @@ export class LinkManager {
 				delete this.content.story
 				delete this.content.target
 				delete this.content.suffix
+				delete this.content.fieldtype
+				delete this.content.linktype
+				delete this.content.id
+				delete this.content.cached_url
 				break
 
 			case 'asset':
@@ -112,6 +141,10 @@ export class LinkManager {
 			case 'external':
 				delete this.content.target
 				delete this.content.rel
+				break
+
+			case 'form':
+				delete this.content.form
 				break
 
 			case 'email':
@@ -139,10 +172,22 @@ export class LinkManager {
 				name: story.name,
 				published_at: story.published_at,
 			},
+			fieldtype: 'multilink',
+			linktype: 'story',
+			id: story.uuid,
+			cached_url: story.full_slug,
 		}
 
 		this.update()
 		this.plugin.actions.setModalOpen(false)
+	}
+
+	select_form = (form: HubspotForm | null) => {
+		if (this.content.type !== 'form') return
+		if (form) this.content.form = form
+		else delete this.content.form
+		this.update()
+		this.set_modal_open(false)
 	}
 
 	search = async (event: Event) => {
@@ -271,6 +316,8 @@ export class LinkManager {
 	title_case = (str: string) => {
 		return str.charAt(0).toUpperCase() + str.slice(1)
 	}
+
+	type_label = (type: LinkType) => (type === 'form' ? 'HubSpot form' : this.title_case(type))
 
 	date = (date?: string | null): string => {
 		if (!date) return 'N/A'

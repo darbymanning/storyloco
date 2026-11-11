@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { Input, Label, Select, Skeleton as SkeletonUI } from 'shared'
 	import {
-		link_types,
 		target_options,
 		type AssetLink,
 		type EmailLink,
 		type ExternalLink,
+		type FormLink,
 		type Link,
 		type LinkType,
 		type Rel,
 		type StoryLink,
 	} from '../types.js'
+	import FormList from '../../hubspot_form/src/form_list.svelte'
 	import {
 		ChevronDownIcon,
 		ChevronLeftIcon,
@@ -143,7 +144,36 @@
 	{/if}
 {/snippet}
 
-{#snippet TargetSelect(content: Link)}
+{#snippet FormSelect(content: FormLink)}
+	<button
+		class={cn('w-full text-start truncate', { 'text-muted-foreground': !content.form })}
+		title={content.form?.name}
+		onclick={() => manager.set_modal_open(true)}
+	>
+		{content.form?.name ?? 'Select a form…'}
+	</button>
+	{#if content.form}
+		<button
+			aria-label="Unassign form"
+			title="Unassign form"
+			class="text-muted-foreground"
+			onclick={manager.clear}
+		>
+			<CircleXIcon size={18} />
+		</button>
+	{/if}
+{/snippet}
+
+{#snippet FormModal(content: FormLink)}
+	<div class="p-8 grid gap-4">
+		<FormList hubspot={manager.hubspot} value={content.form} onchoose={manager.select_form} />
+		{#if manager.hubspot.error}
+			<p class="text-sm text-destructive">{manager.hubspot.error}</p>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet TargetSelect(content: Exclude<Link, FormLink>)}
 	<div class="grid gap-2">
 		<Label for="target">Target</Label>
 		<select
@@ -311,7 +341,7 @@
 			/>
 		</div>
 		{@render TargetSelect(manager.content)}
-	{:else if ['asset', 'external'].includes(manager.content.type)}
+	{:else if manager.content.type === 'asset' || manager.content.type === 'external'}
 		{@render TargetSelect(manager.content)}
 	{:else if manager.content.type === 'email'}
 		<div class="grid gap-2">
@@ -435,8 +465,8 @@
 							}}
 							id="type"
 						>
-							{#each link_types as type}
-								<option value={type}>{manager.title_case(type)}</option>
+							{#each manager.types as type}
+								<option value={type}>{manager.type_label(type)}</option>
 							{/each}
 						</select>
 						<figure class="peer-hover:opacity-50 pointer-events-none transition-opacity">
@@ -453,6 +483,8 @@
 						{@render ExternalInput(manager.content)}
 					{:else if manager.content.type === 'email'}
 						{@render EmailInput(manager.content)}
+					{:else if manager.content.type === 'form'}
+						{@render FormSelect(manager.content)}
 					{/if}
 				</div>
 			</div>
@@ -461,7 +493,9 @@
 {/snippet}
 
 {#if manager.loaded}
-	{#if manager.is_modal_open}
+	{#if manager.is_modal_open && manager.content.type === 'form'}
+		{@render FormModal(manager.content)}
+	{:else if manager.is_modal_open}
 		{@render Modal()}
 	{:else}
 		{@render Fields()}

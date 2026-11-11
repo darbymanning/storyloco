@@ -346,6 +346,8 @@ interface Link {
 	url?: string | null
 	cached_url?: string | null
 	anchor?: string | null
+	/** The link plugin's query or hash after a story's path, e.g. `?tab=specs` */
+	suffix?: string | null
 	email?: string | null
 	// The index signature stops TypeScript rejecting the generated `story` as a weak type
 	story?: { url?: string; [key: string]: unknown }
@@ -367,7 +369,8 @@ export function href(link?: Link): string | undefined {
 
 	const path = link.story?.url || link.cached_url
 	const anchor = link.anchor ? `#${link.anchor.replace(/^#/, "")}` : ""
-	return path ? `/${path.replace(/^\/+/, "")}${anchor}` : anchor || undefined
+	// a suffix belongs after a path: alone, it'd send the visitor back to the page they're on
+	return path ? `/${path.replace(/^\/+/, "")}${link.suffix ?? ""}${anchor}` : anchor || undefined
 }
 
 /**

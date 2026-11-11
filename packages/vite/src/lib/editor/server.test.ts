@@ -142,6 +142,46 @@ describe("editor schemas", () => {
 		await refused(plugin("uiloco-link", { type: "asset", text: "A" }, { type: "external" }))
 	})
 
+	test("a link plugin's story link carries a native link's fields, and drops them once it stops", async () => {
+		const field = { type: "custom", field_type: "uiloco-link" } as Parameters<typeof normalise>[0]
+		const found = { id: 7, uuid: "u7", name: "About", full_slug: "about", published_at: null }
+		const put = (value: unknown, existing?: unknown) =>
+			normalise(field, value, existing, resolve, async () => found)
+		const linked = await put({ type: "internal", story: { id: 7 } })
+		expect(linked).toMatchObject({
+			story: { id: 7, uuid: "u7", name: "About" },
+			fieldtype: "multilink",
+			linktype: "story",
+			id: "u7",
+			cached_url: "about",
+		})
+		// the same story again keeps what it had, without asking Storyblok
+		expect(await normalise(field, { type: "internal", story: { id: 7 } }, linked, resolve)).toEqual(
+			linked
+		)
+		const external = (await put({ type: "external", url: "https://x.test" }, linked)) as object
+		for (const key of ["story", "fieldtype", "linktype", "id", "cached_url"])
+			expect(external).not.toHaveProperty(key)
+		const unpicked = (await put({ type: "internal" }, linked)) as object
+		for (const key of ["fieldtype", "linktype", "id", "cached_url"])
+			expect(unpicked).not.toHaveProperty(key)
+	})
+
+	test("a link plugin's form link keeps its form, which is only chosen in Storyblok", async () => {
+		const field = { type: "custom", field_type: "uiloco-link" } as Parameters<typeof normalise>[0]
+		const form = { id: "f1", name: "Enquiry", portal: "123" }
+		const stored = { plugin: "uiloco-link", type: "form", text: "Ask", form }
+		expect(
+			await normalise(
+				field,
+				{ type: "form", text: "Get in touch", form: { id: "evil" } },
+				stored,
+				resolve
+			)
+		).toEqual({ ...stored, text: "Get in touch", target: undefined })
+		await refused(normalise(field, { type: "form", form }, { type: "external" }, resolve))
+	})
+
 	test("a floor plans value keeps its images by id, asks Storyblok for new ones, and drops the rest", async () => {
 		const plan = { fieldtype: "asset", id: 1, filename: "old.jpg", alt: "", title: "Kept" }
 		const stored = {

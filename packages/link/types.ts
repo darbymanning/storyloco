@@ -1,11 +1,13 @@
 import type { Asset } from '../asset/types'
+import type { HubspotForm } from '../hubspot_form/types'
 
 interface BaseLink {
 	url?: string
 	text?: string
 }
 
-export const link_types = ['asset', 'external', 'email', 'internal'] as const
+/** `form` shows only on a field with HubSpot connected (`MOXY_HUBSPOT_SECRET_ID`) */
+export const link_types = ['asset', 'external', 'email', 'internal', 'form'] as const
 export const target_options = ['_self', '_blank', '_parent', '_top', '_new'] as const
 export const rel_options = [
 	'noopener',
@@ -50,7 +52,21 @@ export interface StoryLink extends BaseLink {
 		uuid: string
 		name: string
 		published_at: string | null
+		/** The story's current path, once Storyblok resolves links (`resolve_links`) */
+		url?: string
 	}
+	// A native link's fields, so `resolve_links` keeps the story's path current after it moves
+	fieldtype?: 'multilink'
+	linktype?: 'story'
+	/** The story's uuid */
+	id?: string
+	cached_url?: string
 }
 
-export type Link = AssetLink | ExternalLink | EmailLink | StoryLink
+/** Opens a HubSpot form, in a pop-up, rather than going anywhere */
+export interface FormLink extends BaseLink {
+	type: 'form'
+	form?: HubspotForm
+}
+
+export type Link = AssetLink | ExternalLink | EmailLink | StoryLink | FormLink
