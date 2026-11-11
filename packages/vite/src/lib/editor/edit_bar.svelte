@@ -1583,6 +1583,12 @@
 			margin-inline: -0.5rem 0.25rem;
 		}
 
+		/* pointed at, they come out from under it, or the one beside the badge is half hidden: by
+		   room inside it, which is still it under the pointer, where a margin would let go of it */
+		& .people:is(:hover, :focus-within) {
+			padding-inline-start: 0.625rem;
+		}
+
 		& .person {
 			--lap: 0.5rem;
 			--size: 1.5rem;
@@ -1647,6 +1653,10 @@
 
 			& .people {
 				margin-inline: 0.25rem -0.5rem;
+			}
+
+			& .people:is(:hover, :focus-within) {
+				padding-inline: 0 0.625rem;
 			}
 
 			& .panel {
@@ -2229,9 +2239,28 @@
 		display: flex;
 		flex: none;
 		margin-inline: 0.375rem;
+		transition: padding 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 
 		[data-corner$="r"] & {
 			flex-direction: row-reverse;
+		}
+	}
+
+	/* pointed at, or tabbed into, the faces stand apart, each one whole and easy to press: lapped,
+	   all but the last is a sliver */
+	.people:is(:hover, :focus-within) .person {
+		& + & {
+			margin-inline-start: 0.125rem;
+		}
+
+		[data-corner$="r"] & + & {
+			margin-inline: 0 0.125rem;
+		}
+
+		/* whole, with no bite out of it for the next one, which no longer sits over it */
+		&:has(+ .person) .face,
+		& .face {
+			mask: none;
 		}
 	}
 
@@ -2261,7 +2290,8 @@
 		/* someone arriving springs in; leaving shrinks away, and the rest close up */
 		transition:
 			scale 0.5s var(--overshoot),
-			opacity 0.3s ease;
+			opacity 0.3s ease,
+			margin 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 
 		@starting-style {
 			opacity: 0;
@@ -2347,11 +2377,32 @@
 			outline-offset: 3px;
 		}
 
-		/* elsewhere on the site: there, but not here with you */
-		/* looked away from their page: their face fades back among the others, as one elsewhere does */
+		/* looked away from their page: their face fades back among the others, as one elsewhere does,
+		   and wears the hollow ring the list gives them, which stays when it's pointed at and the
+		   fade lifts. On the side the next face doesn't sit over */
 		&.idle:not(:hover, :focus-visible, [aria-pressed="true"]) .face {
 			filter: saturate(0.3) opacity(0.6);
 		}
+
+		&.idle::after {
+			background: var(--bg);
+			block-size: 0.5rem;
+			border-radius: 50%;
+			box-shadow:
+				inset 0 0 0 1.5px var(--muted),
+				0 0 0 1.5px var(--bg);
+			content: "";
+			inline-size: 0.5rem;
+			inset: auto auto -1px -1px;
+			position: absolute;
+			z-index: 1;
+
+			[data-corner$="r"] & {
+				inset-inline: auto -1px;
+			}
+		}
+
+		/* elsewhere on the site: there, but not here with you */
 
 		&.away:not(:hover, :focus-visible, [aria-pressed="true"]) .face {
 			filter: saturate(0.4) opacity(0.75);
@@ -2373,7 +2424,8 @@
 
 		transition:
 			opacity 0.2s ease,
-			scale 0.2s ease;
+			scale 0.2s ease,
+			margin 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 
 	.round {
