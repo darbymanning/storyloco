@@ -9,7 +9,15 @@
 	import { SvelteMap } from "svelte/reactivity"
 	import { tick, untrack } from "svelte"
 	import type { Attachment } from "svelte/attachments"
-	import { call, editor, last_problem, preview_move, send, set_settings_open } from "./client.js"
+	import {
+		call,
+		editor,
+		last_problem,
+		preview_change,
+		preview_move,
+		send,
+		set_settings_open,
+	} from "./client.js"
 	import {
 		blok_choices,
 		is_heading,
@@ -254,6 +262,10 @@
 	// ponytail: it stays open over text typed in on the page; scroll that clear of it if a sheet on a phone hides it
 	export function typing(at: { uid: string; field: string } | null) {
 		on_page = at
+		// its field may be under another tab than the one showing: that one, so it's there to see
+		if (!at || at.uid !== selection?.uid) return
+		const group = groups.find((g) => g.fields.some(([key]) => key === at.field))
+		if (group && group.name !== tab) tab = group.name
 	}
 	/** The field being changed here, which the page marks where it shows it */
 	const on_panel = (at: { uid: string; field: string; part?: string } | null) =>
@@ -461,9 +473,57 @@
 	/** Fields being typed in together, which their room saves rather than the panel */
 	const together = new Set<string>()
 
+	/**
+	 * What a field's given here, on the page at once, where the page can show it and the value's
+	 * one it shows as it's kept: text, numbers, switches, pictures. Not what the page looks up
+	 * before showing, like a link's page or a picked story, which it has to be saved to find
+	 */
+	const SHOWN_AHEAD = new Set([
+		"text",
+		"textarea",
+		"markdown",
+		"number",
+		"boolean",
+		"richtext",
+		"asset",
+		"multiasset",
+		"custom",
+	])
+	let ahead: (() => void) | undefined
+	/** What's been typed since the page last drew, shown together at its next frame: a fast typist's keys are one redraw, not one each */
+	let waiting: { story: number; uid: string; values: Record<string, unknown> } | undefined
+	let ahead_too_long: ReturnType<typeof setTimeout> | undefined
+	function show_ahead(key: string, value: unknown) {
+		if (!selection || !SHOWN_AHEAD.has(component?.schema[key]?.type ?? "")) return
+		const { story, uid } = selection
+		if (waiting && waiting.uid === uid) return void (waiting.values[key] = $state.snapshot(value))
+		waiting = { story, uid, values: { [key]: $state.snapshot(value) } }
+		requestAnimationFrame(() => {
+			const change = waiting
+			waiting = undefined
+			if (!change) return
+			ahead = preview_change({ op: "fields", ...change }) ?? ahead
+			// its save may be someone else's to make, typed in together, or land once another block's
+			// showing: left a while with nothing more typed, the page goes back to what's saved anyway
+			clearTimeout(ahead_too_long)
+			ahead_too_long = setTimeout(show_saved, 8000)
+		})
+	}
+	function show_saved() {
+		clearTimeout(ahead_too_long)
+		ahead?.()
+		ahead = undefined
+	}
+	/** Every save has landed, or failed: the page shows what's saved again, which is the same or the truth */
+	function shown_saved() {
+		if (timers.size || waiting || Object.values(saving).some(Boolean)) return
+		show_saved()
+	}
+
 	/** Save a field now, or after a pause in typing */
 	function change(key: string, value: unknown, wait = 0) {
 		values[key] = value
+		show_ahead(key, value)
 		if (together.has(key)) return
 		clearTimeout(timers.get(key))
 		if (wait)
@@ -508,6 +568,7 @@
 			values: { [key]: $state.snapshot(values[key]) },
 		})
 		saving[key] = false
+		shown_saved()
 		if (!reply) failed[key] = last_problem() ?? "Couldn’t save"
 		else if (selection?.uid === uid && focused !== key) {
 			const saved = (reply as { blok?: Blok }).blok
@@ -608,15 +669,19 @@
 		const after = adding?.after
 		adding = null
 		saving[key] = true
-		const reply = (await send({
+		const adding_it = {
 			op: "insert",
 			story: selection.story,
 			// after a block, as the page's own toolbar adds one, or at the end of the field's list
 			...(after ? { uid: after } : { uid: selection.uid, field: key }),
 			component: name,
-		})) as {
+		}
+		// on the page at once, where the page can show it, and saved behind
+		const shown = preview_change(adding_it)
+		const reply = (await send(adding_it)) as {
 			uid?: string
 		} | null
+		shown?.()
 		saving[key] = false
 		if (!reply) failed[key] = last_problem() ?? "Couldn’t add it"
 		else if (reply.uid) select({ story: selection.story, uid: reply.uid })
@@ -633,7 +698,7 @@
 		acting = true
 		// a move shows on the page at once, where the page can show it, and saves behind
 		const glide = op === "move" ? gliding() : undefined
-		const shown = op === "move" ? preview_move(story, uid, by) : undefined
+		const shown = preview_change({ op, story, uid, by })
 		if (shown) glide?.()
 		const reply = (await send({ op, story, uid, by })) as { uid?: string; undo?: unknown } | null
 		shown?.()
@@ -659,7 +724,7 @@
 		const kid_name = kids(values[key]).find((kid) => kid._uid === uid)?.component ?? ""
 		// a move shows on the page at once, as it does in the list here, and saves behind
 		const glide = op === "move" ? gliding() : undefined
-		const shown = op === "move" ? preview_move(story, uid, by, to) : undefined
+		const shown = preview_change({ op, story, uid, by, to })
 		if (op === "move") moved(uid, by, to)
 		if (shown) glide?.()
 		const reply = (await send({ op, story, uid, by, to })) as { undo?: unknown } | null
@@ -994,8 +1059,9 @@
 		}
 		const change = { op: "fields", story: target.story, uid: target.uid, values: { [key]: value } }
 		const reply = await send(change, shared ? "shared" : "change")
+		if (showing()) saving[key] = false
+		shown_saved()
 		if (showing()) {
-			saving[key] = false
 			if (!reply) failed[key] = last_problem() ?? "Couldn’t save"
 			caught_up()
 		}
@@ -1034,7 +1100,10 @@
 						}),
 				})
 			}
-			const typed = () => sharing?.typed(input.value)
+			const typed = () => {
+				sharing?.typed(input.value)
+				show_ahead(key, input.value)
+			}
 			const moved = () => sharing?.moved()
 			const blur = async () => {
 				const was = sharing
@@ -1077,11 +1146,17 @@
 		return (node) => {
 			let stop: (() => void) | undefined
 			let gone = false
-			const doc = untrack(() => $state.snapshot(values[key])) ?? { type: "doc", content: [] }
+			type Part = { text?: string; content?: Array<Part> }
+			// a field nobody's written in yet is "", or nothing, or a document with nothing in it, none
+			// of which is a document the editor can hold: an empty paragraph is, and is what it means
+			const whole = (value: unknown) =>
+				value && typeof value === "object" && (value as Part).content?.length
+					? value
+					: { type: "doc", content: [{ type: "paragraph" }] }
+			const doc = whole(untrack(() => $state.snapshot(values[key])))
 			const target = untrack(() => selection)
 			if (!target) return
 			// its words straight away, as plain paragraphs, while the editor joins whoever else has it open
-			type Part = { text?: string; content?: Array<Part> }
 			const words = (part: Part): string => part.text ?? (part.content ?? []).map(words).join("")
 			// and where its format bar will be, as it will look once it's there
 			const bar = document.createElement("div")
@@ -1100,7 +1175,7 @@
 				// the first one in starts it from what's saved, not what the page last showed
 				const saved = first
 					? await call<Loaded>({ op: "blok", story: target.story, uid: target.uid })
-							.then((found) => found.blok[key] as RichDoc | undefined)
+							.then((found) => whole(found.blok[key]) as RichDoc)
 							.catch(() => undefined)
 					: undefined
 				const extras = await inserts(field).catch(() => undefined)
@@ -1124,7 +1199,10 @@
 					fixed: true,
 					field: field as RichField,
 					inserts: extras,
-					change: (next) => (values[key] = next),
+					change: (next) => {
+						values[key] = next
+						show_ahead(key, next)
+					},
 					together: { room, seed: first && !room.doc.getXmlFragment("rich").length },
 				})
 				// what's saved: the stored text, or as the editor holds it once it has started the field
@@ -2786,6 +2864,20 @@
 						</button>
 					</div>
 				{/if}
+				{#if !folded && editor.space && selection}
+					<!-- the way out for anything these settings fall short on: no Storyblok address opens
+					     a block, so the story it's in -->
+					<a
+						class="round"
+						href="https://app.storyblok.com/#/me/spaces/{editor.space}/stories/0/0/{selection.story}"
+						target="_blank"
+						rel="noopener noreferrer"
+						aria-label="Edit in Storyblok"
+						data-tip="Edit in Storyblok"
+					>
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9" /></svg>
+					</a>
+				{/if}
 				<button
 					type="button"
 					class="round fold"
@@ -2955,6 +3047,17 @@
 		}
 	}
 
+	/* the open panel's top is a handle for the whole bar, as the badge is: dragged to another corner */
+	.inspector:not(.folded) header {
+		cursor: grab;
+		touch-action: none;
+		user-select: none;
+
+		&:active {
+			cursor: grabbing;
+		}
+	}
+
 	header {
 		border-block-end: 1px solid var(--line);
 		display: grid;
@@ -2962,12 +3065,13 @@
 		padding: 0.875rem 0.875rem 0 1rem;
 	}
 
-	/* the way to it and its name on one line, wrapping to a second when the way's long */
+	/* the way to it and its name on one line, always: when the way's long, as with a page's long
+	   name, its steps are cut short with an ellipsis, the longest giving up the most, and the block's
+	   own name is the last to be */
 	.name {
 		align-items: baseline;
 		display: flex;
 		flex: 1;
-		flex-wrap: wrap;
 		/* as far from the last arrow as a step's own padding and gap put it from its arrow */
 		gap: 0 0.375rem;
 		min-inline-size: 0;
@@ -2982,7 +3086,9 @@
 	}
 
 	.now {
-		display: inline-block;
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	/* folded, a long name's cut short with an ellipsis, which only text in the line gets */
@@ -3009,10 +3115,15 @@
 		align-items: baseline;
 		color: var(--muted);
 		display: flex;
-		flex-wrap: wrap;
+		flex: 0 1 auto;
 		font-size: 0.875rem;
 		gap: 0.25rem;
 		margin-inline-start: -0.125rem;
+		min-inline-size: 0;
+
+		& > span {
+			flex: none;
+		}
 
 		& button {
 			background: none;
@@ -3020,8 +3131,14 @@
 			border-radius: 0.25rem;
 			color: inherit;
 			cursor: pointer;
+			flex: 0 1 auto;
 			font: inherit;
+			/* room for a letter or two and the ellipsis, however many steps there are */
+			min-inline-size: 2.5ch;
+			overflow: hidden;
 			padding: 0 0.125rem;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 
 			&:hover {
 				color: var(--ink);
@@ -3034,11 +3151,22 @@
 		align-items: center;
 		display: flex;
 		justify-content: space-between;
+		/* no wider than the panel, whatever's in it: its line gives way, not its buttons */
+		min-inline-size: 0;
+
+		& > :not(.name) {
+			flex: none;
+		}
 
 		& h2 {
+			flex: 0 0 auto;
 			font-size: 0.875rem;
 			font-weight: 600;
+			max-inline-size: 100%;
 			min-inline-size: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
 	}
 
@@ -3490,8 +3618,14 @@
 			}
 
 			&:is(:hover, :focus-visible) .tip {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: -50% 0;
+			}
+
+			&:focus-visible .tip {
+				transition-delay: 0s;
 			}
 
 			& svg {
@@ -3585,8 +3719,14 @@
 			}
 
 			&:is(:hover, :focus-visible) .tip {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: 0 0;
+			}
+
+			&:focus-visible .tip {
+				transition-delay: 0s;
 			}
 		}
 	}
@@ -4430,6 +4570,8 @@
 		@media (hover: hover) {
 			&:hover::before,
 			&:hover::after {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: 0 0;
 			}
@@ -4499,6 +4641,8 @@
 
 	@media (hover: hover) {
 		.fold:hover .tip {
+			/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+			transition-delay: 0.35s;
 			opacity: 1;
 			translate: 0 0;
 		}
@@ -4511,6 +4655,8 @@
 
 	.round {
 		background: none;
+		/* one that's a link is a button to look at: no underline, on it or on its tip */
+		text-decoration: none;
 		block-size: 1.75rem;
 		border: 0;
 		border-radius: 50%;

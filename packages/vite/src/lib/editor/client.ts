@@ -3,7 +3,15 @@ import { tick } from "svelte"
 import { createSubscriber } from "svelte/reactivity"
 import type { ISbStoryData } from "@storyblok/svelte"
 import type { EditorUser } from "./server.js"
-import { draft_is_live, find_blok, like_page, locate, page_of, who_is_where } from "./content.js"
+import {
+	copy_blok,
+	draft_is_live,
+	find_blok,
+	like_page,
+	locate,
+	page_of,
+	who_is_where,
+} from "./content.js"
 
 export type { EditorUser }
 
@@ -71,7 +79,13 @@ export type Person = {
 		/** their Storyblok photo, and the Gravatar hash to try after it */
 		photo?: string | null
 		gravatar?: string | null
+		/** a guest who hasn't given a name has a made-up one, and a small picture for a face: the inside of an svg */
+		art?: string
 	}
+	/** someone a draft is shared with, rather than an editor of the space */
+	guest?: boolean
+	/** their page is hidden, or they haven't touched it for a while */
+	idle?: boolean
 	color: string
 	joined: number
 	page: string | null
@@ -875,6 +889,57 @@ export function preview_move(story: unknown, uid: string, by?: number, to?: numb
 		if (!(next >= 0 && next < list.length) || next === index) return false
 		list.splice(next, 0, ...list.splice(index, 1))
 		return true
+	})
+}
+
+/**
+ * Show what a change will do to the page before it's saved, where the page can show it: fields
+ * given new values, a block added, copied or taken away. The way to show what's saved again, for
+ * once the save has landed or failed; nothing when there's nothing here to show
+ */
+export function preview_change(change: Record<string, unknown>) {
+	const { op, story } = change
+	const uid = String(change.uid)
+	if (op === "move")
+		return preview_move(
+			story,
+			uid,
+			change.by as number | undefined,
+			change.to as number | undefined
+		)
+	return preview(story, (content) => {
+		if (op === "fields") {
+			const blok = content._uid === uid ? content : find_blok(content, uid)
+			if (!blok) return false
+			Object.assign(blok, change.values)
+			return true
+		}
+		const place = locate(content, uid)
+		if (op === "remove") return !!place && place.list.splice(place.index, 1).length > 0
+		if (op === "duplicate") {
+			if (!place) return false
+			// as the page marks its blocks from this, a copy with it would be taken for the original
+			const { _editable, ...copy } = copy_blok(place.list[place.index])
+			void _editable
+			place.list.splice(place.index + 1, 0, copy)
+			return true
+		}
+		if (op === "insert") {
+			// with nothing in it yet, as it is once it's saved
+			const blok = { _uid: crypto.randomUUID(), component: String(change.component) }
+			if (typeof change.field !== "string")
+				return !!place && !!place.list.splice(place.index + 1, 0, blok)
+			const parent = (content._uid === uid ? content : find_blok(content, uid)) as
+				| Record<string, unknown>
+				| undefined
+			if (!parent) return false
+			const list = Array.isArray(parent[change.field])
+				? (parent[change.field] as Array<unknown>)
+				: []
+			parent[change.field] = [...list, blok]
+			return true
+		}
+		return false
 	})
 }
 

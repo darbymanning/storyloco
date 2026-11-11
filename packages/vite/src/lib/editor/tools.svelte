@@ -166,6 +166,8 @@
 	let looking = $state(false)
 	let searching: ReturnType<typeof setTimeout> | undefined
 
+	const open_tab = (url: string) => window.open(url, "_blank", "noopener,noreferrer")
+
 	const ICONS = {
 		new: "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M12 11v6M9 14h6",
 		history: "M3 12a9 9 0 1 0 2.64-6.36L3 8M3 3v5h5M12 7v5l3 2",
@@ -233,6 +235,17 @@
 			run: () => (close(), accessibility()),
 		},
 		{
+			id: "storyblok",
+			title: "Edit in Storyblok",
+			icon: "M7 17 17 7M8 7h9v9",
+			run: () => {
+				close()
+				open_tab(
+					`https://app.storyblok.com/#/me/spaces/${editor.space}/stories/0/0/${editor.story?.id}`
+				)
+			},
+		},
+		{
 			id: "edit",
 			title: "Stop editing",
 			icon: ICONS.edit,
@@ -253,7 +266,10 @@
 		const actions = ACTIONS.filter(
 			// only with something to discard
 			(a) =>
-				matches(a.title) && (a.id !== "discard" || (editor.story?.published_at && unpublished()))
+				matches(a.title) &&
+				(a.id !== "discard" || (editor.story?.published_at && unpublished())) &&
+				// only where there's a space and a story to open there
+				(a.id !== "storyblok" || (editor.space && editor.story))
 		).map((a) => ({ ...a, group: "Actions" }))
 		const on_page = view === "palette" ? blocks() : []
 		const seen = new Set<string>()

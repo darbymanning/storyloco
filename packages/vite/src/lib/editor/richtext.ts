@@ -347,7 +347,8 @@ function extensions(shows: Shows = { colour: false }) {
 
 // --- the format bar
 
-const STYLE = `[data-storyloco=format]{position:fixed;z-index:2147483001;display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;color:#fff;font:500 13px/1 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .15s,translate .15s;animation:storyloco-format .16s ease-out}
+const STYLE = `[data-storyloco=format-rail]{position:absolute;z-index:2147483001;pointer-events:none}
+[data-storyloco=format]{position:sticky;z-index:2147483001;pointer-events:auto;width:max-content;display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;color:#fff;font:500 13px/1 system-ui,sans-serif;box-shadow:0 8px 24px rgb(0 0 0/.25);transition:opacity .15s,translate .15s;animation:storyloco-format .16s ease-out}
 [data-storyloco=format]:not([data-fixed])::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;backdrop-filter:blur(20px) saturate(1.8);background:color-mix(in srgb,var(--editor-pill,var(--editor-ink,#1b243f)) 82%,transparent)}
 [data-storyloco=format][data-fixed]{position:static;flex:none;inset-inline:auto;margin:-6px -10px 4px;padding:4px 6px;width:auto;max-width:none;flex-wrap:wrap;border-radius:0;border-bottom:1px solid var(--line,rgb(127 127 127/.25));color:inherit;box-shadow:none;animation:none}
 [data-storyloco=format][data-fixed] button{opacity:.72;transition:opacity .15s,background-color .15s}
@@ -404,6 +405,10 @@ const STYLE = `[data-storyloco=format]{position:fixed;z-index:2147483001;display
 .collaboration-carets__caret{position:relative;margin:0 -1px;border-left:2px solid;pointer-events:none;word-break:normal}
 .collaboration-carets__label{position:absolute;left:-2px;bottom:100%;padding:1px 6px;border-radius:4px 4px 4px 0;color:#fff;font:600 11px/1.4 system-ui,sans-serif;white-space:nowrap;user-select:none;pointer-events:none}
 .ProseMirror p.is-empty:first-child::before{content:attr(data-placeholder);opacity:.4;pointer-events:none;float:left;height:0}
+[data-storyloco=format-tip]{position:fixed;z-index:2147483002;pointer-events:none;padding:8px 10px;border-radius:8px;background:var(--editor-ink,#1b243f);color:var(--editor-bg,#fff);font:500 12px/1.25 system-ui,sans-serif;white-space:nowrap;animation:storyloco-format .16s ease-out}
+[data-storyloco=format-tip]::after{content:"";position:absolute;left:calc(var(--arrow) - 5px);width:10px;height:5px;background:inherit}
+[data-storyloco=format-tip][data-side=above]::after{top:100%;clip-path:polygon(0 0,100% 0,50% 100%)}
+[data-storyloco=format-tip][data-side=below]::after{bottom:100%;clip-path:polygon(50% 0,100% 100%,0 100%)}
 @keyframes storyloco-format{from{opacity:0;translate:0 4px}}`
 
 function style() {
@@ -449,7 +454,8 @@ const ICONS: Record<string, string> = {
 	more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
 	down: '<path d="m6 9 6 6 6-6"/>',
 	rewrite:
-		'<path d="M9.94 14.06 4 20M14 4l1.1 2.9L18 8l-2.9 1.1L14 12l-1.1-2.9L10 8l2.9-1.1zM19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"/>',
+		// sparkles, and no handle: with one it read as a hammer
+		'<path d="M10 3l1.9 5.1L17 10l-5.1 1.9L10 17l-1.9-5.1L3 10l5.1-1.9zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9zM19 3v4M17 5h4"/>',
 }
 
 /** A richtext field's settings in its block's schema: what its bar offers */
@@ -520,9 +526,62 @@ type Tool = {
 const LEVELS = [1, 2, 3, 4, 5, 6] as const
 const ALIGNS = ["left", "center", "right", "justify"] as const
 
+/**
+ * The editor's own tips for a bar's buttons, in place of the browser's: one bubble on the page
+ * itself, placed by the button pointed at, as the panel's field would cut off one drawn inside it
+ */
+let tip: HTMLElement | undefined
+let tip_soon: ReturnType<typeof setTimeout> | undefined
+/** When the last tip went, so the next button along shows its own at once rather than waiting again */
+let tip_gone = 0
+function untip() {
+	clearTimeout(tip_soon)
+	if (!tip?.isConnected) return
+	tip.remove()
+	tip_gone = performance.now()
+}
+function tips(bar: HTMLElement) {
+	const show = (button: HTMLElement) => {
+		if (!button.isConnected) return
+		tip ??= document.createElement("div")
+		tip.dataset.storyloco = "format-tip"
+		tip.textContent = button.dataset.tip ?? ""
+		// put on the page once: put there again it would fade in again, and flicker
+		if (!tip.isConnected) document.body.append(tip)
+		const box = button.getBoundingClientRect()
+		const middle = box.left + box.width / 2
+		const left = Math.min(
+			Math.max(middle - tip.offsetWidth / 2, 4),
+			innerWidth - tip.offsetWidth - 4
+		)
+		// above the button, clear of the text beneath the bar, unless that's off the top of the window
+		const above = box.top - tip.offsetHeight - 9 > 4
+		tip.dataset.side = above ? "above" : "below"
+		tip.style.left = `${left}px`
+		tip.style.top = `${above ? box.top - tip.offsetHeight - 9 : box.bottom + 9}px`
+		tip.style.setProperty("--arrow", `${middle - left}px`)
+	}
+	bar.addEventListener("pointerover", (event) => {
+		const button = (event.target as Element).closest<HTMLElement>("[data-tip]")
+		// only where there's hover: on touch, a tap would show a tip that never leaves
+		if (!button || !bar.contains(button) || !matchMedia("(hover: hover)").matches) return untip()
+		// still the one it's showing: the pointer's only moved within the button, or the bar's been
+		// drawn again under it, and its buttons are new ones saying the same
+		if (tip?.isConnected && tip.textContent === button.dataset.tip) return
+		clearTimeout(tip_soon)
+		// a moment's wait before the first, so passing over the bar doesn't set them off; with one
+		// showing, or just gone, the next is there at once
+		if (tip?.isConnected || performance.now() - tip_gone < 300) show(button)
+		else tip_soon = setTimeout(() => show(button), 350)
+	})
+	bar.addEventListener("pointerleave", untip)
+	bar.addEventListener("pointerdown", untip)
+}
+
 function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Inserts = {}) {
 	style()
 	const bar = document.createElement("div")
+	tips(bar)
 	bar.dataset.storyloco = "format"
 	if (fixed) bar.dataset.fixed = ""
 	bar.setAttribute("role", "toolbar")
@@ -779,7 +838,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 	function button(t: Tool, className = "") {
 		const b = document.createElement("button")
 		b.type = "button"
-		b.title = b.ariaLabel = t.label
+		b.dataset.tip = b.ariaLabel = t.label
 		if (className) b.className = className
 		if (t.swatch) {
 			const dot = document.createElement("span")
@@ -821,7 +880,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 			kind_button = document.createElement("button")
 			kind_button.type = "button"
 			kind_button.className = "word kind"
-			kind_button.title = kind_button.ariaLabel = "Text or heading"
+			kind_button.dataset.tip = kind_button.ariaLabel = "Text or heading"
 			kind_button.setAttribute("aria-haspopup", "menu")
 			kind_button.addEventListener("click", () => toggle("kind"))
 			bar.append(kind_button)
@@ -833,7 +892,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 			const b = document.createElement("button")
 			b.type = "button"
 			b.className = "more-button"
-			b.title = b.ariaLabel = "More formatting"
+			b.dataset.tip = b.ariaLabel = "More formatting"
 			b.setAttribute("aria-haspopup", "menu")
 			b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.more}</svg>`
 			b.addEventListener("click", () => toggle(open === "bloks" ? "bloks" : "more"))
@@ -916,7 +975,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 			if (name === "Table" && has.has("cell-color") && editor.isActive("table")) {
 				const pick = document.createElement("input")
 				pick.type = "color"
-				pick.title = pick.ariaLabel = "Cell colour"
+				pick.dataset.tip = pick.ariaLabel = "Cell colour"
 				pick.addEventListener("change", () => {
 					chain().setCellAttribute("backgroundColor", pick.value).run()
 					close()
@@ -930,7 +989,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 				// any colour, from the system's own picker
 				const pick = document.createElement("input")
 				pick.type = "color"
-				pick.title = pick.ariaLabel = "Pick a colour"
+				pick.dataset.tip = pick.ariaLabel = "Pick a colour"
 				pick.value = /^#[0-9a-f]{6}$/i.test(editor.getAttributes("textStyle").color ?? "")
 					? editor.getAttributes("textStyle").color
 					: "#000000"
@@ -952,6 +1011,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 		render()
 	}
 	function close() {
+		untip()
 		if (!open) return
 		open = null
 		listen(false)
@@ -1159,7 +1219,7 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 		})
 		const cancel = document.createElement("button")
 		cancel.type = "button"
-		cancel.title = cancel.ariaLabel = "Cancel"
+		cancel.dataset.tip = cancel.ariaLabel = "Cancel"
 		cancel.innerHTML =
 			'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
 		cancel.addEventListener("click", () => {
@@ -1170,32 +1230,41 @@ function toolbar(editor: Editor, fixed: boolean, field?: RichField, inserts: Ins
 		choices[0].focus()
 	}
 
+	/**
+	 * What the bar over the text rides in: laid over the page from just above the text to its end,
+	 * with the bar stuck to the top of the window inside it. The browser holds the bar there as the
+	 * page scrolls, and lets it go with the text's end, in step with the scroll itself; placed by
+	 * hand on each scroll it trailed a frame or more behind, most of all on a phone
+	 */
+	const rail = fixed ? undefined : document.createElement("div")
+	if (rail) {
+		rail.dataset.storyloco = "format-rail"
+		rail.append(bar)
+	}
+
 	/** Just above the text being edited, kept on screen, so it never covers what's being typed */
 	function place() {
-		if (fixed) return
+		if (!rail?.parentElement) return
 		const box = editor.view.dom.getBoundingClientRect()
 		const width = bar.offsetWidth
 		const height = bar.offsetHeight
 		const left = Math.min(Math.max(box.left, 8), innerWidth - width - 8)
-		// above the text, staying at the top of the window as the text's start scrolls past it, and
-		// leaving with the text's end: one unbroken path, with no jump down into the text on the way
 		// the block's own toolbar keeps the top of the window: this stays clear beneath it
 		const above = document.querySelector("[data-storyloco=block-bar]")?.getBoundingClientRect()
 		const floor = above ? above.bottom + 8 : 8
-		const top = Math.min(Math.max(floor, box.top - height - 10), box.bottom - height - 8)
-		// held at the top of the window it's fixed there; anywhere else it's on the page, so the
-		// browser scrolls it with the text rather than this following a frame behind, which bounces
-		const held = top === floor
-		const origin = held ? { top: 0, left: 0 } : page_origin()
-		bar.style.position = held ? "fixed" : "absolute"
-		bar.style.left = `${left - origin.left}px`
-		bar.style.top = `${top - origin.top}px`
+		const origin =
+			rail.parentElement === document.body ? page_origin() : { top: -scrollY, left: -scrollX }
+		// none of these change as the page scrolls, so there's nothing here for a scroll to wait on
+		rail.style.left = `${left - origin.left}px`
+		rail.style.top = `${box.top - height - 10 - origin.top}px`
+		rail.style.height = `${box.height + height + 2}px`
+		bar.style.top = `${floor}px`
 	}
 
 	render()
 	// a field Storyblok gives no tools to is plain text, as a textarea is: no bar at all
 	const empty = !main.length && !levels.length && !extra.length
-	return { bar, update, place, close, empty }
+	return { bar, rail, update, place, close, empty }
 }
 
 // --- editors
@@ -1287,7 +1356,13 @@ export function rich_editor({
 		}
 	)
 	if (fixed && !tools.empty) element.prepend(tools.bar)
-	else if (!tools.empty) document.body.append(tools.bar)
+	else if (!tools.empty && tools.rail) {
+		// where the page itself scrolls: a body that clips what overflows it, in a document that does
+		// too, is a scroller of its own that never scrolls, and nothing would stick inside it
+		const clips = (el: Element) => getComputedStyle(el).overflowY !== "visible"
+		const boxed = clips(document.body) && clips(document.documentElement)
+		;(boxed ? document.documentElement : document.body).append(tools.rail)
+	}
 	tools.bar.hidden = !fixed || tools.empty
 
 	const refresh = () => {
@@ -1327,7 +1402,7 @@ export function rich_editor({
 			removeEventListener("scroll", refresh)
 			element.removeEventListener("click", embed)
 			tools.close()
-			tools.bar.remove()
+			;(tools.rail ?? tools.bar).remove()
 			editor.destroy()
 		},
 	}

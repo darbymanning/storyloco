@@ -66,22 +66,23 @@
 		return words.charAt(0).toUpperCase() + words.slice(1)
 	}
 
-	/** Where a site's sticky or fixed header ends, so the bar never slides under it */
+	/**
+	 * Where a site's sticky or fixed header ends, so the bar never slides under it. Looking past the
+	 * editor's own parts: this bar over the header, as when the header wasn't found for a moment
+	 * mid-scroll, would otherwise hide it from here and so stay there
+	 */
 	function header_bottom() {
 		let bottom = 0
-		for (const x of [innerWidth * 0.25, innerWidth * 0.5, innerWidth * 0.75])
-			for (
-				let el = document.elementFromPoint(x, 1);
-				el && el !== document.body;
-				el = el.parentElement
-			) {
-				if (el.closest("[data-storyloco]")) break
+		for (const x of [innerWidth * 0.25, innerWidth * 0.5, innerWidth * 0.75]) {
+			const under = document.elementsFromPoint(x, 1).find((el) => !el.closest("[data-storyloco]"))
+			for (let el = under; el && el !== document.body; el = el.parentElement ?? undefined) {
 				const { position } = getComputedStyle(el)
 				if (position === "fixed" || position === "sticky") {
 					bottom = Math.max(bottom, el.getBoundingClientRect().bottom)
 					break
 				}
 			}
+		}
 		return Math.min(bottom, innerHeight / 3)
 	}
 
@@ -236,15 +237,20 @@
 			if (Math.abs(shift) > 1) scrollTo({ top: scrollY + shift, behavior: "instant" })
 			glide(before, moved)
 		}
-		const place_was = change.op === "move" ? where(story, uid)?.index : undefined
+		/** Where it is among its siblings, and what they are: different once the page has shown the change */
+		const placed = () => JSON.stringify(where(story, uid) ?? null)
+		const place_was = placed()
 		const saving = act({ ...change, story, uid, name })
-		// a move the page could show at once is in its content already, and saves behind: by where
-		// it is there, as on screen it may not have moved, held in place as the browser anchors a scroll
-		const at_once = place_was !== undefined && where(story, uid)?.index !== place_was
+		// a change the page could show at once, a move or a block added, copied or deleted, is in its
+		// content already, and saves behind: by where it is there, as on screen it may not have moved,
+		// held in place as the browser anchors a scroll
+		const at_once = place_was !== "null" && placed() !== place_was
 		if (at_once) {
 			// the site has redrawn within a frame or two
 			for (let i = 0; i < 2; i++) await frame()
-			settle(find(uid)?.node ?? node)
+			// one that's gone has nowhere to be held: the rest close up where they are
+			if (change.op === "remove") glide(before)
+			else settle(find(uid)?.node ?? node)
 		} else node.dataset.storylocoBusy = ""
 		const reply = await saving
 		delete node.dataset.storylocoBusy
@@ -258,8 +264,9 @@
 		// follow the block to where it went, or the one made, so the next click carries on from there
 		const next = reply.uid ? find(reply.uid) : undefined
 		// one shown at once has glided already: measured again mid-glide, it would only glide twice
-		if (at_once) return void (next && (follow ? select(next) : show(next)))
-		if (change.op === "move" && next) settle(next.node)
+		if (at_once) {
+			if (change.op === "move") return void (next && (follow ? select(next) : show(next)))
+		} else if (change.op === "move" && next) settle(next.node)
 		else glide(before)
 		if (change.op === "remove") {
 			show(null)
@@ -651,6 +658,8 @@
 		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
 		@media (hover: hover) {
 			&:hover .tip {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: 0 0;
 			}
