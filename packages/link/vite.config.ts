@@ -11,6 +11,9 @@ export default defineConfig({
 		rollupOptions: {
 			output: {
 				format: 'commonjs',
+				// Storyblok serves the plugin as one file: a chunk split off (the asset picker's lazy
+				// drag-and-drop) leaves it reaching for `exports`, which its frame doesn't have
+				codeSplitting: false,
 				entryFileNames: `[name].js`,
 				chunkFileNames: `[name].js`,
 				assetFileNames: `[name].[ext]`,
