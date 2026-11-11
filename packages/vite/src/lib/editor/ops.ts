@@ -1054,14 +1054,15 @@ const summary = ({ id, uuid, name, full_slug, published_at }: Summary): Summary 
  * the server.
  */
 /** The forms a link field can open: its HubSpot portal's, listed through moxy with the field's secret */
-async function hubspot_forms(editor: Editor, field: Field) {
+async function hubspot_forms(editor: Editor, site: Site, field: Field) {
 	const secret = await moxy_setting(editor, field, "MOXY_HUBSPOT_SECRET_ID")
 	if (!secret)
 		throw new EditorError(
 			409,
 			"HubSpot isn’t connected to this field yet. Connect it from the HubSpot app in Storyblok."
 		)
-	const response = await fetch("https://moxy.uilo.co/api/hubspot/forms", {
+	// through moxy as the Mux and R2 calls go: run there, its own fetch reaches it without the network
+	const response = await (site.fetch ?? fetch)(`${site.moxy}/api/hubspot/forms`, {
 		headers: { Authorization: `Bearer ${secret}` },
 	})
 	if (!response.ok) throw new EditorError(502, "Couldn’t load forms from HubSpot")
@@ -1324,7 +1325,7 @@ export async function operate(
 		]
 		if (field?.type !== "custom" || plugin_of(field) !== "link")
 			throw new EditorError(400, "That isn’t a link field")
-		return await hubspot_forms(editor, field)
+		return await hubspot_forms(editor, site, field)
 	}
 
 	if (body.op === "linked") {
@@ -1662,7 +1663,7 @@ export async function operate(
 				async (id) => summary((await editor.mapi<{ story: Summary }>(`/stories/${id}`)).story),
 				async (field, id) => (await r2(site, editor, field, `assets/${id}`)) as R2Asset,
 				async (field, id) => {
-					const { forms, portal } = await hubspot_forms(editor, field)
+					const { forms, portal } = await hubspot_forms(editor, site, field)
 					const form = forms.find((form) => form.id === id)
 					if (!form) throw new EditorError(400, "That form isn’t in HubSpot any more")
 					return { id: form.id, name: form.name, ...(portal && { portal }) }
