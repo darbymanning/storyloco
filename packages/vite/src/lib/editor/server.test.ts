@@ -182,6 +182,35 @@ describe("editor schemas", () => {
 		await refused(normalise(field, { type: "form", form }, { type: "external" }, resolve))
 	})
 
+	test("a field switched from Storyblok's own link keeps an old story link through an edit", async () => {
+		const field = { type: "custom", field_type: "uiloco-link" } as Parameters<typeof normalise>[0]
+		const found = { id: 7, uuid: "u7", name: "About", full_slug: "about-us", published_at: null }
+		const native = {
+			fieldtype: "multilink",
+			linktype: "story",
+			id: "u7",
+			url: "",
+			cached_url: "about",
+		}
+		// the panel sends what it shows: the old link as the plugin holds it, with its story by id
+		const saved = await normalise(
+			field,
+			{ type: "internal", text: "About us", story: { id: 7, uuid: "u7", name: "About" } },
+			native,
+			resolve,
+			async () => found
+		)
+		expect(saved).toMatchObject({
+			type: "internal",
+			text: "About us",
+			story: { id: 7, uuid: "u7", name: "About" },
+			fieldtype: "multilink",
+			linktype: "story",
+			id: "u7",
+			cached_url: "about-us",
+		})
+	})
+
 	test("a floor plans value keeps its images by id, asks Storyblok for new ones, and drops the rest", async () => {
 		const plan = { fieldtype: "asset", id: 1, filename: "old.jpg", alt: "", title: "Kept" }
 		const stored = {
