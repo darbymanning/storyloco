@@ -251,6 +251,7 @@ type Operation =
 	| { op: "name"; story: number; value: string }
 	| { op: "restore"; story: number; parent: string; field: string; index: number; blok: Node }
 	| { op: "choices"; component: string; field: string }
+	| { op: "forms"; component: string; field: string }
 	| {
 			op: "stories"
 			search?: string
@@ -496,7 +497,18 @@ const open_options = (field: Field) =>
 			? field.options?.filter(({ name }) => ["currencies", "default_currency"].includes(name))
 			: plugin_of(field) === "r2"
 				? field.options?.filter(({ name }) => ["link", "multiple"].includes(name))
-				: undefined
+				: plugin_of(field) === "link"
+					? [
+							...(field.options?.filter(({ name }) => name === "link_types") ?? []),
+							// whether it can open HubSpot forms, rather than the secret that lets it
+							{
+								name: "forms",
+								value: field.options?.some((o) => o.name === "MOXY_HUBSPOT_SECRET_ID" && o.value)
+									? "true"
+									: "",
+							},
+						]
+					: undefined
 
 /** What the page may see of the schema: plugin options hold moxy secrets, so they stay here */
 function public_schema(components: Array<Component>) {
@@ -539,6 +551,9 @@ type Resolve = (id: number) => Promise<Asset>
 type ResolveR2 = (field: Field, id: string) => Promise<R2Asset>
 const no_r2: ResolveR2 = () => Promise.reject(new EditorError(400, "Unknown change"))
 type FindStory = (id: number) => Promise<Summary>
+/** A HubSpot form a link field may open, by its id, from the portal the field's connected to */
+type FindForm = (field: Field, id: string) => Promise<{ id: string; name: string; portal?: string }>
+const no_form: FindForm = () => Promise.reject(new EditorError(400, "Unknown change"))
 
 const TARGETS = new Set(["_self", "_blank", "_parent", "_top", "_new"])
 /** What a link plugin value holds only while it links to a story */
@@ -563,7 +578,8 @@ async function plugin_value(
 	resolve: Resolve,
 	find_story: FindStory,
 	bad: (why?: string) => never,
-	resolve_r2: ResolveR2
+	resolve_r2: ResolveR2,
+	find_form: FindForm
 ): Promise<unknown> {
 	const object = (v: unknown): v is Node => !!v && typeof v === "object" && !Array.isArray(v)
 	const was = object(existing) ? existing : { plugin: field.field_type }
@@ -700,8 +716,16 @@ async function plugin_value(
 			}
 			// an asset link's file is chosen in Storyblok; its words and target are editable here
 			if (type === "asset" && stored.type === "asset") return { ...base, asset: stored.asset }
-			// as is a form link's HubSpot form
-			if (type === "form" && stored.type === "form") return { ...base, form: stored.form }
+			if (type === "form") {
+				// a form it opens already, or else one the field's HubSpot portal has
+				const chosen =
+					object(value.form) && typeof value.form.id === "string" ? value.form.id : undefined
+				// it goes nowhere but the form: a URL from what it was before would only mislead
+				const bare = { ...base, url: undefined }
+				if (chosen && !(object(stored.form) && stored.form.id === chosen))
+					return { ...bare, form: await find_form(field, chosen) }
+				return stored.type === "form" && stored.form ? { ...bare, form: stored.form } : bare
+			}
 			return bad()
 		}
 		case "plans": {
@@ -775,7 +799,8 @@ export async function normalise(
 	existing: unknown,
 	resolve: Resolve,
 	find_story: FindStory = () => Promise.reject(new EditorError(400, "Unknown change")),
-	resolve_r2: ResolveR2 = no_r2
+	resolve_r2: ResolveR2 = no_r2,
+	find_form: FindForm = no_form
 ): Promise<unknown> {
 	const bad = (why = "isn’t a value this field can hold") => {
 		throw new EditorError(400, `${field.display_name || "That field"} ${why}`)
@@ -919,7 +944,7 @@ export async function normalise(
 				return { ...(existing as Node), ...settings }
 			}
 			if (plugin_of(field))
-				return plugin_value(field, value, existing, resolve, find_story, bad, resolve_r2)
+				return plugin_value(field, value, existing, resolve, find_story, bad, resolve_r2, find_form)
 			if (!PLUGINS(field) || !object(value)) bad("is edited in Storyblok")
 			for (const v of Object.values(value as Node))
 				if (v !== null && typeof v !== "string" && typeof v !== "number") bad()
@@ -1028,6 +1053,25 @@ const summary = ({ id, uuid, name, full_slug, published_at }: Summary): Summary 
  * space connects Mux, so its presence is what says video can be uploaded here; it never leaves
  * the server.
  */
+/** The forms a link field can open: its HubSpot portal's, listed through moxy with the field's secret */
+async function hubspot_forms(editor: Editor, field: Field) {
+	const secret = await moxy_setting(editor, field, "MOXY_HUBSPOT_SECRET_ID")
+	if (!secret)
+		throw new EditorError(
+			409,
+			"HubSpot isn’t connected to this field yet. Connect it from the HubSpot app in Storyblok."
+		)
+	const response = await fetch("https://moxy.uilo.co/api/hubspot/forms", {
+		headers: { Authorization: `Bearer ${secret}` },
+	})
+	if (!response.ok) throw new EditorError(502, "Couldn’t load forms from HubSpot")
+	const { portal, results } = (await response.json()) as {
+		portal?: string
+		results: Array<{ id: string; name: string }>
+	}
+	return { portal, forms: results.map(({ id, name }) => ({ id, name })) }
+}
+
 async function mux_secret(editor: Editor, component: unknown, field: unknown) {
 	if (typeof component !== "string" || typeof field !== "string")
 		throw new EditorError(400, "Unknown change")
@@ -1270,6 +1314,17 @@ export async function operate(
 		const { stories } = await editor.mapi<{ stories: Array<Summary> }>(`/stories/?${query}`)
 		// a full page says there may be more, without asking Storyblok to count them
 		return { stories: stories.map(summary), more: stories.length === STORY_PAGE }
+	}
+
+	if (body.op === "forms") {
+		if (typeof body.component !== "string" || typeof body.field !== "string")
+			throw new EditorError(400, "Unknown change")
+		const field = (await components_of(editor)).find((c) => c.name === body.component)?.schema[
+			body.field
+		]
+		if (field?.type !== "custom" || plugin_of(field) !== "link")
+			throw new EditorError(400, "That isn’t a link field")
+		return await hubspot_forms(editor, field)
 	}
 
 	if (body.op === "linked") {
@@ -1605,7 +1660,13 @@ export async function operate(
 				blok[key],
 				resolve,
 				async (id) => summary((await editor.mapi<{ story: Summary }>(`/stories/${id}`)).story),
-				async (field, id) => (await r2(site, editor, field, `assets/${id}`)) as R2Asset
+				async (field, id) => (await r2(site, editor, field, `assets/${id}`)) as R2Asset,
+				async (field, id) => {
+					const { forms, portal } = await hubspot_forms(editor, field)
+					const form = forms.find((form) => form.id === id)
+					if (!form) throw new EditorError(400, "That form isn’t in HubSpot any more")
+					return { id: form.id, name: form.name, ...(portal && { portal }) }
+				}
 			)
 		}
 		if (JSON.stringify(current.content) === was) return { ok: true, blok }

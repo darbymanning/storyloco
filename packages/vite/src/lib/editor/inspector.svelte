@@ -840,6 +840,34 @@
 		}, 200)
 	}
 
+	// --- HubSpot forms a link field can open: its portal's, fetched once a field asks
+
+	type Form = { id: string; name: string }
+	const forms = new Map<string, Promise<Array<Form>>>()
+	let form_finding = $state<{ key: string; search: string; results: Array<Form> } | null>(null)
+	function find_forms(key: string, search: string) {
+		form_finding = { key, search, results: form_finding?.key === key ? form_finding.results : [] }
+		const name = loaded!.blok.component
+		const id = `${name}.${key}`
+		let found = forms.get(id)
+		if (!found) {
+			found = call<{ forms: Array<Form> }>({ op: "forms", component: name, field: key }).then(
+				(r) => r.forms
+			)
+			found.catch(() => forms.delete(id))
+			forms.set(id, found)
+		}
+		found
+			.then((all) => {
+				const words = search.trim().toLowerCase()
+				if (form_finding?.key === key && form_finding.search === search)
+					form_finding.results = all
+						.filter((f) => f.name.toLowerCase().includes(words))
+						.slice(0, 50)
+			})
+			.catch(() => {})
+	}
+
 	// --- stories an option field picks, in the order it keeps them
 
 	/** Names for the stories fields hold, fetched as they're first shown */
@@ -2414,13 +2442,20 @@
 	{@const story = object_of(value.story)}
 	<!-- only the kinds the field's `link_types` option allows, and whatever it is now -->
 	{@const allowed = link_types_of(option(field, "link_types"))}
+	<!-- a form, where the field's connected to HubSpot -->
 	{@const kinds = [
 		["internal", "Page"],
 		["external", "URL"],
 		["email", "Email"],
-	].filter(([kind]) => !allowed || kind === type || allowed.some((a) => a === kind))}
+		["form", "Form"],
+	].filter(
+		([kind]) =>
+			kind === type ||
+			((kind !== "form" || option(field, "forms") === "true") &&
+				(!allowed || allowed.some((a) => a === kind)))
+	)}
 	{@render Label(key, field, id)}
-	{#if type !== "asset" && type !== "form" && kinds.length > 1}
+	{#if type !== "asset" && kinds.length > 1}
 		<div class="segmented" role="radiogroup" aria-label="Link to">
 			{#each kinds as [kind, name] (kind)}
 				<button
@@ -2483,7 +2518,34 @@
 	{:else if type === "asset"}
 		<p class="help">Links to a file, which is chosen in Storyblok.</p>
 	{:else if type === "form"}
-		<p class="help">Opens a HubSpot form, which is chosen in Storyblok.</p>
+		{@const form = object_of(value.form)}
+		<div class="combo">
+			<input
+				aria-label="Form"
+				placeholder={form.name ? text(form.name) : "Find a form"}
+				value={form_finding?.key === key ? form_finding.search : ""}
+				onfocus={() => find_forms(key, "")}
+				oninput={(e) => find_forms(key, e.currentTarget.value)}
+				onblur={() => setTimeout(() => form_finding?.key === key && (form_finding = null), 150)}
+			/>
+			{#if form.name && form_finding?.key !== key}<p class="help">Opens {form.name}</p>{/if}
+			{#if form_finding?.key === key && form_finding.results.length}
+				<ul class="results">
+					{#each form_finding.results as found (found.id)}
+						<li>
+							<button
+								type="button"
+								onmousedown={(e) => e.preventDefault()}
+								onclick={() => {
+									keep({ form: { id: found.id, name: found.name } })
+									form_finding = null
+								}}><strong>{found.name}</strong></button
+							>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	{:else}
 		<input
 			type="url"
@@ -2493,7 +2555,8 @@
 			onchange={(e) => keep({ url: e.currentTarget.value })}
 		/>
 	{/if}
-	{#if type !== "email"}
+	<!-- a form opens over the page, so there's no tab to choose -->
+	{#if type !== "email" && type !== "form"}
 		<label class="check small">
 			<input
 				type="checkbox"

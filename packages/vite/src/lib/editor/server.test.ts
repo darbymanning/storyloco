@@ -174,12 +174,36 @@ describe("editor schemas", () => {
 		expect(
 			await normalise(
 				field,
-				{ type: "form", text: "Get in touch", form: { id: "evil" } },
+				{ type: "form", text: "Get in touch", form: { id: "f1", name: "Forged" } },
 				stored,
 				resolve
 			)
-		).toEqual({ ...stored, text: "Get in touch", target: undefined })
+		).toEqual({ ...stored, text: "Get in touch", target: undefined, url: undefined })
 		await refused(normalise(field, { type: "form", form }, { type: "external" }, resolve))
+	})
+
+	test("a form link picked on the page takes its form from the field's portal, by id", async () => {
+		const field = { type: "custom", field_type: "uiloco-link" } as Parameters<typeof normalise>[0]
+		const portal = [{ id: "f1", name: "Enquiry", portal: "123" }]
+		const find_form = async (_: unknown, id: string) => {
+			const form = portal.find((f) => f.id === id)
+			if (!form) throw new EditorError(400, "That form isn’t in HubSpot any more")
+			return form
+		}
+		const put = (value: unknown, existing?: unknown) =>
+			normalise(field, value, existing, resolve, undefined, undefined, find_form)
+		// switched to a form, with none picked yet
+		expect(
+			await put({ type: "form", text: "Ask" }, { type: "external", url: "https://x.test" })
+		).toEqual({ type: "form", text: "Ask", target: undefined })
+		// picked: its name and portal from HubSpot, whatever the page said they were
+		expect(
+			await put({ type: "form", text: "Ask", form: { id: "f1", name: "Forged" } })
+		).toMatchObject({
+			type: "form",
+			form: { id: "f1", name: "Enquiry", portal: "123" },
+		})
+		await refused(put({ type: "form", form: { id: "nope" } }))
 	})
 
 	test("a link field's `link_types` option keeps out other kinds, but not one it holds already", async () => {

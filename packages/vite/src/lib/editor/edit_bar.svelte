@@ -1565,6 +1565,11 @@
 		inline-size: min(22rem, 100% - 2 * var(--o));
 		padding: 0 0.375rem 0.375rem;
 
+		/* where there's room, wide enough for a rich text field's whole toolbar on one line */
+		@media (min-width: 1100px) {
+			inline-size: min(24rem, 100% - 2 * var(--o));
+		}
+
 		& > * {
 			grid-row: 2;
 		}
@@ -2311,7 +2316,6 @@
 		/* right to left in the right-hand corners, so each sits over the one on its right */
 		[data-corner$="r"] & {
 			--next: calc(var(--lap) - var(--size) / 2);
-			--dot: auto -1px;
 
 			/* by the window's edge, their tip opens back over the bar rather than running off it */
 			.tip {
@@ -2343,9 +2347,10 @@
 			position: relative;
 			transition: filter 0.3s ease;
 
-			/* their colour round the face, which a photo would otherwise hide */
+			/* how they are, as a ring round the face, so it's never anyone else's: green while they're
+			   at it, muted once they've looked away (below). Their colour is the face's own ground */
 			&::after {
-				border: 1.5px solid var(--c, var(--muted));
+				border: 2px solid var(--good, #2fa36b);
 				border-radius: inherit;
 				content: "";
 				inset: 0;
@@ -2384,6 +2389,7 @@
 			z-index: 1;
 
 			& .face::after {
+				border-color: var(--c, var(--muted));
 				border-width: 2.5px;
 			}
 		}
@@ -2393,44 +2399,19 @@
 			outline-offset: 3px;
 		}
 
-		/* looked away from their page: their face fades back among the others, as one elsewhere does,
-		   and wears the hollow ring the list gives them, which stays when it's pointed at and the
-		   fade lifts. On the side the next face doesn't sit over */
+		/* looked away from their page: their ring goes muted, which stays when they're pointed at, and
+		   their face fades back among the others until then */
+		&.idle:not([aria-pressed="true"]) .face::after {
+			border-color: var(--muted);
+		}
+
 		&.idle:not(:hover, :focus-visible, [aria-pressed="true"]) .face {
 			filter: saturate(0.3) opacity(0.6);
 		}
 
-		/* and at their page, the green dot the list gives them: either way the face says which, where
-		   no mark at all left it to be guessed */
-		&:not(.more)::after {
-			background: var(--good, #2fa36b);
-			block-size: 0.5rem;
-			border-radius: 50%;
-			box-shadow: 0 0 0 1.5px var(--bg);
-			content: "";
-			inline-size: 0.5rem;
-			inset: auto auto -1px -1px;
-			/* the other side in a right-hand corner, set on the face: nesting can't reach an ::after */
-			inset-inline: var(--dot, -1px auto);
-			position: absolute;
-			z-index: 1;
-		}
-
-		&.idle::after {
-			background: var(--bg);
-			box-shadow:
-				inset 0 0 0 1.5px var(--muted),
-				0 0 0 1.5px var(--bg);
-		}
-
-		/* elsewhere on the site: there, but not here with you */
-
+		/* elsewhere on the site: there, but not here with you; their ring still says how they are */
 		&.away:not(:hover, :focus-visible, [aria-pressed="true"]) .face {
 			filter: saturate(0.4) opacity(0.75);
-
-			&::after {
-				border-color: transparent;
-			}
 		}
 
 		.tip {
