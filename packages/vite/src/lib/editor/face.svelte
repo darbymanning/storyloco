@@ -9,7 +9,10 @@
 		photo = null,
 		gravatar = null,
 		email = null,
+		art = null,
 	}: {
+		/** A picture for someone with no photo and no name of their own, like a guest: the inside of an svg, made here */
+		art?: string | null
 		name: string | null
 		photo?: string | null
 		/** The SHA-256 of their address, as moxy gives it */
@@ -61,6 +64,9 @@
 		referrerpolicy="no-referrer"
 		onerror={() => failed++}
 	/>
+{:else if art}
+	<!-- eslint-disable-next-line svelte/no-at-html-tags -- drawn by the editor itself, from an id's hash -->
+	<svg class="art" viewBox="0 0 32 32" aria-hidden="true">{@html art}</svg>
 {:else}
 	<span class="initials">{initials}</span>
 {/if}
@@ -81,5 +87,14 @@
 		inline-size: 100%;
 		line-height: 1;
 		place-items: center;
+	}
+
+	/* two tones of their one colour: a pale paper, and a deep ink the picture and its dots are in */
+	.art {
+		background: color-mix(in srgb, var(--c, #8a8f9c) 24%, #fbf7ef);
+		block-size: 100%;
+		color: color-mix(in srgb, var(--c, #8a8f9c) 58%, #0d1030);
+		display: block;
+		inline-size: 100%;
 	}
 </style>

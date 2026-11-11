@@ -13,7 +13,7 @@ import {
 	kit,
 	last_problem,
 	block_place,
-	preview_move,
+	preview_change,
 	on_editing,
 	on_saved,
 	redo,
@@ -3047,14 +3047,16 @@ export function install() {
 		props: {
 			act: async (change: Record<string, unknown>) => {
 				// a move shows at once, where the page can show it, and saves behind
-				const saved =
-					change.op === "move" &&
-					preview_move(
-						change.story,
-						String(change.uid),
-						typeof change.by === "number" ? change.by : undefined,
-						Number(change.to)
-					)
+				// and so does a block added, copied or deleted
+				const saved = preview_change(
+					change.op === "move"
+						? {
+								...change,
+								by: typeof change.by === "number" ? change.by : undefined,
+								to: Number(change.to),
+							}
+						: change
+				)
 				// and in the settings' list of blocks, if that's showing
 				if (change.op === "move")
 					inspector?.then((panel) =>

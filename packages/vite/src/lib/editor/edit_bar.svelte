@@ -312,17 +312,20 @@
 
 	// --- dragging to a corner
 
-	let drag: { id: number; x: number; y: number; moved: boolean } | null = null
+	let drag: { id: number; x: number; y: number; moved: boolean; by: "badge" | "header" } | null =
+		null
 	let offset = $state({ x: 0, y: 0 })
 
-	function press(event: PointerEvent) {
+	function press(event: PointerEvent, by: "badge" | "header" = "badge") {
 		if (event.button !== 0) return
-		drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }
+		drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, by }
 		;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
 	}
 
 	function move(event: PointerEvent) {
 		if (!drag || event.pointerId !== drag.id) return
+		// let go somewhere the release wasn't heard: it's dropped where it is, not left following the pointer
+		if (!(event.buttons & 1)) return void release(event, false)
 		const x = event.clientX - drag.x
 		const y = event.clientY - drag.y
 		if (!drag.moved && Math.hypot(x, y) < 5) return
@@ -330,14 +333,37 @@
 		offset = { x, y }
 	}
 
-	async function release(event: PointerEvent) {
+	/** Whether a press is on the open settings' top, clear of its buttons and tabs: that drags the bar too */
+	const on_header = (event: PointerEvent) => {
+		const at = event.target as Element
+		return (
+			!!at.closest(".inspector:not(.folded) header") &&
+			!at.closest("button, a, input, select, textarea, [role=tab]")
+		)
+	}
+
+	/** Let go: dropped in a corner if it was dragged; a press that went nowhere opens or folds it, from the badge */
+	async function release(event: PointerEvent, tap = true) {
 		if (!drag || event.pointerId !== drag.id) return
-		const moved = drag.moved
+		const { moved, by } = drag
 		drag = null
-		if (!moved) return toggle()
+		if (!moved) return tap ? toggle() : undefined
 		// snap to the nearest corner, animating from where it was dropped
 		const from = bar!.getBoundingClientRect()
-		corner = corner_of(from.x + from.width / 2, from.y + from.height / 2)
+		const nearest = corner_of(from.x + from.width / 2, from.y + from.height / 2)
+		// with the panel open it's a tall thing whose middle is half the window away from its row, and
+		// turning it over puts its buttons at the far end: it changes sides freely, but keeps to the
+		// top or the bottom it's at unless it's carried by the face itself well into the other end
+		const far =
+			(corner[0] === "b" ? event.clientY / innerHeight : 1 - event.clientY / innerHeight) < 0.25
+		const edge = !card
+			? nearest[0]
+			: by === "badge" && far
+				? corner[0] === "b"
+					? "t"
+					: "b"
+				: corner[0]
+		corner = `${edge}${nearest[1]}` as Corner
 		place(corner)
 		remember()
 		offset = { x: 0, y: 0 }
@@ -633,9 +659,9 @@
 			aria-label={opened ? "Close the site editor" : "Open the site editor"}
 			title={story?.status === "published" ? title : undefined}
 			aria-expanded={opened}
-			onpointerdown={press}
+			onpointerdown={(event) => press(event)}
 			onpointermove={move}
-			onpointerup={release}
+			onpointerup={(event) => release(event)}
 			onpointercancel={() => (drag = null)}
 			onkeydown={(event) => {
 				if (event.key === "Enter" || event.key === " ") {
@@ -676,6 +702,7 @@
 						type="button"
 						class="person"
 						class:away
+						class:idle={person.idle}
 						style:--c={person.color}
 						aria-pressed={followed}
 						onclick={() => go_with(person)}
@@ -687,14 +714,15 @@
 								name={person.user.name}
 								photo={person.user.photo}
 								gravatar={person.user.gravatar}
+								art={person.user.art}
 							/></span
 						>
 						<span class="tip" aria-hidden="true">
 							{followed
 								? `Following ${name} · click to stop`
 								: away
-									? `${name} · ${short(place_of(person))} · ${other_site(person) ? "click to open" : "click to follow"}`
-									: `${name} · click to follow`}
+									? `${name} · ${short(place_of(person))}${person.idle ? " · idle" : ""} · ${other_site(person) ? "click to open" : "click to follow"}`
+									: `${name}${person.idle ? " · idle" : ""} · click to follow`}
 						</span>
 						<span class="sr"
 							>{followed
@@ -723,8 +751,14 @@
 
 		{#if editor.user}
 			<!-- the block settings: their name beside the badge, or the panel above the row when open -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="settings"
+				onpointerdown={(event) => on_header(event) && press(event, "header")}
+				onpointermove={move}
+				onpointerup={(event) => release(event, false)}
+				onlostpointercapture={(event) => release(event, false)}
+				onpointercancel={() => (drag = null)}
 				{@attach (el) => void import("./overlay.js").then((o) => o.dock(el))}
 			></div>
 		{/if}
@@ -954,11 +988,21 @@
 									name={person.user.name}
 									photo={person.user.photo}
 									gravatar={person.user.gravatar}
+									art={person.user.art}
 								/></span
 							>
 							<span class="who">
-								<span class="name">{person.user.name ?? "Someone"}</span>
-								{#if away}<span class="at-page">{place_of(person)}</span>{/if}
+								<span class="name"
+									>{person.user.name ?? "Someone"}<span class="status" class:idle={person.idle}
+									></span></span
+								>
+								{#if away || person.idle}
+									<span class="at-page"
+										>{[away && place_of(person), person.idle && "Idle"]
+											.filter(Boolean)
+											.join(" · ")}</span
+									>
+								{/if}
 							</span>
 							<span class="follow"
 								>{followed ? "Following" : other_site(person) ? "Open" : "Follow"}</span
@@ -1695,20 +1739,10 @@
 		inset: 0 0 auto auto;
 		position: absolute;
 
-		&[data-signal="none"] {
+		/* only when something's wrong: what's waiting to publish, and what's live, the Publish
+		   button says already */
+		&:not([data-signal="problem"]) {
 			display: none;
-		}
-
-		&[data-signal="draft"] {
-			background-color: var(--muted);
-		}
-
-		&[data-signal="changed"] {
-			background-color: var(--accent);
-		}
-
-		&[data-signal="published"] {
-			background-color: var(--good);
 		}
 
 		&[data-signal="problem"] {
@@ -1815,6 +1849,8 @@
 		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
 		@media (hover: hover) {
 			&:hover .tip {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: 0 0;
 			}
@@ -2018,6 +2054,8 @@
 		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
 		@media (hover: hover) {
 			&:hover .tip {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: 0 0;
 			}
@@ -2142,6 +2180,8 @@
 		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
 		@media (hover: hover) {
 			&:hover .tip {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: 0 0;
 			}
@@ -2286,6 +2326,8 @@
 		/* only where there's hover: on touch, a tap shows a tip and the press doesn't land */
 		@media (hover: hover) {
 			&:hover .tip {
+				/* a moment's wait, so passing over doesn't set every tip off; gone at once */
+				transition-delay: 0.35s;
 				opacity: 1;
 				translate: 0 0;
 			}
@@ -2306,6 +2348,11 @@
 		}
 
 		/* elsewhere on the site: there, but not here with you */
+		/* looked away from their page: their face fades back among the others, as one elsewhere does */
+		&.idle:not(:hover, :focus-visible, [aria-pressed="true"]) .face {
+			filter: saturate(0.3) opacity(0.6);
+		}
+
 		&.away:not(:hover, :focus-visible, [aria-pressed="true"]) .face {
 			filter: saturate(0.4) opacity(0.75);
 
@@ -2446,6 +2493,8 @@
 		overflow: auto;
 		padding: 0.875rem;
 		position: absolute;
+		/* over the settings it opens across, whose faded buttons would otherwise show through it */
+		z-index: 3;
 
 		@starting-style {
 			opacity: 0;
@@ -2485,6 +2534,22 @@
 			display: grid;
 			flex: 1;
 			min-inline-size: 0;
+		}
+
+		/* here and at it, a small green light after their name; looked away, only its ring */
+		& .status {
+			background: var(--good, #2fa36b);
+			block-size: 0.375rem;
+			border-radius: 50%;
+			display: inline-block;
+			inline-size: 0.375rem;
+			margin-inline-start: 0.375rem;
+			vertical-align: middle;
+
+			&.idle {
+				background: none;
+				box-shadow: inset 0 0 0 1px var(--muted);
+			}
 		}
 
 		& .at-page {

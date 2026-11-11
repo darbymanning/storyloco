@@ -17,6 +17,7 @@ import {
 	type Person,
 } from "./client.js"
 import { page_of, same } from "./content.js"
+import { persona } from "./guests.js"
 
 /*
  * Multiplayer: everyone editing the site holds a socket to its space's room in moxy, which passes
@@ -86,9 +87,49 @@ function post(message: Record<string, unknown>) {
 	if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
 }
 
-/** Say which page this is, and its story once known */
+/** Say which page this is, its story once known, and whether anyone's at it */
 export function here() {
-	post({ t: "here", page: page_of(location.href), story: editor.story?.id ?? null })
+	post({ t: "here", page: page_of(location.href), story: editor.story?.id ?? null, idle })
+}
+
+/** A guest nobody's named is "Guest" to the room: here, a creature of their own, by their id */
+function known(person: Person): Person {
+	// a face drawn here is the only kind there is: none comes from the room, whatever it sends
+	const { art: _, ...user } = person.user
+	const { name } = user
+	if (!person.guest || (name && name !== "Guest")) return { ...person, user }
+	return { ...person, user: { ...user, ...persona(user.id) } }
+}
+
+/** Everyone, each as away from their page only if they're away from every tab of theirs */
+function known_people(all: Array<Person>) {
+	const at_it = new Set(
+		all.filter((person) => !person.idle).map((person) => String(person.user.id))
+	)
+	return all.map((person) => known({ ...person, idle: !at_it.has(String(person.user.id)) }))
+}
+
+// --- whether this person's at their page, for the others: away from it, their face says so
+
+/** How long without a move, a key or a scroll before they're taken to have looked away */
+const IDLE = 90_000
+let stirred = Date.now()
+let idle = false
+function rest() {
+	const now = document.hidden || Date.now() - stirred > IDLE
+	if (now === idle) return
+	idle = now
+	here()
+}
+function stir() {
+	stirred = Date.now()
+	if (idle) rest()
+}
+if (typeof document !== "undefined") {
+	for (const type of ["pointermove", "pointerdown", "keydown", "scroll"])
+		addEventListener(type, stir, { passive: true, capture: true })
+	document.addEventListener("visibilitychange", rest)
+	setInterval(rest, 15_000)
 }
 
 /** Where this pointer is, for the others to draw */
@@ -213,7 +254,7 @@ function receive(message: Message) {
 			changed()
 			return
 		case "people":
-			people = message.people as Array<Person>
+			people = known_people(message.people as Array<Person>)
 			changed()
 			// someone leaving can make this browser the one to save a field
 			for (const r of rooms.values()) if (leads(r)) later(r)
