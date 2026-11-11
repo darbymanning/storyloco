@@ -1365,6 +1365,12 @@
 		grid-template-columns: minmax(0, 0fr);
 	}
 
+	/* and whoever else is here, smaller than the badge, in the middle of it too rather than on the edge */
+	.bar:has(.mode):not(:has(.settings:not(:empty))) .people {
+		align-items: center;
+		block-size: 2.25rem;
+	}
+
 	.bar.open:has(.mode):not(:has(.settings:not(:empty))) .panel {
 		grid-template-columns: minmax(0, 1fr);
 	}
@@ -2305,6 +2311,16 @@
 		/* right to left in the right-hand corners, so each sits over the one on its right */
 		[data-corner$="r"] & {
 			--next: calc(var(--lap) - var(--size) / 2);
+			--dot: auto -1px;
+
+			/* by the window's edge, their tip opens back over the bar rather than running off it */
+			.tip {
+				inset-inline: auto calc(50% - 1rem);
+
+				&::after {
+					inset-inline: auto 0.625rem;
+				}
+			}
 
 			& + & {
 				margin-inline: 0 calc(-1 * var(--lap));
@@ -2384,22 +2400,27 @@
 			filter: saturate(0.3) opacity(0.6);
 		}
 
-		&.idle::after {
-			background: var(--bg);
+		/* and at their page, the green dot the list gives them: either way the face says which, where
+		   no mark at all left it to be guessed */
+		&:not(.more)::after {
+			background: var(--good, #2fa36b);
 			block-size: 0.5rem;
 			border-radius: 50%;
-			box-shadow:
-				inset 0 0 0 1.5px var(--muted),
-				0 0 0 1.5px var(--bg);
+			box-shadow: 0 0 0 1.5px var(--bg);
 			content: "";
 			inline-size: 0.5rem;
 			inset: auto auto -1px -1px;
+			/* the other side in a right-hand corner, set on the face: nesting can't reach an ::after */
+			inset-inline: var(--dot, -1px auto);
 			position: absolute;
 			z-index: 1;
+		}
 
-			[data-corner$="r"] & {
-				inset-inline: auto -1px;
-			}
+		&.idle::after {
+			background: var(--bg);
+			box-shadow:
+				inset 0 0 0 1.5px var(--muted),
+				0 0 0 1.5px var(--bg);
 		}
 
 		/* elsewhere on the site: there, but not here with you */
