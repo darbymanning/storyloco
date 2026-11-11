@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Input, Label, Select, Skeleton as SkeletonUI } from 'shared'
+	import { Clipped, Input, Label } from 'shared'
 	import {
 		target_options,
 		type AssetLink,
@@ -12,26 +12,29 @@
 		type StoryLink,
 	} from '../types.js'
 	import FormList from '../../hubspot_form/src/form_list.svelte'
-	import {
-		ChevronDownIcon,
-		ChevronLeftIcon,
-		ChevronRightIcon,
-		SlidersHorizontalIcon,
-		CircleXIcon,
-	} from '@lucide/svelte'
+	import StoryList from './story_list.svelte'
+	import { looks_like_email } from './email.js'
+	import { ChevronDownIcon, XIcon, CircleAlertIcon } from '@lucide/svelte'
 	import PublishedIcon from './published.svelte'
 	import DraftIcon from './draft.svelte'
 	import { cn } from 'shared/utils'
-	import Spinner from './spinner.svelte'
-	import NoResults from './no_results.svelte'
 	import { slide } from 'svelte/transition'
 	import { LinkManager } from './app.svelte.js'
 	import { AssetManager } from '../../asset/src/app.svelte.js'
 
 	const manager = new LinkManager()
 
-	// generate skeleton widths once
-	const skeleton_widths = Array.from({ length: 20 }, () => Math.floor(Math.random() * 60 + 10))
+	// the form picker opens in place, under the field, rather than in Storyblok's modal
+	let picking = $state(false)
+
+	// an address is checked once the field's been left, then again as it's put right
+	let email_left = $state(false)
+	const email_wrong = $derived(
+		manager.content.type === 'email' &&
+			email_left &&
+			!!manager.content.email?.trim() &&
+			!looks_like_email(manager.content.email)
+	)
 
 	$effect(() => {
 		if (manager.is_modal_open && manager.content.type === 'asset') actions.select_asset()
@@ -51,126 +54,107 @@
 	}
 </script>
 
-{#snippet THead()}
-	<thead>
-		<tr class="[&>th]:text-start [&>th]:py-2 [&>th]:px-4">
-			<th class="w-full">Name</th>
-			<th class="min-w-52">Type</th>
-			<th class="min-w-52">Published</th>
-			<th class="min-w-52">Updated</th>
-		</tr>
-	</thead>
-{/snippet}
-
-{#snippet Skeleton()}
-	{@const rows = 4}
-	{@const columns = 4}
-
-	{#snippet Column(index: number)}
-		<td style="--width: {skeleton_widths[index]}%">
-			<SkeletonUI class="dark:bg-muted-foreground w-(--width) min-w-7 h-7" />
-		</td>
-	{/snippet}
-
-	<table class="w-full table-auto border-collapse">
-		{@render THead()}
-		<tbody>
-			{#each Array(rows) as _row, row_index}
-				<tr class="[&>td]:py-2 [&>td]:px-4 [&>td]:border-b">
-					{#each Array(columns) as _column, column_index}
-						{@render Column(row_index * columns + column_index)}
-					{/each}
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-{/snippet}
-
 {#snippet StoryWithStatus(story: { name: string; published_at: string | null })}
 	{@const StatusIcon = story.published_at ? PublishedIcon : DraftIcon}
-	<div class="flex items-center gap-1">
+	<span class="flex min-w-0 items-center gap-1">
 		<StatusIcon
-			class={cn(['size-[1.8em] text-muted-foreground', { 'text-primary': story.published_at }])}
+			class={cn([
+				'size-[1.8em] shrink-0 text-muted-foreground',
+				{ 'text-primary': story.published_at },
+			])}
 		/>
-		{story.name}
-	</div>
+		<Clipped text={story.name} />
+	</span>
+{/snippet}
+
+{#snippet Clear(label: string)}
+	<button
+		type="button"
+		aria-label={label}
+		title={label}
+		class="-mr-1 grid size-7 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+		onclick={() => {
+			picking = false
+			manager.clear()
+		}}
+	>
+		<XIcon size={16} />
+	</button>
 {/snippet}
 
 {#snippet StorySelect(content: StoryLink)}
 	<button
-		class={cn('w-full text-start', { 'text-muted-foreground': !content.story?.name })}
-		onclick={() => {
-			manager.set_modal_open(true)
-		}}
+		class={cn(
+			'flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch text-start outline-none',
+			{ 'text-muted-foreground': !content.story?.name }
+		)}
+		aria-expanded={picking}
+		onclick={() => (picking = !picking)}
 	>
-		{#if content.story?.name}
-			{@render StoryWithStatus(content.story)}
-		{:else}
-			Select a story…
-		{/if}
+		<span class="flex min-w-0 flex-1 items-center">
+			{#if content.story?.name}
+				{@render StoryWithStatus(content.story)}
+			{:else}
+				Select a story…
+			{/if}
+		</span>
+		<ChevronDownIcon
+			size={16}
+			class={cn('shrink-0 text-muted-foreground transition-transform duration-200', {
+				'rotate-180': picking,
+			})}
+		/>
 	</button>
 	{#if content.story?.name}
-		<button
-			aria-label="Unassign story"
-			title="Unassign story"
-			class="text-muted-foreground"
-			onclick={manager.clear}
-		>
-			<CircleXIcon size={18} />
-		</button>
+		{@render Clear('Unassign story')}
 	{/if}
 {/snippet}
 
 {#snippet AssetSelect(content: AssetLink)}
 	<button
-		class={cn('w-full text-start grid', { 'text-muted-foreground': !content.asset?.filename })}
+		class={cn(
+			'flex min-w-0 flex-1 cursor-pointer items-center self-stretch text-start outline-none',
+			{
+				'text-muted-foreground': !content.asset?.filename,
+			}
+		)}
 		onclick={actions.open_picker}
 	>
 		{#if content.asset}
-			<span class="truncate">{content.asset.name || content.asset.filename.split('/').pop()}</span>
+			<Clipped text={content.asset.name || content.asset.filename.split('/').pop() || ''} />
 		{:else}
 			Select an asset…
 		{/if}
 	</button>
 	{#if content.asset}
-		<button
-			aria-label="Unassign asset"
-			title="Unassign asset"
-			class="text-muted-foreground"
-			onclick={manager.clear}
-		>
-			<CircleXIcon size={18} />
-		</button>
+		{@render Clear('Unassign asset')}
 	{/if}
 {/snippet}
 
 {#snippet FormSelect(content: FormLink)}
 	<button
-		class={cn('w-full text-start truncate', { 'text-muted-foreground': !content.form })}
-		title={content.form?.name}
-		onclick={() => manager.set_modal_open(true)}
+		class={cn(
+			'flex min-w-0 flex-1 cursor-pointer items-center gap-2 self-stretch text-start outline-none',
+			{ 'text-muted-foreground': !content.form }
+		)}
+		aria-expanded={picking}
+		onclick={() => (picking = !picking)}
 	>
-		{content.form?.name ?? 'Select a form…'}
+		{#if content.form}
+			<Clipped text={content.form.name} class="flex-1" />
+		{:else}
+			<span class="flex-1">Select a form…</span>
+		{/if}
+		<ChevronDownIcon
+			size={16}
+			class={cn('shrink-0 text-muted-foreground transition-transform duration-200', {
+				'rotate-180': picking,
+			})}
+		/>
 	</button>
 	{#if content.form}
-		<button
-			aria-label="Unassign form"
-			title="Unassign form"
-			class="text-muted-foreground"
-			onclick={manager.clear}
-		>
-			<CircleXIcon size={18} />
-		</button>
+		{@render Clear('Unassign form')}
 	{/if}
-{/snippet}
-
-{#snippet FormModal(content: FormLink)}
-	<div class="p-8 grid gap-4">
-		<FormList hubspot={manager.hubspot} value={content.form} onchoose={manager.select_form} />
-		{#if manager.hubspot.error}
-			<p class="text-sm text-destructive">{manager.hubspot.error}</p>
-		{/if}
-	</div>
 {/snippet}
 
 {#snippet TargetSelect(content: Exclude<Link, FormLink>)}
@@ -197,7 +181,7 @@
 
 {#snippet ExternalInput(content: ExternalLink)}
 	<input
-		class="w-full outline-none"
+		class="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
 		bind:value={content.url}
 		oninput={manager.update}
 		placeholder="https://example.com"
@@ -207,119 +191,20 @@
 
 {#snippet EmailInput(content: EmailLink)}
 	<input
-		class="w-full outline-none"
+		class="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
 		bind:value={content.email}
 		oninput={manager.update_email}
-		placeholder="example@example.com"
+		onblur={() => (email_left = true)}
+		placeholder="name@example.com"
 		type="email"
+		autocomplete="off"
+		spellcheck="false"
+		aria-invalid={email_wrong}
+		aria-describedby={email_wrong ? 'email-wrong' : undefined}
 	/>
-{/snippet}
-
-{#snippet Modal()}
-	<div class="p-8 grid gap-4">
-		<header class="flex items-center gap-2">
-			<Input oninput={manager.search} id="search" type="search" placeholder="Search for a story…" />
-			<Select.Root
-				type="multiple"
-				bind:value={
-					() => Array.from(manager.filter_content_types),
-					(v) => (manager.filter_content_types = new Set(v))
-				}
-			>
-				<Select.Trigger title="Filter by content type" aria-label="Filter by content type">
-					<SlidersHorizontalIcon size={16} />
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Group>
-						<Select.Label>Content Types</Select.Label>
-						{#await manager.get_content_types()}
-							<Spinner class="mx-auto my-4" />
-						{:then content_types}
-							{#each content_types as content_type}
-								<Select.Item value={content_type}>{manager.title_case(content_type)}</Select.Item>
-							{/each}
-						{/await}
-					</Select.Group>
-				</Select.Content>
-			</Select.Root>
-		</header>
-
-		{#await manager.get_stories()}
-			{@render Skeleton()}
-		{:then}
-			{#if manager.loading}
-				{@render Skeleton()}
-			{/if}
-			{#if manager.stories.length}
-				<table class="w-full table-auto border-collapse">
-					{@render THead()}
-					<tbody>
-						{#each manager.stories as story}
-							<tr class="[&>td]:py-2 [&>td]:px-4 [&>td]:border-b">
-								<td class="pl-0!">
-									<button
-										class="grid text-start gap-1 transition-colors hover:bg-muted-foreground/10 w-full outline-none focus-visible:ring-2 focus-visible:ring-ring rounded p-2 focus-visible:bg-muted-foreground/10 relative"
-										onclick={() => manager.select_story(story)}
-									>
-										{@render StoryWithStatus(story)}
-										<code class="text-xs text-muted-foreground">/{story.full_slug}</code>
-									</button>
-								</td>
-								<td>
-									<code class="text-muted-foreground">{story.content.component}</code>
-								</td>
-								<td>
-									{#if story.published_at}
-										<time datetime={story.published_at}>{manager.date(story.published_at)}</time>
-									{:else}
-										<span class="text-muted-foreground">N/A</span>
-									{/if}
-								</td>
-								<td>
-									{#if story.updated_at}
-										<time datetime={story.updated_at}>{manager.date(story.updated_at)}</time>
-									{:else}
-										<span class="text-muted-foreground">N/A</span>
-									{/if}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{:else}
-				<div class="flex flex-col items-center justify-center h-full gap-4 my-4">
-					<NoResults class="size-32" />
-					<p class="text-muted-foreground">No stories found</p>
-				</div>
-			{/if}
-		{/await}
-
-		{#if manager.total > manager.per_page}
-			<nav class="flex gap-2 justify-between">
-				<button
-					class="disabled:opacity-20 disabled:cursor-not-allowed flex items-center gap-1 p-1 py-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring transition-opacity hover:opacity-70 pr-2"
-					disabled={!manager.prev}
-					onclick={() => manager.get_stories({ page: manager.page - 1 })}
-				>
-					<ChevronLeftIcon size={20} />
-					Previous
-				</button>
-				{#if manager.total > manager.per_page}
-					<div class="text-muted-foreground">
-						{manager.page} of {Math.ceil(manager.total / manager.per_page)}
-					</div>
-				{/if}
-				<button
-					class="disabled:opacity-20 disabled:cursor-not-allowed flex items-center gap-1 p-1 py-0.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring transition-opacity hover:opacity-70 pl-2"
-					disabled={!manager.next}
-					onclick={() => manager.get_stories({ page: manager.page + 1 })}
-				>
-					Next
-					<ChevronRightIcon size={20} />
-				</button>
-			</nav>
-		{/if}
-	</div>
+	{#if email_wrong}
+		<CircleAlertIcon size={16} class="shrink-0 text-destructive" aria-hidden="true" />
+	{/if}
 {/snippet}
 
 {#snippet Options()}
@@ -356,11 +241,12 @@
 		<div class="grid gap-2">
 			<Label for="body">Body</Label>
 			<textarea
-				class="field-sizing-content p-3 border border-input rounded bg-input-background min-h-11.5 text-start outline-none focus-visible:border-ring resize-none hover:border-primary transition-colors"
+				class="field-sizing-content min-h-28 max-h-80 w-full resize-y rounded-lg border border-input bg-input-background px-3 py-2.5 leading-relaxed outline-none transition-colors placeholder:text-muted-foreground hover:border-primary focus-visible:border-ring"
+				rows="4"
 				bind:value={manager.content.body}
 				oninput={manager.update_email}
 				id="body"
-				placeholder="Body to use on the email"></textarea>
+				placeholder="What the email starts with"></textarea>
 		</div>
 		<div class="grid gap-2">
 			<Label for="cc">CC</Label>
@@ -422,7 +308,7 @@
 {/snippet}
 
 {#snippet Fields()}
-	<section class="grid p-4 rounded border border-input bg-input-background/50">
+	<section class="grid grid-cols-1 p-4 rounded-lg border border-input bg-input-background/50">
 		<nav class="flex gap-3 mb-5">
 			<button
 				class="font-semibold transition-opacity not-disabled:opacity-50"
@@ -445,12 +331,19 @@
 				{@render Options()}
 			</div>
 		{:else}
-			<div class="grid gap-2">
+			<div class="grid grid-cols-1 gap-2">
 				<Label for="link">Link</Label>
 				<div
-					class="flex gap-2 items-center border rounded border-input bg-input-background focus-within:border-ring h-11.5 px-3 py-1 hover:border-primary transition-colors"
+					class={cn(
+						'relative flex gap-2 items-center border rounded-lg bg-input-background focus-within:border-ring h-11.5 px-3 py-1 hover:border-primary transition-colors',
+						email_wrong
+							? 'border-destructive hover:border-destructive focus-within:border-destructive'
+							: picking
+								? 'border-ring'
+								: 'border-input'
+					)}
 				>
-					<div class="relative flex items-center gap-1">
+					<div class="relative flex shrink-0 items-center gap-1 pr-1">
 						<select
 							title="Select link type…"
 							class="absolute inset-0 opacity-0 cursor-pointer peer"
@@ -461,6 +354,9 @@
 									type: event.target.value as LinkType,
 									text: manager.content.text || '',
 								}
+								// a form link's list opens straight away: there's nothing else to do with it
+								picking = manager.content.type === 'form' || manager.content.type === 'internal'
+								email_left = false
 								manager.update()
 							}}
 							id="type"
@@ -487,17 +383,44 @@
 						{@render FormSelect(manager.content)}
 					{/if}
 				</div>
+				{#if email_wrong}
+					<p
+						id="email-wrong"
+						class="text-sm text-destructive animate-in fade-in-0 slide-in-from-top-1 duration-150"
+					>
+						That doesn’t look like an email address, e.g. name@example.com
+					</p>
+				{/if}
+				{#if picking && manager.content.type === 'internal' && manager.token}
+					<StoryList
+						token={manager.token}
+						value={manager.content.story?.uuid}
+						onchoose={(story) => {
+							picking = false
+							manager.select_story(story)
+						}}
+						onclose={() => (picking = false)}
+					/>
+				{/if}
+				{#if picking && manager.content.type === 'form'}
+					<FormList
+						hubspot={manager.hubspot}
+						value={manager.content.form}
+						onchoose={(form) => {
+							picking = false
+							manager.select_form(form)
+						}}
+						onclose={() => (picking = false)}
+					/>
+				{/if}
 			</div>
 		{/if}
 	</section>
 {/snippet}
 
 {#if manager.loaded}
-	{#if manager.is_modal_open && manager.content.type === 'form'}
-		{@render FormModal(manager.content)}
-	{:else if manager.is_modal_open}
-		{@render Modal()}
-	{:else}
+	<!-- Storyblok's modal is only for the asset picker now, which shows itself in it -->
+	{#if !manager.is_modal_open}
 		{@render Fields()}
 	{/if}
 {:else}

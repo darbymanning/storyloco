@@ -27,7 +27,7 @@
 		same,
 		theme_choices,
 	} from "./content.js"
-	import { plugin_link } from "../link.js"
+	import { link_types_of, plugin_link } from "../link.js"
 	import type { Inserts, RichDoc, RichField } from "./richtext.js"
 	import type { Selection } from "./overlay.js"
 	import { enter, leave, quietly, select as live_select, shared } from "./live.js"
@@ -2412,10 +2412,17 @@
 	{@const type = text(value.type) || "external"}
 	{@const keep = (patch: Value) => change(key, { ...value, type, ...patch })}
 	{@const story = object_of(value.story)}
+	<!-- only the kinds the field's `link_types` option allows, and whatever it is now -->
+	{@const allowed = link_types_of(option(field, "link_types"))}
+	{@const kinds = [
+		["internal", "Page"],
+		["external", "URL"],
+		["email", "Email"],
+	].filter(([kind]) => !allowed || kind === type || allowed.some((a) => a === kind))}
 	{@render Label(key, field, id)}
-	{#if type !== "asset"}
+	{#if type !== "asset" && type !== "form" && kinds.length > 1}
 		<div class="segmented" role="radiogroup" aria-label="Link to">
-			{#each [["internal", "Page"], ["external", "URL"], ["email", "Email"]] as [kind, name] (kind)}
+			{#each kinds as [kind, name] (kind)}
 				<button
 					type="button"
 					role="radio"
@@ -2475,6 +2482,8 @@
 		/>
 	{:else if type === "asset"}
 		<p class="help">Links to a file, which is chosen in Storyblok.</p>
+	{:else if type === "form"}
+		<p class="help">Opens a HubSpot form, which is chosen in Storyblok.</p>
 	{:else}
 		<input
 			type="url"

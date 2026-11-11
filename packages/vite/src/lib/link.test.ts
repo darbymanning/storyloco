@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { plugin_link } from "./link.js"
+import { link_types_of, plugin_link } from "./link.js"
 
 describe("plugin_link", () => {
 	const native = { fieldtype: "multilink", id: "", url: "", cached_url: "" }
@@ -46,5 +46,19 @@ describe("plugin_link", () => {
 	test("a value already in the plugin's shape is left alone", () => {
 		const value = { type: "form", form: { id: "f1", name: "Enquiry" } }
 		expect(plugin_link(value)).toBe(value)
+	})
+})
+
+describe("link_types_of", () => {
+	test("the types an option names, in its order, by any of their names", () => {
+		expect(link_types_of("internal, url, form")).toEqual(["internal", "external", "form"])
+		expect(link_types_of("Story  HubSpot,Email")).toEqual(["internal", "form", "email"])
+		expect(link_types_of("page,story,internal")).toEqual(["internal"])
+	})
+
+	test("an option that names nothing it knows leaves every type to the field", () => {
+		for (const option of [undefined, null, "", "  ", "nonsense", 3])
+			expect(link_types_of(option)).toBeNull()
+		expect(link_types_of("url, nonsense")).toEqual(["external"])
 	})
 })

@@ -182,6 +182,22 @@ describe("editor schemas", () => {
 		await refused(normalise(field, { type: "form", form }, { type: "external" }, resolve))
 	})
 
+	test("a link field's `link_types` option keeps out other kinds, but not one it holds already", async () => {
+		const field = {
+			type: "custom",
+			field_type: "uiloco-link",
+			options: [{ name: "link_types", value: "internal, url" }],
+		} as Parameters<typeof normalise>[0]
+		expect(
+			await normalise(field, { type: "external", url: "https://x.test" }, undefined, resolve)
+		).toMatchObject({ type: "external", url: "https://x.test" })
+		await refused(normalise(field, { type: "email", email: "a@b.test" }, undefined, resolve))
+		const email = { plugin: "uiloco-link", type: "email", email: "a@b.test" }
+		expect(
+			await normalise(field, { type: "email", email: "c@d.test", text: "Mail" }, email, resolve)
+		).toMatchObject({ type: "email", email: "c@d.test", text: "Mail" })
+	})
+
 	test("a field switched from Storyblok's own link keeps an old story link through an edit", async () => {
 		const field = { type: "custom", field_type: "uiloco-link" } as Parameters<typeof normalise>[0]
 		const found = { id: 7, uuid: "u7", name: "About", full_slug: "about-us", published_at: null }

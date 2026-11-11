@@ -4,9 +4,8 @@ import { link_types, type Link, type LinkType, type Rel, type Target } from '../
 import type { HubspotForm } from '../../hubspot_form/types.js'
 import { HubspotForms } from '../../hubspot_form/src/forms.svelte.js'
 import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon, ClipboardListIcon } from '@lucide/svelte'
-import { format_date, format_elapse } from 'kitto'
 import type { Asset } from '../../asset/types.js'
-import { plugin_link } from '../../vite/src/lib/link.js'
+import { link_types_of, plugin_link } from '../../vite/src/lib/link.js'
 
 type Plugin = FieldPluginResponse<Link | null>
 
@@ -16,21 +15,6 @@ export class LinkManager {
 	loaded = $derived(this.plugin?.type === 'loaded')
 
 	private initial = $state(true)
-
-	// story search state
-	stories = $state<ISbStories['data']['stories']>([])
-	timeout = $state<ReturnType<typeof setTimeout> | null>(null)
-	loading = $state(false)
-
-	// pagination
-	per_page = 10
-	page = $state(1)
-	total = $state(0)
-	next = $derived(this.page < Math.ceil(this.total / this.per_page))
-	prev = $derived(this.page > 1)
-
-	// filters
-	filter_content_types = $state(new Set<string>(['page']))
 
 	// rel state
 	rel_checkboxes = $state(new Set<Rel>(['noopener', 'noreferrer', 'nofollow']))
@@ -71,14 +55,23 @@ export class LinkManager {
 		const options = this.plugin?.type === 'loaded' ? this.plugin.data.options : {}
 		return !!options.MOXY_R2_SECRET_ID && !!options.R2_BUCKET
 	})
-	/** Asset and form links only where R2 and HubSpot are connected, though a saved one still shows */
-	types = $derived.by(() =>
-		link_types.filter(
-			(type) =>
-				type === this.content.type ||
-				(type === 'asset' ? this.#r2 : type === 'form' ? !!this.#hubspot_secret : true)
-		)
+	// the field's own say in it: its `link_types` option, e.g. `internal, url, form`
+	#allowed = $derived.by(() =>
+		link_types_of(this.plugin?.type === 'loaded' ? this.plugin.data.options.link_types : undefined)
 	)
+	/**
+	 * The types this field offers: the ones its `link_types` option names, in that order, or else
+	 * all of them; asset and form links only where R2 and HubSpot are connected. A field set to
+	 * nothing it can serve offers what it can, and a link saved as a type it no longer offers still
+	 * shows as what it is.
+	 */
+	types = $derived.by(() => {
+		const servable = (type: LinkType) =>
+			type === 'asset' ? this.#r2 : type === 'form' ? !!this.#hubspot_secret : true
+		const offered = (this.#allowed ?? link_types).filter(servable)
+		const types = offered.length ? offered : link_types.filter(servable)
+		return types.includes(this.content.type) ? types : [...types, this.content.type]
+	})
 	// listed only once a form link needs them, not on every link field
 	hubspot = new HubspotForms(() =>
 		this.content.type === 'form' ? this.#hubspot_secret : undefined
@@ -107,9 +100,9 @@ export class LinkManager {
 					this.content = plugin_link(state.data.content as never) as unknown as Link
 					this.initial = false
 					this.name_story()
-				} else if (state.data?.content === null) {
-					// initialize with default content if none exists
-					this.content = { type: 'internal' }
+				} else if (!state.data?.content) {
+					// a new link starts as the first type the field offers
+					this.content = { type: this.types[0] }
 				}
 			},
 		})
@@ -204,7 +197,6 @@ export class LinkManager {
 		}
 
 		this.update()
-		this.plugin.actions.setModalOpen(false)
 	}
 
 	select_form = (form: HubspotForm | null) => {
@@ -212,85 +204,6 @@ export class LinkManager {
 		if (form) this.content.form = form
 		else delete this.content.form
 		this.update()
-		this.set_modal_open(false)
-	}
-
-	search = async (event: Event) => {
-		const input = event.target as HTMLInputElement
-
-		if (this.timeout) clearTimeout(this.timeout)
-
-		this.timeout = setTimeout(async () => {
-			this.loading = true
-			await this.get_stories({ search_term: input.value })
-			this.loading = false
-		}, 500)
-	}
-
-	get_stories = async (params: { search_term?: string; page?: number } = {}): Promise<void> => {
-		if (!this.plugin || !this.token) throw new Error('Plugin not loaded')
-
-		const url = new URL('https://api.storyblok.com/v2/cdn/stories')
-
-		url.searchParams.set('token', this.token)
-		url.searchParams.set('per_page', this.per_page.toString())
-		url.searchParams.set('version', 'draft')
-		if (!params.search_term) url.searchParams.set('sort_by', 'name:asc')
-		url.searchParams.set('cv', Date.now().toString())
-		url.searchParams.set('page', params.page?.toString() || '1')
-		url.searchParams.set(
-			'filter_query[component][in]',
-			Array.from(this.filter_content_types).join(',')
-		)
-
-		if (params.search_term) url.searchParams.set('search_term', params.search_term)
-
-		const result = await fetch(url.toString())
-		const data = (await result.json()) as ISbStories['data']
-
-		// update pagination state
-		this.total = Number(result.headers.get('total') || 0)
-		if (params.page) this.page = params.page
-
-		this.stories = data.stories
-	}
-
-	get_content_types = async (): Promise<Set<string>> => {
-		if (!this.plugin || !this.token) throw new Error('Plugin not loaded')
-
-		const base_url = new URL('https://api.storyblok.com/v2/cdn/stories')
-
-		base_url.searchParams.set('token', this.token)
-		base_url.searchParams.set('per_page', '100')
-		base_url.searchParams.set('version', 'draft')
-		base_url.searchParams.set('cv', Date.now().toString())
-
-		const components = new Set<string>()
-		let page = 1
-		let total = Infinity
-		let fetched = 0
-
-		while (fetched < total) {
-			const url = new URL(base_url)
-			url.searchParams.set('page', page.toString())
-
-			const result = await fetch(url.toString())
-			const data = (await result.json()) as ISbStories['data']
-
-			// update totals
-			total = Number(result.headers.get('total') || 0)
-			fetched += data.stories.length
-
-			for (const story of data.stories) {
-				const component = story.content.component as string | undefined
-				if (component) components.add(component)
-			}
-
-			if (data.stories.length === 0) break
-			page += 1
-		}
-
-		return components
 	}
 
 	update_email = () => {
@@ -308,7 +221,8 @@ export class LinkManager {
 		if (this.content.email) {
 			const params = new URLSearchParams()
 			if (this.content.subject) params.set('subject', this.content.subject)
-			if (this.content.body) params.set('body', this.content.body)
+			// line breaks as CRLF, as mailto links want them (RFC 6068)
+			if (this.content.body) params.set('body', this.content.body.replace(/\r?\n/g, '\r\n'))
 			if (this.content.cc) params.set('cc', this.content.cc)
 			if (this.content.bcc) params.set('bcc', this.content.bcc)
 
@@ -332,20 +246,13 @@ export class LinkManager {
 		this.update()
 	}
 
-	// utility methods
-	set_modal_open = (is_open: boolean) => {
-		if (!this.plugin?.actions) return
-		this.plugin.actions.setModalOpen(is_open)
-	}
-
-	title_case = (str: string) => {
-		return str.charAt(0).toUpperCase() + str.slice(1)
-	}
-
-	type_label = (type: LinkType) => (type === 'form' ? 'HubSpot form' : this.title_case(type))
-
-	date = (date?: string | null): string => {
-		if (!date) return 'N/A'
-		return format_elapse(date) || format_date('{MMM} {D}, {YYYY} at {h}:{mm} {A}', date)
-	}
+	/** As Storyblok's own link field names them, so the two read alike side by side */
+	type_label = (type: LinkType) =>
+		({
+			internal: 'Internal link',
+			external: 'URL',
+			email: 'Email',
+			asset: 'Asset',
+			form: 'HubSpot form',
+		})[type]
 }
