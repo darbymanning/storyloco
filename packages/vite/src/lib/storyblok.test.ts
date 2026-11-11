@@ -73,6 +73,13 @@ describe("href", () => {
 		expect(href({ linktype: "story", cached_url: "old", story: { url: "new/" } })).toBe("/new/")
 	})
 
+	test("a link plugin's story link keeps its suffix", () => {
+		expect(
+			href({ linktype: "story", cached_url: "old", story: { url: "new" }, suffix: "?tab=specs" })
+		).toBe("/new?tab=specs")
+		expect(href({ linktype: "story", suffix: "?tab=specs" })).toBeUndefined()
+	})
+
 	test("a story resolved to the root links to it", () => {
 		expect(href({ linktype: "story", cached_url: "home", story: { url: "/" } })).toBe("/")
 		expect(href({ linktype: "story", cached_url: "home", story: { url: "/" }, anchor: "a" })).toBe(

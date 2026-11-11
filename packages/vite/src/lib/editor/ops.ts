@@ -540,6 +540,8 @@ const no_r2: ResolveR2 = () => Promise.reject(new EditorError(400, "Unknown chan
 type FindStory = (id: number) => Promise<Summary>
 
 const TARGETS = new Set(["_self", "_blank", "_parent", "_top", "_new"])
+/** What a link plugin value holds only while it links to a story */
+const STORY_LINK = new Set(["story", "fieldtype", "linktype", "id", "cached_url"])
 const RELS = new Set([
 	"noopener",
 	"noreferrer",
@@ -651,7 +653,9 @@ async function plugin_value(
 			const type = value.type
 			const target =
 				value.target === undefined || TARGETS.has(String(value.target)) ? value.target : bad()
-			const base = { ...was, type, text: str(value.text, 500), target }
+			// a story it no longer links to goes, native fields too, or `resolve_links` would still send it there
+			const kept = Object.fromEntries(Object.entries(was).filter(([k]) => !STORY_LINK.has(k)))
+			const base = { ...kept, type, text: str(value.text, 500), target }
 			if (type === "external") {
 				const url = str(value.url, 2000)
 				// a link a page renders as its href: never one that runs script
@@ -670,22 +674,27 @@ async function plugin_value(
 				}
 			if (type === "internal") {
 				const chosen = object(value.story) && id(value.story.id) ? value.story.id : undefined
+				const same = chosen !== undefined && object(was.story) && was.story.id === chosen
 				// the page it was already, or else one Storyblok has
-				const story =
-					chosen === undefined
-						? undefined
-						: object(was.story) && was.story.id === chosen
-							? was.story
-							: await find_story(chosen).then(({ id, uuid, name, published_at }) => ({
-									id,
-									uuid,
-									name,
-									published_at,
-								}))
-				return { ...base, suffix: str(value.suffix, 500), story }
+				const found = chosen === undefined || same ? undefined : await find_story(chosen)
+				const story = found
+					? { id: found.id, uuid: found.uuid, name: found.name, published_at: found.published_at }
+					: same
+						? (was.story as Node)
+						: undefined
+				// a native link's fields, so `resolve_links` keeps its path current after the story moves
+				const native = story && {
+					fieldtype: "multilink",
+					linktype: "story",
+					id: story.uuid,
+					cached_url: found ? found.full_slug : was.cached_url,
+				}
+				return { ...base, suffix: str(value.suffix, 500), story, ...native }
 			}
 			// an asset link's file is chosen in Storyblok; its words and target are editable here
 			if (type === "asset" && was.type === "asset") return { ...base, asset: was.asset }
+			// as is a form link's HubSpot form
+			if (type === "form" && was.type === "form") return { ...base, form: was.form }
 			return bad()
 		}
 		case "plans": {
