@@ -900,6 +900,26 @@
 		(i === 0 && name) || component_label(step.component)
 	const back = $derived(came_from && selection?.story === came_from.into ? came_from : null)
 
+	/** Every step above the block, outermost first, each with the story it's in */
+	const parents = $derived(
+		loaded && selection
+			? [
+					...(back?.steps ?? []).map((step, i) => ({
+						story: back!.story,
+						uid: step.uid,
+						name: crumb(step, i, back!.name),
+					})),
+					...loaded.trail.slice(0, -1).map((step, i) => ({
+						story: selection!.story,
+						uid: step.uid,
+						name: crumb(step, i, story_name(loaded!)),
+					})),
+				]
+			: []
+	)
+	/** How many steps the line has room to spell out: any more and they fold into one list */
+	const SPELT = 2
+
 	/** Every step of the header's line, the block itself last */
 	const line = $derived([...(back?.steps ?? []), ...(loaded?.trail ?? [])].map((step) => step.uid))
 	let line_was: string[] = []
@@ -2765,7 +2785,24 @@
 				<div class="name" style:--way={way}>
 					{#if !folded && loaded && (loaded.trail.length > 1 || back)}
 						<nav class="trail" aria-label="Where this block is">
-							{#if back}
+							{#if parents.length > SPELT}
+								<!-- too deep to spell out: every step in one list, nested as the blocks are.
+								     ponytail: the browser's own select, a drawn menu if it should match the panel -->
+								<select
+									aria-label="Go to a block this one is in"
+									onchange={(event) => {
+										const to = parents[Number(event.currentTarget.value)]
+										event.currentTarget.value = ""
+										if (to) select({ story: to.story, uid: to.uid })
+									}}
+								>
+									<option value="" hidden selected>…</option>
+									{#each parents as step, i (step.uid)}
+										<option value={i}>{"\u00a0\u00a0".repeat(i)}{step.name}</option>
+									{/each}
+								</select>
+								<span aria-hidden="true">›</span>
+							{:else if back}
 								<!-- the blocks it was got to through, in the story that picks it -->
 								{#each back.steps as step, i (step.uid)}
 									<button
@@ -2784,7 +2821,7 @@
 									>
 								{/each}
 							{/if}
-							{#each loaded.trail.slice(0, -1) as step, i (step.uid)}
+							{#each parents.length > SPELT ? [] : loaded.trail.slice(0, -1) as step, i (step.uid)}
 								<button
 									type="button"
 									class:fresh={turn(step.uid) !== undefined}
@@ -3144,6 +3181,27 @@
 			&:hover {
 				color: var(--ink);
 				text-decoration: underline;
+			}
+		}
+
+		/* the steps folded into one: an ellipsis to press, as wide as that and not as its longest step */
+		& select {
+			appearance: none;
+			background: none;
+			border: 0;
+			border-radius: 0.25rem;
+			color: inherit;
+			cursor: pointer;
+			flex: none;
+			font: inherit;
+			font-weight: 600;
+			inline-size: 1.75rem;
+			padding: 0 0.125rem;
+			text-align: center;
+
+			&:hover {
+				background: color-mix(in srgb, var(--ink) 10%, transparent);
+				color: var(--ink);
 			}
 		}
 	}
