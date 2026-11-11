@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { link_types_of, plugin_link } from "./link.js"
+import { link_types_of, looks_like_email, mailto, plugin_link } from "./link.js"
 
 describe("plugin_link", () => {
 	const native = { fieldtype: "multilink", id: "", url: "", cached_url: "" }
@@ -60,5 +60,42 @@ describe("link_types_of", () => {
 		for (const option of [undefined, null, "", "  ", "nonsense", 3])
 			expect(link_types_of(option)).toBeNull()
 		expect(link_types_of("url, nonsense")).toEqual(["external"])
+	})
+})
+
+describe("looks_like_email", () => {
+	test("valid addresses pass, however unusual", () => {
+		for (const email of [
+			"hello@eatechnology.com",
+			"first.last+newsletter@mail.example.co.uk",
+			"o'connor@example.ie",
+			"x@sub.domain.museum",
+			"ünïcode@exämple.de",
+			"  padded@example.com  ",
+		])
+			expect(looks_like_email(email)).toBe(true)
+	})
+
+	test("plainly broken ones are caught", () => {
+		for (const email of [
+			"hello",
+			"hello@",
+			"@example.com",
+			"hello@example",
+			"hello@@example.com",
+			"hello @example.com",
+			"hello@example..com",
+			"hello@example.com.",
+		])
+			expect(looks_like_email(email)).toBe(false)
+	})
+})
+
+describe("mailto", () => {
+	test("an address alone, or with its filled-in parts encoded and the body's breaks as CRLF", () => {
+		expect(mailto(" a@b.test ")).toBe("mailto:a@b.test")
+		expect(
+			mailto("a@b.test", { subject: "Hi & bye", body: "One\nTwo", cc: "", bcc: "c@d.test" })
+		).toBe("mailto:a@b.test?subject=Hi%20%26%20bye&body=One%0D%0ATwo&bcc=c%40d.test")
 	})
 })

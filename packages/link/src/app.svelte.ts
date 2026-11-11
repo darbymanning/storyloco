@@ -5,7 +5,7 @@ import type { HubspotForm } from '../../hubspot_form/types.js'
 import { HubspotForms } from '../../hubspot_form/src/forms.svelte.js'
 import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon, ClipboardListIcon } from '@lucide/svelte'
 import type { Asset } from '../../asset/types.js'
-import { link_types_of, plugin_link } from '../../vite/src/lib/link.js'
+import { link_types_of, mailto, plugin_link } from '../../vite/src/lib/link.js'
 
 type Plugin = FieldPluginResponse<Link | null>
 
@@ -219,20 +219,8 @@ export class LinkManager {
 		}
 
 		if (this.content.email) {
-			const params = new URLSearchParams()
-			if (this.content.subject) params.set('subject', this.content.subject)
-			// line breaks as CRLF, as mailto links want them (RFC 6068)
-			if (this.content.body) params.set('body', this.content.body.replace(/\r?\n/g, '\r\n'))
-			if (this.content.cc) params.set('cc', this.content.cc)
-			if (this.content.bcc) params.set('bcc', this.content.bcc)
-
-			const query_string = Array.from(params.entries())
-				.map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-				.join('&')
-
-			this.content.url = query_string
-				? `mailto:${this.content.email}?${query_string}`
-				: `mailto:${this.content.email}`
+			const { email, subject, body, cc, bcc } = this.content
+			this.content.url = mailto(email, { subject, body, cc, bcc })
 		}
 
 		this.update()

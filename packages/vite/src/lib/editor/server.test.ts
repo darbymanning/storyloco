@@ -182,6 +182,22 @@ describe("editor schemas", () => {
 		await refused(normalise(field, { type: "form", form }, { type: "external" }, resolve))
 	})
 
+	test("a link field's email link keeps its mailto, and its rel any of the three, in order", async () => {
+		const field = { type: "custom", field_type: "uiloco-link" } as Parameters<typeof normalise>[0]
+		const put = (value: unknown) => normalise(field, value, undefined, resolve)
+		expect(
+			await put({ type: "email", email: "a@b.test", subject: "Hi", body: "One\nTwo" })
+		).toMatchObject({ url: "mailto:a@b.test?subject=Hi&body=One%0D%0ATwo" })
+		expect(await put({ type: "email", email: "" })).toMatchObject({ url: undefined })
+		expect(
+			await put({ type: "external", url: "https://x.test", rel: "nofollow noopener" })
+		).toMatchObject({ rel: "noopener nofollow" })
+		expect(await put({ type: "external", url: "https://x.test", rel: "" })).toMatchObject({
+			rel: undefined,
+		})
+		await refused(put({ type: "external", url: "https://x.test", rel: "noopener sponsored" }))
+	})
+
 	test("a form link picked on the page takes its form from the field's portal, by id", async () => {
 		const field = { type: "custom", field_type: "uiloco-link" } as Parameters<typeof normalise>[0]
 		const portal = [{ id: "f1", name: "Enquiry", portal: "123" }]

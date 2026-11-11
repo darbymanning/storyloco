@@ -24,7 +24,7 @@ import {
 	type Place,
 } from "./content.js"
 import { format_currency } from "../currency.js"
-import { link_types_of, plugin_link } from "../link.js"
+import { link_types_of, mailto, plugin_link, RELS } from "../link.js"
 
 /*
  * What the Site Editor can do to a space, as the person signed in: read and change stories, assets
@@ -558,13 +558,7 @@ const no_form: FindForm = () => Promise.reject(new EditorError(400, "Unknown cha
 const TARGETS = new Set(["_self", "_blank", "_parent", "_top", "_new"])
 /** What a link plugin value holds only while it links to a story */
 const STORY_LINK = new Set(["story", "fieldtype", "linktype", "id", "cached_url"])
-const RELS = new Set([
-	"noopener",
-	"noreferrer",
-	"nofollow",
-	"noopener noreferrer",
-	"noopener noreferrer nofollow",
-])
+/** What a link's rel may say: any of these, written in this order whichever were ticked */
 
 /**
  * A storyloco plugin's value, as its own plugin would have written it: only the shape it stores,
@@ -683,18 +677,26 @@ async function plugin_value(
 				const url = str(value.url, 2000)
 				// a link a page renders as its href: never one that runs script
 				if (/^\s*(javascript|data|vbscript):/i.test(url)) bad("needs a web address")
-				const rel = value.rel === undefined || RELS.has(String(value.rel)) ? value.rel : bad()
+				const said = typeof value.rel === "string" ? value.rel.split(/\s+/).filter(Boolean) : []
+				if (
+					value.rel !== undefined &&
+					(typeof value.rel !== "string" || said.some((r) => !RELS.includes(r)))
+				)
+					bad()
+				const rel = RELS.filter((r) => said.includes(r)).join(" ") || undefined
 				return { ...base, url, rel }
 			}
-			if (type === "email")
-				return {
-					...base,
-					email: str(value.email, 320),
+			if (type === "email") {
+				const email = str(value.email, 320)
+				const parts = {
 					subject: str(value.subject, 500),
 					body: str(value.body, 5000),
 					cc: str(value.cc, 1000),
 					bcc: str(value.bcc, 1000),
 				}
+				// the link itself, as the plugin writes it: a page renders it as the href
+				return { ...base, email, ...parts, url: email.trim() ? mailto(email, parts) : undefined }
+			}
 			if (type === "internal") {
 				const chosen = object(value.story) && id(value.story.id) ? value.story.id : undefined
 				const same = chosen !== undefined && object(stored.story) && stored.story.id === chosen
@@ -1310,8 +1312,8 @@ export async function operate(
 		query.set("sort_by", field ? "name:asc" : "updated_at:desc")
 		const page = Number(body.page)
 		if (Number.isInteger(page) && page > 1 && page < 1000) query.set("page", String(page))
-		if (text(body.search, 200) && body.search.trim())
-			query.set(field ? "search" : "text_search", body.search.trim())
+		// by name and slug, as a picker's looked through: a full-text search turns up every page mentioning it
+		if (text(body.search, 200) && body.search.trim()) query.set("search", body.search.trim())
 		const { stories } = await editor.mapi<{ stories: Array<Summary> }>(`/stories/?${query}`)
 		// a full page says there may be more, without asking Storyblok to count them
 		return { stories: stories.map(summary), more: stories.length === STORY_PAGE }

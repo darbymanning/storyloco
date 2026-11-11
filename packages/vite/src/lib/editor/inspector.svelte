@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
 	import { SvelteMap } from "svelte/reactivity"
-	import { tick, untrack } from "svelte"
+	import { tick, untrack, type Snippet } from "svelte"
 	import type { Attachment } from "svelte/attachments"
 	import {
 		call,
@@ -27,7 +27,7 @@
 		same,
 		theme_choices,
 	} from "./content.js"
-	import { link_types_of, plugin_link } from "../link.js"
+	import { link_types_of, looks_like_email, plugin_link, RELS } from "../link.js"
 	import type { Inserts, RichDoc, RichField } from "./richtext.js"
 	import type { Selection } from "./overlay.js"
 	import { enter, leave, quietly, select as live_select, shared } from "./live.js"
@@ -827,26 +827,51 @@
 
 	// --- links
 
-	let finding = $state<{ key: string; search: string; results: Array<Story> } | null>(null)
-	let searching: ReturnType<typeof setTimeout> | undefined
-	function find_stories(key: string, search: string) {
-		finding = { key, search, results: finding?.key === key ? finding.results : [] }
-		clearTimeout(searching)
-		searching = setTimeout(async () => {
-			const { stories } = await call<{ stories: Array<Story> }>({ op: "stories", search }).catch(
-				() => ({ stories: [] })
+	/** Link fields with their options showing, and email links whose address was left looking wrong */
+	let link_more = $state<Record<string, boolean>>({})
+	let wrong_email = $state<Record<string, boolean>>({})
+
+	/** A row a picker offers: a page, or a HubSpot form */
+	type Choice = { id: string; name: string; hint?: string; story?: Story }
+	let choosing = $state<{
+		key: string
+		search: string
+		items: Array<Choice>
+		active: number
+		loading: boolean
+		failed?: boolean
+	} | null>(null)
+	let picker_wait: ReturnType<typeof setTimeout> | undefined
+	const words_in = (items: Array<Choice>, search: string) => {
+		const words = search.trim().toLowerCase()
+		return items.filter((c) => `${c.name} ${c.hint ?? ""}`.toLowerCase().includes(words))
+	}
+
+	// pages by what's searched, kept for the visit so going back over a search is instant
+	const pages = new Map<string, Promise<Array<Choice>>>()
+	function find_pages(search: string) {
+		const words = search.trim().toLowerCase()
+		let found = pages.get(words)
+		if (!found) {
+			found = call<{ stories: Array<Story> }>({ op: "stories", search: words }).then((r) =>
+				r.stories.map((story) => ({
+					id: story.uuid,
+					name: story.name,
+					hint: `/${story.full_slug}`,
+					story,
+				}))
 			)
-			if (finding?.key === key && finding.search === search) finding.results = stories
-		}, 200)
+			found.catch(() => pages.delete(words))
+			pages.set(words, found)
+		}
+		return found
 	}
 
 	// --- HubSpot forms a link field can open: its portal's, fetched once a field asks
 
 	type Form = { id: string; name: string }
 	const forms = new Map<string, Promise<Array<Form>>>()
-	let form_finding = $state<{ key: string; search: string; results: Array<Form> } | null>(null)
 	function find_forms(key: string, search: string) {
-		form_finding = { key, search, results: form_finding?.key === key ? form_finding.results : [] }
 		const name = loaded!.blok.component
 		const id = `${name}.${key}`
 		let found = forms.get(id)
@@ -857,15 +882,43 @@
 			found.catch(() => forms.delete(id))
 			forms.set(id, found)
 		}
-		found
-			.then((all) => {
-				const words = search.trim().toLowerCase()
-				if (form_finding?.key === key && form_finding.search === search)
-					form_finding.results = all
-						.filter((f) => f.name.toLowerCase().includes(words))
-						.slice(0, 50)
-			})
-			.catch(() => {})
+		return found.then((all) => words_in(all, search).slice(0, 50))
+	}
+
+	type Find = (search: string) => Promise<Array<Choice>>
+
+	/**
+	 * Which way a picker opens, and how tall its list can be: down, unless there's more room above
+	 * when below's short, so it fits where it is rather than scrolling the panel to make room
+	 */
+	let drop = $state({ up: false, room: 240 })
+	function place_drop(trigger: HTMLElement) {
+		let box = trigger.parentElement
+		while (box && !/auto|scroll/.test(getComputedStyle(box).overflowY)) box = box.parentElement
+		const { top, bottom } = box?.getBoundingClientRect() ?? { top: 0, bottom: innerHeight }
+		const at = trigger.getBoundingClientRect()
+		const below = bottom - at.bottom
+		const above = at.top - top
+		const up = below < 280 && above > below
+		// less the search box and the gap to the trigger
+		drop = { up, room: Math.max(96, Math.min(240, (up ? above : below) - 52)) }
+	}
+	/** Opens a field's picker, or searches it again; what it has narrows at once while the rest comes */
+	function search_picker(key: string, find: Find, search = "") {
+		const kept = choosing?.key === key ? choosing.items : []
+		choosing = { key, search, items: words_in(kept, search), active: 0, loading: true }
+		clearTimeout(picker_wait)
+		picker_wait = setTimeout(
+			async () => {
+				const items = await find(search).catch(() => null)
+				if (choosing?.key !== key || choosing.search !== search) return
+				choosing.items = items ?? []
+				choosing.failed = !items
+				choosing.active = Math.min(choosing.active, Math.max(choosing.items.length - 1, 0))
+				choosing.loading = false
+			},
+			search ? 150 : 0
+		)
 	}
 
 	// --- stories an option field picks, in the order it keeps them
@@ -1391,10 +1444,10 @@
 
 	/** Escape closes the panel's own menus first; the page takes it from there */
 	function keydown(event: KeyboardEvent) {
-		if (event.key !== "Escape" || (!adding && !finding && !picking && !library)) return
+		if (event.key !== "Escape" || (!adding && !choosing && !picking && !library)) return
 		event.preventDefault()
 		adding = null
-		finding = null
+		choosing = null
 		picking = null
 		library = null
 	}
@@ -1410,7 +1463,7 @@
 	{/if}
 {/snippet}
 
-{#snippet Label(key: string, field: Field, id: string)}
+{#snippet Label(key: string, field: Field, id: string, tail?: Snippet)}
 	<div class="head">
 		<label for={id}
 			>{field_label(key, field)}{#if field.required}<span class="required" aria-hidden="true"
@@ -1418,8 +1471,122 @@
 				>{/if}</label
 		>
 		{@render Status(key)}
+		{@render tail?.()}
 	</div>
 	{#if field.description}<p class="help">{field.description}</p>{/if}
+{/snippet}
+
+<!-- a dropdown to choose one of many from, searched from inside it, as a select would be if it could -->
+{#snippet Picker(
+	key: string,
+	id: string | undefined,
+	label: string,
+	chosen: { id?: unknown; name?: unknown; hint?: unknown },
+	find: Find,
+	choose: (choice: Choice) => void
+)}
+	{@const open = choosing?.key === key}
+	{@const trigger = id ?? `${key}-picker`}
+	{@const back = () => {
+		choosing = null
+		document.getElementById(trigger)?.focus()
+	}}
+	{@const pick = (choice: Choice) => {
+		choose(choice)
+		back()
+	}}
+	<div
+		class="picker"
+		onfocusout={(e) =>
+			open && !e.currentTarget.contains(e.relatedTarget as Node) && (choosing = null)}
+	>
+		<button
+			type="button"
+			id={trigger}
+			class="trigger"
+			aria-label={id ? undefined : `${label}: ${chosen.name || "none chosen"}`}
+			aria-haspopup="listbox"
+			aria-expanded={open}
+			onclick={(e) => {
+				if (open) return (choosing = null)
+				place_drop(e.currentTarget)
+				search_picker(key, find)
+			}}
+		>
+			{#if chosen.name}
+				<span>{chosen.name}</span>{#if chosen.hint}<small>{chosen.hint}</small>{/if}
+			{:else}
+				<span class="placeholder">Choose a {label.toLowerCase()}</span>
+			{/if}
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+		</button>
+		{#if open && choosing}
+			<div class="dropdown" class:up={drop.up} style:--room="{drop.room}px">
+				<input
+					type="search"
+					aria-label="Search"
+					placeholder="Search"
+					role="combobox"
+					aria-expanded="true"
+					aria-controls="{key}-choices"
+					aria-activedescendant={choosing.items[choosing.active]
+						? `${key}-choice-${choosing.active}`
+						: undefined}
+					value={choosing.search}
+					{@attach (node) => node.focus({ preventScroll: true })}
+					oninput={(e) => search_picker(key, find, e.currentTarget.value)}
+					onkeydown={(e) => {
+						if (!choosing) return
+						const last = choosing.items.length - 1
+						if (e.key === "ArrowDown") choosing.active = Math.min(choosing.active + 1, last)
+						else if (e.key === "ArrowUp") choosing.active = Math.max(choosing.active - 1, 0)
+						else if (e.key === "Enter" && choosing.items[choosing.active])
+							pick(choosing.items[choosing.active])
+						else if (e.key === "Escape") {
+							back()
+							e.stopPropagation()
+						} else return
+						e.preventDefault()
+						// the list scrolls to it, and only the list: the panel stays where it is
+						const row = document.getElementById(`${key}-choice-${choosing?.active}`)
+						const list = row?.parentElement
+						if (!row || !list) return
+						if (row.offsetTop < list.scrollTop) list.scrollTop = row.offsetTop
+						else if (row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight)
+							list.scrollTop = row.offsetTop + row.offsetHeight - list.clientHeight
+					}}
+				/>
+				<ul id="{key}-choices" role="listbox" aria-label={label} aria-busy={choosing.loading}>
+					{#each choosing.items as choice, i (choice.id)}
+						<li
+							id="{key}-choice-{i}"
+							role="option"
+							aria-selected={choice.id === chosen.id}
+							class:active={i === choosing.active}
+						>
+							<button
+								type="button"
+								tabindex="-1"
+								onmousedown={(e) => e.preventDefault()}
+								onmousemove={() => choosing && (choosing.active = i)}
+								onclick={() => pick(choice)}
+								><strong>{choice.name}</strong>{#if choice.hint}<span>{choice.hint}</span
+									>{/if}</button
+							>
+						</li>
+					{:else}
+						<li class="empty">
+							{choosing.loading
+								? "Searching…"
+								: choosing.failed
+									? "Couldn’t load these; try again shortly"
+									: "Nothing found"}
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet Text(key: string, field: Field, id: string)}
@@ -1788,8 +1955,19 @@
 	{@const kind =
 		value.linktype === "email" ? "email" : value.linktype === "story" ? "story" : "url"}
 	{@render Label(key, field, id)}
-	<div class="segmented" role="radiogroup" aria-label="Link to">
-		{#each [["story", "Page"], ["url", "URL"], ["email", "Email"]] as [type, name] (type)}
+	{@const kinds = [
+		["story", "Page"],
+		["url", "URL"],
+		["email", "Email"],
+	]}
+	<div
+		class="segmented"
+		role="radiogroup"
+		aria-label="Link to"
+		style:--n={kinds.length}
+		style:--i={kinds.findIndex(([type]) => type === kind)}
+	>
+		{#each kinds as [type, name] (type)}
 			<button
 				type="button"
 				role="radio"
@@ -1803,41 +1981,22 @@
 		{/each}
 	</div>
 	{#if kind === "story"}
-		<div class="combo">
-			<input
-				{id}
-				placeholder={value.cached_url ? `/${value.cached_url}` : "Find a page"}
-				value={finding?.key === key ? finding.search : ""}
-				onfocus={() => find_stories(key, "")}
-				oninput={(e) => find_stories(key, e.currentTarget.value)}
-				onblur={() => setTimeout(() => finding?.key === key && (finding = null), 150)}
-			/>
-			{#if value.cached_url && finding?.key !== key}<p class="help">
-					Links to /{value.cached_url}
-				</p>{/if}
-			{#if finding?.key === key && finding.results.length}
-				<ul class="results">
-					{#each finding.results as story (story.id)}
-						<li>
-							<button
-								type="button"
-								onmousedown={(e) => e.preventDefault()}
-								onclick={() => {
-									change(key, {
-										linktype: "story",
-										id: story.uuid,
-										cached_url: story.full_slug,
-										url: "",
-										target: value.target,
-									})
-									finding = null
-								}}><strong>{story.name}</strong><span>/{story.full_slug}</span></button
-							>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
+		{@render Picker(
+			key,
+			id,
+			"Page",
+			{ id: value.id, name: value.cached_url && `/${value.cached_url}` },
+			find_pages,
+			(c) =>
+				c.story &&
+				change(key, {
+					linktype: "story",
+					id: c.story.uuid,
+					cached_url: c.story.full_slug,
+					url: "",
+					target: value.target,
+				})
+		)}
 	{:else if kind === "email"}
 		<input
 			{id}
@@ -2454,9 +2613,46 @@
 			((kind !== "form" || option(field, "forms") === "true") &&
 				(!allowed || allowed.some((a) => a === kind)))
 	)}
-	{@render Label(key, field, id)}
+	<!-- what each kind has beyond where it goes: a form opens over the page, so has none -->
+	{@const extras = type !== "form"}
+	{@const rels = text(value.rel).split(/\s+/)}
+	<!-- a dot on the button while an option's set, as the options are out of sight -->
+	{@const set =
+		value.target === "_blank" ||
+		["suffix", "rel", "subject", "body", "cc", "bcc"].some((k) => text(value[k]).trim())}
+	{@const more = !!link_more[key]}
+	{#snippet Toggle()}
+		{#if extras}
+			<button
+				type="button"
+				class="options"
+				class:on={more}
+				class:set
+				aria-expanded={more}
+				aria-controls="{key}-options"
+				title={more ? "Hide link options" : "Link options"}
+				onclick={() => (link_more[key] = !more)}
+				><svg class="sliders" viewBox="0 0 24 24" aria-hidden="true"
+					><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" /><circle
+						cx="15"
+						cy="6"
+						r="2"
+					/><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></svg
+				><svg class="close" viewBox="0 0 24 24" aria-hidden="true"
+					><path d="M18 6 6 18M6 6l12 12" /></svg
+				></button
+			>
+		{/if}
+	{/snippet}
+	{@render Label(key, field, id, Toggle)}
 	{#if type !== "asset" && kinds.length > 1}
-		<div class="segmented" role="radiogroup" aria-label="Link to">
+		<div
+			class="segmented"
+			role="radiogroup"
+			aria-label="Link to"
+			style:--n={kinds.length}
+			style:--i={kinds.findIndex(([kind]) => kind === type)}
+		>
 			{#each kinds as [kind, name] (kind)}
 				<button
 					type="button"
@@ -2479,93 +2675,141 @@
 		}}
 		oninput={(e) => change(key, { ...value, type, text: e.currentTarget.value }, 700)}
 	/>
-	{#if type === "internal"}
-		<div class="combo">
+	<!-- where it goes and its options, as one: the field's gap would otherwise stay when they're folded -->
+	<div class="link-main">
+		{#if type === "internal"}
+			{@render Picker(
+				key,
+				undefined,
+				"Page",
+				{
+					id: story.uuid,
+					name: story.name,
+					hint: text(value.cached_url) && `/${text(value.cached_url)}`,
+				},
+				find_pages,
+				(c) =>
+					c.story && keep({ story: { id: c.story.id, uuid: c.story.uuid, name: c.story.name } })
+			)}
+		{:else if type === "email"}
+			{@const wrong = wrong_email[key]}
 			<input
-				aria-label="Page"
-				placeholder={story.name ? text(story.name) : "Find a page"}
-				value={finding?.key === key ? finding.search : ""}
-				onfocus={() => find_stories(key, "")}
-				oninput={(e) => find_stories(key, e.currentTarget.value)}
-				onblur={() => setTimeout(() => finding?.key === key && (finding = null), 150)}
+				type="email"
+				aria-label="Email"
+				placeholder="name@example.com"
+				autocomplete="off"
+				spellcheck="false"
+				class:wrong
+				aria-invalid={wrong}
+				aria-describedby={wrong ? `${key}-wrong` : undefined}
+				value={text(value.email)}
+				oninput={(e) =>
+					wrong && looks_like_email(e.currentTarget.value) && (wrong_email[key] = false)}
+				onblur={(e) => {
+					const typed = e.currentTarget.value
+					wrong_email[key] = !!typed.trim() && !looks_like_email(typed)
+				}}
+				onchange={(e) => keep({ email: e.currentTarget.value })}
 			/>
-			{#if story.name && finding?.key !== key}<p class="help">Links to {story.name}</p>{/if}
-			{#if finding?.key === key && finding.results.length}
-				<ul class="results">
-					{#each finding.results as found (found.id)}
-						<li>
-							<button
-								type="button"
-								onmousedown={(e) => e.preventDefault()}
-								onclick={() => {
-									keep({ story: { id: found.id, uuid: found.uuid, name: found.name } })
-									finding = null
-								}}><strong>{found.name}</strong><span>/{found.full_slug}</span></button
-							>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{:else if type === "email"}
-		<input
-			type="email"
-			aria-label="Email"
-			placeholder="name@example.com"
-			value={text(value.email)}
-			onchange={(e) => keep({ email: e.currentTarget.value })}
-		/>
-	{:else if type === "asset"}
-		<p class="help">Links to a file, which is chosen in Storyblok.</p>
-	{:else if type === "form"}
-		{@const form = object_of(value.form)}
-		<div class="combo">
+			{#if wrong}<p class="help bad" id="{key}-wrong">
+					That doesn’t look like an email address
+				</p>{/if}
+		{:else if type === "asset"}
+			<p class="help">Links to a file, which is chosen in Storyblok.</p>
+		{:else if type === "form"}
+			{@const form = object_of(value.form)}
+			{@render Picker(
+				key,
+				undefined,
+				"Form",
+				{ id: form.id, name: form.name },
+				(search) => find_forms(key, search),
+				(c) => keep({ form: { id: c.id, name: c.name } })
+			)}
+		{:else}
 			<input
-				aria-label="Form"
-				placeholder={form.name ? text(form.name) : "Find a form"}
-				value={form_finding?.key === key ? form_finding.search : ""}
-				onfocus={() => find_forms(key, "")}
-				oninput={(e) => find_forms(key, e.currentTarget.value)}
-				onblur={() => setTimeout(() => form_finding?.key === key && (form_finding = null), 150)}
+				type="url"
+				aria-label="URL"
+				placeholder="https://"
+				value={text(value.url)}
+				onchange={(e) => keep({ url: e.currentTarget.value })}
 			/>
-			{#if form.name && form_finding?.key !== key}<p class="help">Opens {form.name}</p>{/if}
-			{#if form_finding?.key === key && form_finding.results.length}
-				<ul class="results">
-					{#each form_finding.results as found (found.id)}
-						<li>
-							<button
-								type="button"
-								onmousedown={(e) => e.preventDefault()}
-								onclick={() => {
-									keep({ form: { id: found.id, name: found.name } })
-									form_finding = null
-								}}><strong>{found.name}</strong></button
-							>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{:else}
-		<input
-			type="url"
-			aria-label="URL"
-			placeholder="https://"
-			value={text(value.url)}
-			onchange={(e) => keep({ url: e.currentTarget.value })}
-		/>
-	{/if}
-	<!-- a form opens over the page, so there's no tab to choose -->
-	{#if type !== "email" && type !== "form"}
-		<label class="check small">
-			<input
-				type="checkbox"
-				checked={value.target === "_blank"}
-				onchange={(e) => keep({ target: e.currentTarget.checked ? "_blank" : "_self" })}
-			/>
-			Open in a new tab
-		</label>
-	{/if}
+		{/if}
+		{#if extras}
+			<!-- always there, so opening and closing both ease its height; closed, it's out of reach -->
+			<div class="link-more" class:open={more} inert={!more}>
+				<div class="link-options" id="{key}-options">
+					{#if type === "internal"}
+						<label class="sub">
+							<span>Suffix</span>
+							<input
+								placeholder="?query or #section"
+								value={text(value.suffix)}
+								onchange={(e) => keep({ suffix: e.currentTarget.value || undefined })}
+							/>
+						</label>
+					{:else if type === "email"}
+						<label class="sub">
+							<span>Subject</span>
+							<input
+								value={text(value.subject)}
+								onchange={(e) => keep({ subject: e.currentTarget.value })}
+							/>
+						</label>
+						<label class="sub">
+							<span>Body</span>
+							<textarea
+								rows="3"
+								value={text(value.body)}
+								onchange={(e) => keep({ body: e.currentTarget.value })}></textarea>
+						</label>
+						<label class="sub">
+							<span>CC</span>
+							<input value={text(value.cc)} onchange={(e) => keep({ cc: e.currentTarget.value })} />
+						</label>
+						<label class="sub">
+							<span>BCC</span>
+							<input
+								value={text(value.bcc)}
+								onchange={(e) => keep({ bcc: e.currentTarget.value })}
+							/>
+						</label>
+					{/if}
+					{#if type !== "email"}
+						<label class="check small">
+							<input
+								type="checkbox"
+								checked={value.target === "_blank"}
+								onchange={(e) => keep({ target: e.currentTarget.checked ? "_blank" : "_self" })}
+							/>
+							Open in a new tab
+						</label>
+					{/if}
+					{#if type === "external"}
+						<div class="sub" role="group" aria-label="Rel">
+							<span>Rel</span>
+							<div class="rels">
+								{#each RELS as rel (rel)}
+									<label class="check small">
+										<input
+											type="checkbox"
+											checked={rels.includes(rel)}
+											onchange={(e) => {
+												const on = e.currentTarget.checked
+												const next = RELS.filter((r) => (r === rel ? on : rels.includes(r)))
+												keep({ rel: next.join(" ") || undefined })
+											}}
+										/>
+										{rel}
+									</label>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				</div>
+			</div>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet Plans(key: string, field: Field, id: string)}
@@ -4020,8 +4264,32 @@
 	.segmented {
 		background: var(--field);
 		border-radius: 0.5rem;
-		display: flex;
+		display: grid;
+		grid-auto-columns: minmax(0, 1fr);
+		grid-auto-flow: column;
+		isolation: isolate;
 		padding: 0.1875rem;
+		position: relative;
+
+		/* the chosen one's background, one pill under them all, so it slides from one to the next:
+		   the columns are the same width each for it to land on */
+		&::before {
+			background: color-mix(in srgb, var(--ink) 12%, transparent);
+			border-radius: 0.375rem;
+			box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+			content: "";
+			inline-size: calc((100% - 0.375rem) / var(--n));
+			inset-block: 0.1875rem;
+			inset-inline-start: 0.1875rem;
+			position: absolute;
+			transition: translate 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+			translate: calc(100% * var(--i)) 0;
+			z-index: -1;
+
+			@media (prefers-reduced-motion: reduce) {
+				transition: none;
+			}
+		}
 
 		& button {
 			background: none;
@@ -4029,14 +4297,12 @@
 			border-radius: 0.375rem;
 			color: var(--muted);
 			cursor: pointer;
-			flex: 1;
 			font: inherit;
 			font-weight: 500;
 			padding: 0.25rem;
+			transition: color 0.2s;
 
 			&.on {
-				background: color-mix(in srgb, var(--ink) 12%, transparent);
-				box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 				color: var(--ink);
 			}
 		}
@@ -4044,6 +4310,293 @@
 
 	.combo {
 		position: relative;
+	}
+
+	.picker {
+		position: relative;
+	}
+
+	.trigger {
+		align-items: center;
+		background: var(--field);
+		border: 1px solid var(--line);
+		border-radius: 0.5rem;
+		color: inherit;
+		cursor: pointer;
+		display: flex;
+		font: inherit;
+		gap: 0.5rem;
+		inline-size: 100%;
+		outline: 3px solid transparent;
+		padding: 0.5rem 0.625rem;
+		text-align: start;
+		transition:
+			border-color 0.2s,
+			outline-color 0.2s;
+
+		& span,
+		& small {
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		& small {
+			color: var(--muted);
+			flex: 1;
+			font-size: 0.75rem;
+		}
+
+		& .placeholder {
+			color: var(--muted);
+			flex: 1;
+		}
+
+		& svg {
+			block-size: 1rem;
+			color: var(--muted);
+			fill: none;
+			flex: none;
+			inline-size: 1rem;
+			margin-inline-start: auto;
+			stroke: currentColor;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+			stroke-width: 2;
+			transition: rotate 0.2s;
+		}
+
+		&[aria-expanded="true"] {
+			border-color: var(--accent);
+			outline-color: color-mix(in srgb, var(--accent) 18%, transparent);
+
+			& svg {
+				rotate: 180deg;
+			}
+		}
+
+		&:focus-visible {
+			border-color: var(--accent);
+			outline-color: color-mix(in srgb, var(--accent) 18%, transparent);
+		}
+	}
+
+	.dropdown {
+		animation: drop 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+		backdrop-filter: blur(20px) saturate(1.8);
+		background: color-mix(in srgb, var(--bg) 88%, transparent);
+		border-radius: 0.5rem;
+		box-shadow:
+			0 0 0 1px var(--line),
+			0 8px 24px rgb(0 0 0 / 0.14);
+		inset-inline: 0;
+		margin-block-start: 0.25rem;
+		position: absolute;
+		/* over a rich text field's toolbar, which floats over the page, when it opens up across one */
+		z-index: 2147483002;
+
+		&.up {
+			--from: 0.25rem;
+
+			inset-block-end: 100%;
+			margin-block: 0 0.25rem;
+		}
+
+		& input[type="search"] {
+			background: none;
+			border: 0;
+			border-block-end: 1px solid var(--line);
+			border-radius: 0.5rem 0.5rem 0 0;
+			outline: 0;
+		}
+
+		& ul {
+			max-block-size: var(--room, 15rem);
+			overflow: auto;
+			padding: 0.25rem;
+			/* its rows' offsets are from it, for the keys to scroll it by */
+			position: relative;
+		}
+
+		& li.empty {
+			color: var(--muted);
+			font-size: 0.75rem;
+			padding: 0.5rem;
+		}
+
+		& button {
+			background: none;
+			border: 0;
+			border-radius: 0.375rem;
+			color: inherit;
+			cursor: pointer;
+			display: grid;
+			font: inherit;
+			inline-size: 100%;
+			padding: 0.375rem 0.5rem;
+			text-align: start;
+
+			& strong,
+			& span {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			& strong {
+				font-weight: 500;
+			}
+
+			& span {
+				color: var(--muted);
+				font-size: 0.75rem;
+			}
+		}
+
+		& .active button {
+			background: var(--field);
+		}
+
+		& [aria-selected="true"] strong::after {
+			color: var(--accent);
+			content: " ✓";
+		}
+	}
+
+	@keyframes drop {
+		from {
+			opacity: 0;
+			translate: 0 var(--from, -0.25rem);
+		}
+	}
+
+	.options {
+		background: none;
+		border: 0;
+		border-radius: 0.375rem;
+		color: var(--muted);
+		cursor: pointer;
+		display: grid;
+		/* overhangs the label's line, so the header's as tall with it as without (a form has none) */
+		margin-block: -0.25rem;
+		margin-inline-start: auto;
+		padding: 0.25rem;
+		position: relative;
+		transition:
+			background-color 0.2s,
+			color 0.2s;
+
+		& svg {
+			block-size: 1rem;
+			fill: none;
+			grid-area: 1 / 1;
+			inline-size: 1rem;
+			stroke: currentColor;
+			stroke-linecap: round;
+			stroke-width: 2;
+			transition:
+				opacity 0.2s,
+				rotate 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+				scale 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+		}
+
+		/* open, the sliders turn away into the cross that closes them */
+		& .close,
+		&.on .sliders {
+			opacity: 0;
+			rotate: 90deg;
+			scale: 0.5;
+		}
+
+		& .close {
+			rotate: -90deg;
+		}
+
+		&.on .close {
+			opacity: 1;
+			rotate: 0deg;
+			scale: 1;
+		}
+
+		&:hover,
+		&.on {
+			background: var(--field);
+			color: var(--ink);
+		}
+
+		/* an option's set while they're folded away */
+		&.set:not(.on)::after {
+			background: var(--accent);
+			block-size: 0.375rem;
+			border-radius: 50%;
+			content: "";
+			inline-size: 0.375rem;
+			inset: 0.125rem 0.125rem auto auto;
+			position: absolute;
+		}
+	}
+
+	.state + .options {
+		margin-inline-start: 0;
+	}
+
+	.link-main {
+		display: grid;
+
+		& input + .help {
+			margin-block-start: 0.375rem;
+		}
+	}
+
+	/* folded, nothing at all: no height, and no space above it */
+	.link-more {
+		display: grid;
+		grid-template-rows: 0fr;
+		opacity: 0;
+		transition:
+			grid-template-rows 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+			padding-block-start 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+			opacity 0.2s;
+
+		&.open {
+			grid-template-rows: 1fr;
+			opacity: 1;
+			padding-block-start: 0.375rem;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			transition: none;
+		}
+	}
+
+	.link-options {
+		border-inline-start: 2px solid var(--line);
+		display: grid;
+		gap: 0.5rem;
+		min-block-size: 0;
+		/* clipped while it eases open, but not its fields' focus rings */
+		overflow: clip;
+		overflow-clip-margin: 0.25rem;
+		padding-inline-start: 0.75rem;
+	}
+
+	.rels {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.75rem;
+	}
+
+	input.wrong {
+		border-color: var(--danger);
+
+		&:focus-visible {
+			border-color: var(--danger);
+			outline-color: color-mix(in srgb, var(--danger) 18%, transparent);
+		}
+	}
+
+	.help.bad {
+		color: var(--danger);
 	}
 
 	.results,
