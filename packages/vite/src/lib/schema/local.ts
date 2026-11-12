@@ -4,6 +4,7 @@ import { validateSchema, type SchemaLike } from "@storyblok/schema"
 import path from "node:path"
 import { plugin_types } from "./plugins.js"
 import { in_scope, owner_tag, type Scope } from "./scope.js"
+import { schema_module } from "./strip.js"
 
 /**
  * A space's schema defined in code with `@storyblok/schema` (`defineSchema`, `defineBlock`,
@@ -143,9 +144,9 @@ export function to_components(schema: LocalSchema): Array<Component> {
 
 /**
  * A block component's `<script module>`, where it can export its `block()`, so an entry can
- * import or glob `.svelte` files. The rest of the component is left out: its markup and instance
- * script may import what only the app can resolve. The script is served as `?schema&lang.ts`,
- * the way Vue serves its SFC blocks, so Vite strips the TypeScript.
+ * import or glob `.svelte` files. Only `schema` and what it uses are served: the rest of the
+ * component, the rest of that script too, may import what only the app can resolve. The script
+ * is served as `?schema&lang.ts`, the way Vue serves its SFC blocks, so Vite strips the TypeScript.
  */
 const svelte_module: Plugin = {
 	name: "storyloco-schema-svelte",
@@ -154,13 +155,7 @@ const svelte_module: Plugin = {
 		if (!file.endsWith(".svelte")) return null
 		if (query !== "schema&lang.ts")
 			return `export * from ${JSON.stringify(`${file}?schema&lang.ts`)}`
-		const { parse } = await import("svelte/compiler")
-		const source = await readFile(file, "utf8")
-		const { module } = parse(source, { modern: true })
-		const { start, end } = (module?.content as unknown as { start: number; end: number }) ?? {}
-		if (!module) return ""
-		// Blank what precedes the script, newlines kept, so error positions are the file's own
-		return source.slice(0, start).replace(/[^\n]/g, " ") + source.slice(start, end)
+		return schema_module(await readFile(file, "utf8"))
 	},
 }
 
