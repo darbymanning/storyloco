@@ -750,6 +750,9 @@ CLI's `schema push` on a plain-data copy of your schema, since that CLI can't lo
 files or `import.meta.glob`; `check --remote` compares the same copy. Both the short helpers and
 existing `@storyblok/schema` definitions are compatible.
 
+For a changed field the Storyblok CLI offers to scaffold migrations, and waits for an answer.
+Without a terminal to answer at, as in CI, the push goes ahead without them.
+
 **A space shared with another site:**
 
 When two sites keep their components in one space, each schema owns its own folders. Export

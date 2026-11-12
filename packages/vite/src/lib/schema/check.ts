@@ -144,6 +144,9 @@ export async function push_schema(
 	if (options.dry_run) args.push("--dry-run")
 	if (options.region) args.push("--region", options.region)
 	if (!local.scope) {
+		// With no terminal to answer its prompt (offering migration scaffolds for a changed field),
+		// the CLI exits cleanly without pushing
+		if (!process.stdin.isTTY) args.push("--no-migrations")
 		await run(args, { cwd: root, env })
 		return local.components.length
 	}
