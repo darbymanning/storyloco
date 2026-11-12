@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { isHttpError } from "@sveltejs/kit"
-import { handle_error, href, StoryblokClient } from "./storyblok.svelte.js"
+import { handle_error, href, link_attrs, StoryblokClient } from "./storyblok.svelte.js"
 
 /** The HttpError `handle_error` throws, so its status and body can be checked */
 function thrown(fn: () => void) {
@@ -115,5 +115,35 @@ describe("href", () => {
 		expect(href({ linktype: "asset", url: "https://a.storyblok.com/f/1/doc.pdf" })).toBe(
 			"https://a.storyblok.com/f/1/doc.pdf"
 		)
+	})
+})
+
+describe("link_attrs", () => {
+	test("a link's href, with the editor's target and rel", () => {
+		expect(
+			link_attrs({
+				linktype: "url",
+				url: "https://example.com",
+				target: "_blank",
+				rel: "nofollow noopener",
+			})
+		).toEqual({ href: "https://example.com", target: "_blank", rel: "nofollow noopener" })
+		expect(link_attrs({ linktype: "story", cached_url: "about" })).toEqual({ href: "/about" })
+	})
+
+	test("a link that opens a new window is noopener", () => {
+		expect(link_attrs({ url: "https://example.com", target: "_new" }).rel).toBe("noopener")
+		expect(link_attrs({ url: "https://example.com", target: "_blank", rel: "nofollow" }).rel).toBe(
+			"noopener nofollow"
+		)
+		expect(
+			link_attrs({ url: "https://example.com", target: "_blank", rel: "noreferrer" }).rel
+		).toBe("noreferrer")
+		expect(link_attrs({ url: "https://example.com", target: "_self" }).rel).toBeUndefined()
+	})
+
+	test("a field that links nowhere has no attributes", () => {
+		expect(link_attrs(undefined)).toEqual({})
+		expect(link_attrs({ linktype: "url", url: "", target: null, rel: null })).toEqual({})
 	})
 })
