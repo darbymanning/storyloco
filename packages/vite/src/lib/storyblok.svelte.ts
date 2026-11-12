@@ -349,6 +349,8 @@ interface Link {
 	/** The link plugin's query or hash after a story's path, e.g. `?tab=specs` */
 	suffix?: string | null
 	email?: string | null
+	target?: string | null
+	rel?: string | null
 	// The index signature stops TypeScript rejecting the generated `story` as a weak type
 	story?: { url?: string; [key: string]: unknown }
 }
@@ -371,6 +373,20 @@ export function href(link?: Link): string | undefined {
 	const anchor = link.anchor ? `#${link.anchor.replace(/^#/, "")}` : ""
 	// a suffix belongs after a path: alone, it'd send the visitor back to the page they're on
 	return path ? `/${path.replace(/^\/+/, "")}${link.suffix ?? ""}${anchor}` : anchor || undefined
+}
+
+/**
+ * A link field's value as the attributes of its `<a>`, to spread: `<a {...link_attrs(link)}>`.
+ * `href` is as `href()` resolves it; `target` and `rel` are the editor's own. A link that opens
+ * a new window is `noopener` unless its `rel` already cuts the opener off, since only `_blank`
+ * gets that from the browser and the page it opens could otherwise navigate this one.
+ */
+export function link_attrs(link?: Link): { href?: string; target?: string; rel?: string } {
+	const target = link?.target || undefined
+	const rel = link?.rel || undefined
+	const opens = !!target && !["_self", "_parent", "_top"].includes(target)
+	const safe = /\bno(opener|referrer)\b/.test(rel ?? "")
+	return { href: href(link), target, rel: opens && !safe ? `noopener ${rel ?? ""}`.trim() : rel }
 }
 
 /**
