@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { strip_schema } from "./strip.js"
+import { schema_module, strip_schema } from "./strip.js"
 
 const component = (module: string, instance = "let { blok } = $props()") =>
 	`<script module lang="ts">\n${module}\n</script>\n\n<script lang="ts">\n${instance}\n</script>\n\n<h1>{blok.title}</h1>\n`
@@ -94,5 +94,40 @@ describe("strip_schema", () => {
 			`\tlet { blok }: Props<typeof schema> = $props()`
 		)
 		expect(await strip_schema(source)).not.toBeNull()
+	})
+})
+
+describe("schema_module", () => {
+	test("keeps the schema and what it uses, transitively, and nothing the app alone resolves", async () => {
+		const source = component(
+			[
+				`\timport { block, option, text, type Props } from "storyloco/schema"`,
+				`\timport { page } from "$app/state"`,
+				`\timport type { Item } from "./types.ts"`,
+				`\timport { names, unrelated } from "./shared.ts"`,
+				`\tconst choices = names.map((value) => ({ name: value, value }))`,
+				`\tlet count = 0`,
+				`\tconsole.log(page.url)`,
+				`\texport const schema = block("list", { title: text(), kind: option({ options: choices }) })`,
+				`\texport function load(item: Item) { return page.url + item }`,
+			].join("\n")
+		)
+		const module = await schema_module(source)
+		expect(module).toContain("export const schema")
+		expect(module).toContain("const choices")
+		expect(module).toMatch(/import \{\s*names,\s+\} from "\.\/shared\.ts"/)
+		expect(module).toMatch(/import \{ block, option, text,\s+\} from "storyloco\/schema"/)
+		expect(module).not.toContain("$app/state")
+		expect(module).not.toContain("./types.ts")
+		expect(module).not.toContain("count")
+		expect(module).not.toContain("console.log")
+		expect(module).not.toContain("function load")
+		expect(module).not.toContain("<h1>")
+		// positions are the file's own, up to the end of the module script
+		expect(module.indexOf("export const schema")).toBe(source.indexOf("export const schema"))
+	})
+
+	test("is empty for a component without a module script", async () => {
+		expect(await schema_module("<h1>hi</h1>")).toBe("")
 	})
 })

@@ -679,8 +679,9 @@ export default schema({
 - The schema stays out of the app: before Svelte compiles a component, the plugin takes out its
   `export const schema` and the imports only that used, so `@storyblok/schema` never reaches the
   bundle. Line numbers are kept. A component that uses `schema` at runtime keeps it.
-- Only the module script is read for the schema, so the component's markup and instance script
-  can import anything the app can. `$lib` and your Vite aliases resolve. Dev regenerates types
+- Only `schema` and what it uses are read from the module script, so the rest of the component,
+  the rest of that script included, can import anything the app can, `$app/state` too. `$lib`
+  and your Vite aliases resolve. Dev regenerates types
   when a block file changes, is added, or is removed.
 - The object form and the upstream `block({ name, fields: [...] })` form mix freely.
 - `tab(name, fields)` is a tab and the fields in it, to spread into the block:

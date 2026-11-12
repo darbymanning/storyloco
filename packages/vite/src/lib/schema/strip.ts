@@ -166,3 +166,65 @@ export async function strip_schema(source: string): Promise<string | null> {
 
 	return stripped
 }
+
+/** The names a top-level statement of a script declares */
+function top_level(node: Node): Set<string> {
+	const names = new Set<string>()
+	const inner = (node.type.startsWith("Export") ? node.declaration : node) as Node | null
+	if (!inner) return names
+	if (inner.type === "VariableDeclaration")
+		for (const declarator of inner.declarations as Array<Node>) bound(declarator.id, names)
+	else if (inner.id) bound(inner.id, names)
+	return names
+}
+
+/**
+ * A component's `<script module>` with only its `export const schema` and what that uses: the
+ * imports and declarations it names, and theirs in turn. The rest of the script may need the app,
+ * as `$app/state` or a component does, and the schema entry runs it outside one. Everything else
+ * in the file is blanked, newlines kept, so error positions are the file's own.
+ */
+export async function schema_module(source: string): Promise<string> {
+	const { parse } = await import("svelte/compiler")
+	const root = parse(source, { modern: true })
+	const module = root.module?.content as unknown as (Node & { body: Array<Node> }) | undefined
+	if (!module) return ""
+	let out = blank(source.slice(0, module.end), 0, module.start)
+	const declaration = module.body.find((node) => top_level(node).has("schema"))
+	if (!declaration) return out
+
+	const used = names_used({ module: declaration }, [])
+	const kept = new Set([declaration])
+	for (let grew = true; grew;) {
+		grew = false
+		for (const node of module.body) {
+			if (kept.has(node) || node.type === "ImportDeclaration") continue
+			if (![...top_level(node)].some((name) => used.has(name))) continue
+			kept.add(node)
+			for (const name of names_used({ module: node }, [])) used.add(name)
+			grew = true
+		}
+	}
+
+	for (const node of module.body) {
+		if (kept.has(node)) continue
+		if (node.type !== "ImportDeclaration") {
+			out = blank(out, node.start, node.end)
+			continue
+		}
+		const specifiers = node.specifiers as Array<Specifier>
+		const unused =
+			node.importKind === "type"
+				? specifiers
+				: specifiers.filter((s) => s.importKind === "type" || !used.has(s.local.name))
+		if (unused.length === specifiers.length) {
+			out = blank(out, node.start, node.end)
+			continue
+		}
+		for (const specifier of unused) {
+			const comma = out.slice(specifier.end).match(/^\s*,/)
+			out = blank(out, specifier.start, specifier.end + (comma?.[0].length ?? 0))
+		}
+	}
+	return out
+}
