@@ -284,6 +284,27 @@ export default schema({ blocks: { hero: block("hero", { title: text() }) } })`,
 		})
 	})
 
+	test("an unscoped push never asks without a terminal to answer", async () => {
+		await project(
+			`export default schema({ blocks: { hero: block("hero", { title: text() }) } })`,
+			async (root) => {
+				const tty = process.stdin.isTTY
+				const given: Array<Array<string>> = []
+				const run = async (args: Array<string>) => (given.push(args), "")
+				try {
+					process.stdin.isTTY = false
+					await push_schema({ root, env, space: "1" }, run)
+					process.stdin.isTTY = true
+					await push_schema({ root, env, space: "1" }, run)
+				} finally {
+					process.stdin.isTTY = tty
+				}
+				expect(given[0]).toContain("--no-migrations")
+				expect(given[1]).not.toContain("--no-migrations")
+			}
+		)
+	})
+
 	test("push --delete needs a scope", async () => {
 		await project(
 			`export default schema({ blocks: { hero: block("hero", { title: text() }) } })`,
