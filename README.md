@@ -683,6 +683,10 @@ export default schema({
   can import anything the app can. `$lib` and your Vite aliases resolve. Dev regenerates types
   when a block file changes, is added, or is removed.
 - The object form and the upstream `block({ name, fields: [...] })` form mix freely.
+- `tab(name, fields)` is a tab and the fields in it, to spread into the block:
+  `...tab('SEO', { seo: seo(), canonical: text() })`. The tab lists them in that order and is keyed
+  `tab_seo`, so there's no `tab-<uuid>` key or `keys` list to keep. `tab({ display_name, keys })`
+  still defines one by hand.
 
 **Migrate existing GUI models:**
 

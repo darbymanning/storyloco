@@ -103,8 +103,32 @@ export const multiasset = of("multiasset")
 export const multilink = of("multilink")
 export const table = of("table")
 export const section = of("section")
-export const tab = of("tab")
 export const custom = of("custom")
+
+/**
+ * A `tab` field. Given a name and the fields in it, it's the tab and those fields together, to
+ * spread into a block: the tab shows them in this order, and is keyed `tab_<name>`.
+ *
+ * @example
+ * ...tab("SEO", { seo: seo(), canonical: text() })
+ * "tab-1d1f01a5": tab({ display_name: "SEO", keys: ["seo"] })
+ */
+export function tab<const N extends string, const F extends Record<string, FieldInput>>(
+	name: N,
+	fields: F
+): F & Record<`tab_${string}`, { type: "tab"; display_name: N; keys: Array<keyof F & string> }>
+export function tab<const O extends Options<"tab">>(options?: O): O & { type: "tab" }
+export function tab(input?: string | object, fields: Record<string, FieldInput> = {}) {
+	if (typeof input !== "string") return { ...input, type: "tab" }
+	const slug = input
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "_")
+		.replace(/^_|_$/g, "")
+	return {
+		...fields,
+		[`tab_${slug}`]: { type: "tab", display_name: input, keys: Object.keys(fields) },
+	}
+}
 
 const plugin =
 	<P extends keyof typeof plugin_types>(field_type: P) =>
