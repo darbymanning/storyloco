@@ -184,6 +184,7 @@
 		class="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
 		bind:value={content.url}
 		oninput={manager.update}
+		onblur={manager.complete_url}
 		placeholder="https://example.com"
 		type="url"
 	/>

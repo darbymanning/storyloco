@@ -5,7 +5,7 @@ import type { HubspotForm } from '../../hubspot_form/types.js'
 import { HubspotForms } from '../../hubspot_form/src/forms.svelte.js'
 import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon, ClipboardListIcon } from '@lucide/svelte'
 import type { Asset } from '../../asset/types.js'
-import { link_types_of, mailto, plugin_link } from '../../vite/src/lib/link.js'
+import { link_types_of, mailto, plugin_link, with_protocol } from '../../vite/src/lib/link.js'
 
 type Plugin = FieldPluginResponse<Link | null>
 
@@ -223,6 +223,14 @@ export class LinkManager {
 			this.content.url = mailto(email, { subject, body, cc, bcc })
 		}
 
+		this.update()
+	}
+
+	complete_url = () => {
+		if (this.content.type !== 'external' || !this.content.url) return
+		const url = with_protocol(this.content.url)
+		if (url === this.content.url) return
+		this.content.url = url
 		this.update()
 	}
 
