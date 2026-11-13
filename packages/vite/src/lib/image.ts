@@ -144,8 +144,15 @@ function attrs(asset?: Asset, attrs: HTMLImgAttributes = {}, options: Options = 
 	if (!has_image(asset)) return undefined
 
 	const asset_dims = get_dimensions(asset)
-	const width = (attrs.width ? Number(attrs.width) : undefined) ?? asset_dims.width
-	const height = (attrs.height ? Number(attrs.height) : undefined) ?? asset_dims.height
+	const given_width = attrs.width ? Number(attrs.width) : undefined
+	const given_height = attrs.height ? Number(attrs.height) : undefined
+	const ratio =
+		asset_dims.width && asset_dims.height ? asset_dims.height / asset_dims.width : undefined
+	// One side given: the other follows the asset's proportions, not its full size, which would crop
+	const width =
+		given_width ?? (given_height && ratio ? Math.round(given_height / ratio) : asset_dims.width)
+	const height =
+		given_height ?? (given_width ? ratio && Math.round(given_width * ratio) : asset_dims.height)
 	const position = focus_to_position_pc(asset)
 
 	let style = ""

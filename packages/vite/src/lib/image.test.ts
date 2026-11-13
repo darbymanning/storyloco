@@ -26,6 +26,17 @@ describe("image", () => {
 		expect(attrs.src).toBe(`${photo}/m/272x152/smart/filters:quality(85)`)
 	})
 
+	test("one side given keeps the asset's proportions", () => {
+		const wide = image({ filename: photo }, { width: 600 })!
+		expect(wide).toMatchObject({ width: 600, height: 400 })
+		expect(wide.src).toBe(`${photo}/m/600x400/smart/filters:quality(85)`)
+		expect(wide.srcset).toContain(`${photo}/m/100x66/smart/filters:quality(85) 100w`)
+
+		const tall = image({ filename: photo }, { height: 400 })!
+		expect(tall).toMatchObject({ width: 600, height: 400 })
+		expect(tall.src).toBe(`${photo}/m/600x400/smart/filters:quality(85)`)
+	})
+
 	test("the focal point centres the crop and positions it", () => {
 		const attrs = image({ filename: photo, focus: "1200x400:1300x500" })!
 		expect(attrs.src).toContain("filters:quality(85):focal(1200x400:1300x500)")
