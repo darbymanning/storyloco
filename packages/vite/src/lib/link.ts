@@ -89,6 +89,13 @@ export function link_types_of(option: unknown): Array<LinkType> | null {
 export const looks_like_email = (value: string) =>
 	/^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(value.trim())
 
+/**
+ * A URL as an editor may type it, with `https://` put before a bare domain: `example.com/page`
+ * alone is a path, and would link within the site. Anything else is returned as it is.
+ */
+export const with_protocol = (url: string) =>
+	/^[\w-]+(\.[\w-]+)+([/:?#]|$)/.test(url.trim()) ? `https://${url.trim()}` : url
+
 /** A `mailto:` link, with whichever of its parts are filled in; the body's line breaks as CRLF (RFC 6068) */
 export function mailto(
 	email: string,

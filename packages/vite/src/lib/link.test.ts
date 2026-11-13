@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { link_types_of, looks_like_email, mailto, plugin_link } from "./link.js"
+import { link_types_of, looks_like_email, mailto, plugin_link, with_protocol } from "./link.js"
 
 describe("plugin_link", () => {
 	const native = { fieldtype: "multilink", id: "", url: "", cached_url: "" }
@@ -97,5 +97,32 @@ describe("mailto", () => {
 		expect(
 			mailto("a@b.test", { subject: "Hi & bye", body: "One\nTwo", cc: "", bcc: "c@d.test" })
 		).toBe("mailto:a@b.test?subject=Hi%20%26%20bye&body=One%0D%0ATwo&bcc=c%40d.test")
+	})
+})
+
+describe("with_protocol", () => {
+	test("puts https:// before a bare domain", () => {
+		expect(with_protocol("example.com")).toBe("https://example.com")
+		expect(with_protocol(" www.example.co.uk/a/b?c=1#d ")).toBe(
+			"https://www.example.co.uk/a/b?c=1#d"
+		)
+		expect(with_protocol("example.com:8080")).toBe("https://example.com:8080")
+	})
+
+	test("leaves everything else as typed", () => {
+		for (const url of [
+			"https://example.com",
+			"http://example.com",
+			"//example.com",
+			"/about",
+			"about/team",
+			"#top",
+			"?tab=specs",
+			"mailto:name@example.com",
+			"tel:+441513472313",
+			"name@example.com",
+			"",
+		])
+			expect(with_protocol(url)).toBe(url)
 	})
 })
