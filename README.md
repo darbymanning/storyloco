@@ -437,7 +437,7 @@ caret showing, and saves to the same story take turns, so no one's change is los
 
 Visitors never see any of it. On the live site, press **⌘⇧E** (Ctrl+Shift+E), or go to `/admin` or `/a`
 (where the site has no page of its own) to sign in, landing in edit mode; once signed in, the badge shows on every page, and ⌘⇧E or **E** turns
-edit mode on and off. In development the badge is always there.
+edit mode on and off. It starts off, and each browser remembers how it was left. In development the badge is always there.
 
 In edit mode, a click that puts a link's or a button's text in place to type in doesn't reach the
 site's own click handler, and while it's being typed in, the pointer leaving doesn't reach whatever

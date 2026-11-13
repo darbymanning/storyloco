@@ -3387,6 +3387,8 @@
 
 		& h2 {
 			font-size: 0.8125rem;
+			/* a page's long name doesn't stretch the bar across the window */
+			max-inline-size: 18rem;
 			min-inline-size: 0;
 			overflow: hidden;
 			text-overflow: ellipsis;
