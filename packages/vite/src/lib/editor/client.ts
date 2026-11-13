@@ -177,12 +177,15 @@ S.navigations ??= new Set()
 S.pending ??= 0
 S.problem ??= null
 if (S.editing === undefined) {
-	/** Edit mode: on, the page's content can be selected and changed; off, it behaves as a visitor sees it */
-	S.editing = true
+	/**
+	 * Edit mode: on, the page's content can be selected and changed; off, it behaves as a visitor
+	 * sees it, which is how it starts until this browser has turned it on
+	 */
+	S.editing = false
 	try {
-		S.editing = typeof localStorage === "undefined" || localStorage.getItem(EDITING) !== "off"
+		S.editing = typeof localStorage !== "undefined" && localStorage.getItem(EDITING) === "on"
 	} catch {
-		// storage blocked: start in edit mode
+		// storage blocked: it starts off
 	}
 }
 if (S.settings_open === undefined) {

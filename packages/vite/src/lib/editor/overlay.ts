@@ -2503,7 +2503,13 @@ function follow_link(link: HTMLAnchorElement) {
 	const url = new URL(link.href, location.href)
 	if (link.target === "_blank") return void open(url, "_blank", "noopener")
 	if (url.origin !== location.origin || link.hasAttribute("download")) return location.assign(url)
-	void kit().goto(url.pathname + url.search + url.hash)
+	// SvelteKit 3's goto refuses a path that's no page of the site's, like a file it serves: a visitor's click loads it
+	void kit()
+		.goto(url.pathname + url.search + url.hash)
+		.catch((error) => {
+			if (!/navigation_route_missing/.test(`${error?.name} ${error?.message}`)) throw error
+			location.assign(url)
+		})
 }
 
 /** ⌥ or Alt held, which a click on a link follows: the pointer says so */
