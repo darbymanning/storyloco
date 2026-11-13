@@ -78,12 +78,14 @@
 			for (let el = under; el && el !== document.body; el = el.parentElement ?? undefined) {
 				const { position } = getComputedStyle(el)
 				if (position === "fixed" || position === "sticky") {
-					bottom = Math.max(bottom, el.getBoundingClientRect().bottom)
+					// one that reaches further down is the page itself held in place, not a header
+					const ends = el.getBoundingClientRect().bottom
+					if (ends <= innerHeight / 3) bottom = Math.max(bottom, ends)
 					break
 				}
 			}
 		}
-		return Math.min(bottom, innerHeight / 3)
+		return bottom
 	}
 
 	/** One place, always: the middle of the top of the window, below any header, whatever else is open */
@@ -765,9 +767,10 @@
 	/* as tall as the bar, edge to edge, so a name sliding away is cut off by the bar itself rather
 	   than a line's height in the middle of it */
 	.row .words {
-		--slot: 2.25rem;
+		/* named as the editor's own: a site's `@property --slot` would make a number of it */
+		--storyloco-slot: 2.25rem;
 
-		block-size: var(--slot);
+		block-size: var(--storyloco-slot);
 		flex: 1;
 		margin-block: -0.25rem;
 		min-inline-size: 0;
@@ -777,9 +780,9 @@
 	/* every name, each in a slot the bar's height, slid to the one that's pointed at */
 	.row .strip {
 		display: grid;
-		grid-auto-rows: var(--slot);
+		grid-auto-rows: var(--storyloco-slot);
 		transition: translate 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
-		translate: 0 calc(var(--at) * -1 * var(--slot));
+		translate: 0 calc(var(--at) * -1 * var(--storyloco-slot));
 
 		@media (prefers-reduced-motion: reduce) {
 			transition: none;
