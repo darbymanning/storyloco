@@ -1226,9 +1226,12 @@ function caret_at(x: number, y: number) {
  */
 async function edit_loose(event: PointerEvent) {
 	// the press's own mousedown moves the focus, to the block, so typing starts once it's let go
-	const released = new Promise<void>((done) => {
-		addEventListener("pointerup", () => done(), { once: true, capture: true })
-		setTimeout(done, 1000)
+	const released = new Promise<boolean>((done) => {
+		addEventListener("pointerup", () => done(true), { once: true, capture: true })
+		// a press that became a drag or a scroll, as one on a link can, isn't one to type in
+		for (const type of ["dragstart", "pointercancel"])
+			addEventListener(type, () => done(false), { once: true, capture: true })
+		setTimeout(() => done(true), 1000)
 	})
 	const caret = caret_at(event.clientX, event.clientY)
 	const text = caret?.node
@@ -1236,7 +1239,7 @@ async function edit_loose(event: PointerEvent) {
 	const parent = text.parentElement
 	// its own text, or a run of parts that is a field, is typed in where it is
 	if (text_child(parent) || wired.has(parent) || ours(parent)) return
-	if (parent.closest("a[href], [data-field], [data-rich]")) return
+	if (parent.closest("[data-field], [data-rich]")) return
 	const kept = text.data
 	const value = loose(kept)
 	const source = value ? await source_of(parent, value, text) : undefined
@@ -1244,8 +1247,7 @@ async function edit_loose(event: PointerEvent) {
 	const button = parent.closest("button")
 	if (source && button) claimed.add(button)
 	if (source && "uid" in source) stand_in(parent, source)
-	await released
-	if (!source || !active || !text.isConnected || text.data !== kept) return
+	if (!(await released) || !source || !active || !text.isConnected || text.data !== kept) return
 	const stand = document.createElement("span")
 	stand.textContent = kept
 	text.before(stand)
@@ -2486,7 +2488,8 @@ function over(event: PointerEvent) {
 
 	// a held key means press what's there, as it follows a link
 	const held = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
-	if (event.type === "pointerdown" && !held && !wired.has(el as HTMLElement))
+	// only the main button: another opens a link's menu, or the link in a new tab
+	if (event.type === "pointerdown" && !event.button && !held && !wired.has(el as HTMLElement))
 		loosening = edit_loose(event)
 	const node = holder(el)
 	const run = run_at(el)
