@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Input, Label, Textarea, Button } from 'shared'
+	import { Input, Label, Textarea, Button, Switch } from 'shared'
 	import { SEOManager } from './app.svelte.js'
 	import { AssetManager } from '../../asset/src/app.svelte.js'
 
@@ -118,6 +118,51 @@
 		</Button>
 		<small class="text-muted-foreground text-xs">
 			The image most likely to be displayed when the object is shared on a social network.
+		</small>
+	</div>
+
+	<div class="grid gap-2">
+		<fieldset class="flex gap-2 items-center">
+			<Switch
+				bind:checked={
+					() => seo.content.noindex ?? false, (on) => ((seo.content.noindex = on), seo.update())
+				}
+				id="noindex"
+			/>
+			<Label for="noindex">Hide from search engines</Label>
+		</fieldset>
+		<small class="text-muted-foreground text-xs">
+			Asks search engines not to list this page (noindex). Anyone with the link can still open it.
+		</small>
+	</div>
+
+	<div class="grid gap-2">
+		<fieldset class="flex gap-2 items-center">
+			<Switch
+				bind:checked={
+					() => seo.content.nofollow ?? false, (on) => ((seo.content.nofollow = on), seo.update())
+				}
+				id="nofollow"
+			/>
+			<Label for="nofollow">Don't follow links</Label>
+		</fieldset>
+		<small class="text-muted-foreground text-xs">
+			Asks search engines not to follow the links on this page (nofollow).
+		</small>
+	</div>
+
+	<div class="grid gap-2">
+		<Label for="canonical">Canonical URL</Label>
+		<Input
+			bind:value={seo.content.canonical}
+			oninput={seo.update}
+			id="canonical"
+			type="url"
+			placeholder="https://"
+		/>
+		<small class="text-muted-foreground text-xs">
+			Only when this page repeats another: the address search engines should list instead. Leave
+			empty to use this page's own.
 		</small>
 	</div>
 </div>

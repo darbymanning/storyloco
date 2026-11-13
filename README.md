@@ -11,7 +11,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **📝 Heading** - Simple heading editor with level selection (H1-H6)
 - **🎨 Theme** - Color theme selector with visual previews
 - **🔗 Link** - Link editor with support for internal, external, email, and asset links
-- **🔍 SEO** - SEO metadata editor with support for title, description, OG tags, and Twitter cards
+- **🔍 SEO** - SEO metadata editor with support for title, description, OG tags, Twitter cards, noindex, nofollow and a canonical URL
 - **🏗️ Plans** - Floor plan manager with drag-and-drop sorting for types, floors, dimensions, and rooms
 - **📝 Input** - Comprehensive form input field with support for all HTML input types, checkboxes, radio buttons, selects, and textareas
 - **⏰ Time** - Simple time input field with step control
