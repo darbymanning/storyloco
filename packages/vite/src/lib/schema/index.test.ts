@@ -55,3 +55,10 @@ test("tab(name, fields) is the tab and its fields, in the order it lists them", 
 	})
 	expect(hero.fields[4]).toMatchObject({ type: "tab", display_name: "Old", keys: ["title"] })
 })
+
+test("a plugin field always has an options array, which the field plugin needs to load", async () => {
+	const { heading, link } = await import("./index.js")
+	expect(heading().options).toEqual([])
+	const options = [{ name: "a", value: "b" }]
+	expect(link({ options }).options).toEqual(options)
+})

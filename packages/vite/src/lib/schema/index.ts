@@ -133,7 +133,11 @@ export function tab(input?: string | object, fields: Record<string, FieldInput> 
 const plugin =
 	<P extends keyof typeof plugin_types>(field_type: P) =>
 	<const O extends Omit<Options<"custom">, "field_type">>(options?: O) =>
-		({ ...options, type: "custom", field_type }) as O & { type: "custom"; field_type: P }
+		// @storyblok/field-plugin ignores Storyblok's "loaded" message unless the schema has an options array
+		({ options: [], ...options, type: "custom", field_type }) as O & {
+			type: "custom"
+			field_type: P
+		}
 
 /** Storyloco's field plugins, as `custom` fields whose values the generated types know. */
 export const mux = plugin("uiloco-mux")
