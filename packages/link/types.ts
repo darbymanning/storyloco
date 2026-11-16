@@ -9,7 +9,8 @@ interface BaseLink {
 /**
  * In the order the field offers them, as Storyblok's own link field does; a field's `link_types`
  * option can narrow and reorder them. `form` shows only with HubSpot connected
- * (`MOXY_HUBSPOT_SECRET_ID`), `asset` only with R2.
+ * (`MOXY_HUBSPOT_SECRET_ID`). `asset` picks from R2 where it's connected, or else from
+ * Storyblok's own assets; a field's `asset_types` option (`pdf`) keeps it to those files.
  */
 export const link_types = ['internal', 'external', 'email', 'asset', 'form'] as const
 export const target_options = ['_self', '_blank', '_parent', '_top', '_new'] as const
@@ -25,9 +26,16 @@ export type LinkType = (typeof link_types)[number]
 export type Target = (typeof target_options)[number]
 export type Rel = (typeof rel_options)[number]
 
+/** A file from Storyblok's own assets, as much of it as the link keeps */
+export interface StoryblokFile {
+	id: number
+	filename: string
+	name?: string
+}
+
 export interface AssetLink extends BaseLink {
 	type: 'asset'
-	asset?: Asset
+	asset?: Asset | StoryblokFile
 	target?: Target
 }
 

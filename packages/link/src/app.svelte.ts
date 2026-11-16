@@ -1,11 +1,25 @@
 import { createFieldPlugin, type FieldPluginResponse } from '@storyblok/field-plugin'
 import type { ISbStories } from '@storyblok/js'
-import { link_types, type Link, type LinkType, type Rel, type Target } from '../types.js'
+import {
+	link_types,
+	type Link,
+	type LinkType,
+	type Rel,
+	type StoryblokFile,
+	type Target,
+} from '../types.js'
 import type { HubspotForm } from '../../hubspot_form/types.js'
 import { HubspotForms } from '../../hubspot_form/src/forms.svelte.js'
 import { LinkIcon, ExternalLinkIcon, MailIcon, ImageIcon, ClipboardListIcon } from '@lucide/svelte'
 import type { Asset } from '../../asset/types.js'
-import { link_types_of, mailto, plugin_link, with_protocol } from '../../vite/src/lib/link.js'
+import {
+	asset_allowed,
+	asset_types_of,
+	link_types_of,
+	mailto,
+	plugin_link,
+	with_protocol,
+} from '../../vite/src/lib/link.js'
 
 type Plugin = FieldPluginResponse<Link | null>
 
@@ -51,7 +65,7 @@ export class LinkManager {
 		this.plugin?.type === 'loaded' ? this.plugin.data.options.MOXY_HUBSPOT_SECRET_ID : undefined
 	)
 	// as the asset field reckons it set up: both R2 options filled in
-	#r2 = $derived.by(() => {
+	r2 = $derived.by(() => {
 		const options = this.plugin?.type === 'loaded' ? this.plugin.data.options : {}
 		return !!options.MOXY_R2_SECRET_ID && !!options.R2_BUCKET
 	})
@@ -59,15 +73,23 @@ export class LinkManager {
 	#allowed = $derived.by(() =>
 		link_types_of(this.plugin?.type === 'loaded' ? this.plugin.data.options.link_types : undefined)
 	)
+	// the files an asset link may be, by the field's `asset_types` option, e.g. `pdf`
+	asset_types = $derived(
+		asset_types_of(
+			this.plugin?.type === 'loaded' ? this.plugin.data.options.asset_types : undefined
+		)
+	)
+	// a file picked that the field doesn't take: said under the field until another is picked
+	asset_refused = $state(false)
+
 	/**
 	 * The types this field offers: the ones its `link_types` option names, in that order, or else
-	 * all of them; asset and form links only where R2 and HubSpot are connected. A field set to
+	 * all of them; form links only where HubSpot is connected. A field set to
 	 * nothing it can serve offers what it can, and a link saved as a type it no longer offers still
 	 * shows as what it is.
 	 */
 	types = $derived.by(() => {
-		const servable = (type: LinkType) =>
-			type === 'asset' ? this.#r2 : type === 'form' ? !!this.#hubspot_secret : true
+		const servable = (type: LinkType) => type !== 'form' || !!this.#hubspot_secret
 		const offered = (this.#allowed ?? link_types).filter(servable)
 		const types = offered.length ? offered : link_types.filter(servable)
 		return types.includes(this.content.type) ? types : [...types, this.content.type]
@@ -139,6 +161,7 @@ export class LinkManager {
 	// action methods
 	clear = () => {
 		delete this.content.url
+		this.asset_refused = false
 
 		switch (this.content.type) {
 			case 'internal':
@@ -234,11 +257,15 @@ export class LinkManager {
 		this.update()
 	}
 
-	select_asset = async (asset: Asset) => {
+	select_asset = async (asset: Asset | StoryblokFile) => {
 		if (this.content.type !== 'asset') return
+		this.asset_refused = !asset_allowed(asset.filename, this.asset_types)
+		if (this.asset_refused) return
 
 		this.content.url = asset.filename
-		this.content.asset = asset
+		// Storyblok's own picker hands over more than a link needs
+		this.content.asset =
+			'_data' in asset ? asset : { id: asset.id, filename: asset.filename, name: asset.name }
 		this.update()
 	}
 
