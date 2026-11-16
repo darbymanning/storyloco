@@ -16,6 +16,11 @@ export class HeadingManager {
 	private initialize_plugin() {
 		createFieldPlugin<Heading>({
 			validateContent: (content) => {
+				// a field that was plain text before it was a heading still holds a string
+				if (typeof content === 'string') {
+					return { content: { text: content, level: null, tag: null } }
+				}
+
 				if (typeof content !== 'object' || content === null) {
 					return { content: { text: '', level: null, tag: null } }
 				}
