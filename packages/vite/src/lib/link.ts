@@ -81,6 +81,28 @@ export function link_types_of(option: unknown): Array<LinkType> | null {
 }
 
 /**
+ * The file extensions a link field's `asset_types` option allows an asset link: `pdf`, or
+ * `pdf, docx`, any case, with or without their dots. None named, and any file will do.
+ */
+export function asset_types_of(option: unknown): Array<string> {
+	if (typeof option !== "string") return []
+	return [
+		...new Set(
+			option
+				.toLowerCase()
+				.split(/[\s,.]+/)
+				.filter(Boolean)
+		),
+	]
+}
+
+/** Whether a file, by its URL's extension, is one of those types */
+export function asset_allowed(filename: string, types: Array<string>) {
+	const extension = filename.split(/[?#]/)[0].split(".").pop()?.toLowerCase() ?? ""
+	return !types.length || types.includes(extension)
+}
+
+/**
  * Whether an address looks deliverable: something, one `@`, then a domain with a dot in it and
  * no spaces. Loose on purpose: `+` tags, subdomains, long or unicode TLDs and apostrophes all
  * pass, as they're valid, and the mail server is the real judge. It only catches what's plainly

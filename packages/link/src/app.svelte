@@ -43,6 +43,12 @@
 	const actions = {
 		async open_picker(): Promise<void> {
 			if (!manager.plugin) return
+			// without R2, the file comes from Storyblok's own assets, in its own picker
+			if (!manager.r2) {
+				const asset = await manager.plugin.actions?.selectAsset()
+				if (asset) manager.select_asset(asset)
+				return
+			}
 			if (!manager.plugin.data?.isModalOpen) await manager.plugin.actions?.setModalOpen(true)
 		},
 
@@ -390,6 +396,12 @@
 						class="text-sm text-destructive animate-in fade-in-0 slide-in-from-top-1 duration-150"
 					>
 						That doesn’t look like an email address, e.g. name@example.com
+					</p>
+				{/if}
+				{#if manager.asset_refused && manager.content.type === 'asset'}
+					<p class="text-sm text-destructive animate-in fade-in-0 slide-in-from-top-1 duration-150">
+						This link only takes {manager.asset_types.map((type) => type.toUpperCase()).join(', ')}
+						files. Pick another.
 					</p>
 				{/if}
 				{#if picking && manager.content.type === 'internal' && manager.token}

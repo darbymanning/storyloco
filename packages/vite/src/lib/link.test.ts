@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { link_types_of, looks_like_email, mailto, plugin_link, with_protocol } from "./link.js"
+import {
+	asset_allowed,
+	asset_types_of,
+	link_types_of,
+	looks_like_email,
+	mailto,
+	plugin_link,
+	with_protocol,
+} from "./link.js"
 
 describe("plugin_link", () => {
 	const native = { fieldtype: "multilink", id: "", url: "", cached_url: "" }
@@ -124,5 +132,16 @@ describe("with_protocol", () => {
 			"",
 		])
 			expect(with_protocol(url)).toBe(url)
+	})
+})
+
+describe("asset_types_of", () => {
+	test("extensions, however they're written, and whether a file is one of them", () => {
+		expect(asset_types_of(".PDF, docx pdf")).toEqual(["pdf", "docx"])
+		expect(asset_types_of(undefined)).toEqual([])
+		const pdf = "https://a.storyblok.com/f/1/x/Case-Study.PDF?v=2"
+		expect(asset_allowed(pdf, ["pdf"])).toBe(true)
+		expect(asset_allowed("https://a.storyblok.com/f/1/x/photo.png", ["pdf"])).toBe(false)
+		expect(asset_allowed("https://a.storyblok.com/f/1/x/photo.png", [])).toBe(true)
 	})
 })

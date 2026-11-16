@@ -11,6 +11,10 @@
 		{
 			"name": "link_types",
 			"value": ""
+		},
+		{
+			"name": "asset_types",
+			"value": ""
 		}
 	]
 }
