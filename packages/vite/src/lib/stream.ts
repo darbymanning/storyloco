@@ -1,3 +1,6 @@
+import { createAttachmentKey } from "svelte/attachments"
+import type { HTMLVideoAttributes } from "svelte/elements"
+
 export interface StreamOptions {
 	/**
 	 * A background video that plays by itself: it starts once the page has finished loading.
@@ -81,3 +84,51 @@ export function stream(
 		teardown?.()
 	}
 }
+
+/** What `video` reads of a Mux field's value; `Video` from `storyloco/mux` is one */
+export interface Streamable {
+	m3u8_url?: string
+	poster?: string
+	autoplay?: boolean
+	muted?: boolean
+	loop?: boolean
+	playsinline?: boolean
+	controls?: boolean
+}
+
+const has_stream = <T extends Streamable>(video?: T | null): video is T & { m3u8_url: string } =>
+	!!video?.m3u8_url
+
+function attrs(video?: Streamable | null, attrs: HTMLVideoAttributes = {}) {
+	// a field left blank: nothing to spread
+	if (!has_stream(video)) return undefined
+
+	const autoplay = !!(attrs.autoplay ?? video.autoplay)
+	return {
+		poster: video.poster,
+		// a browser only starts a video by itself when it's silent
+		muted: video.muted || autoplay,
+		loop: video.loop,
+		playsinline: video.playsinline,
+		controls: video.controls,
+		// nothing of the video until play; `stream` fetches what an autoplaying one needs
+		preload: "none",
+		...attrs,
+		autoplay,
+		[createAttachmentKey()]: (element: HTMLVideoElement) =>
+			stream(element, video.m3u8_url, { autoplay }),
+	} as const
+}
+
+/**
+ * A `<video>`'s attributes for a Mux field, and the stream itself: the poster, and autoplay, muted,
+ * loop, controls and playsinline as the editor set them, any of them overridden by the second
+ * argument. Playing is `stream`'s, attached with the rest, so there's nothing to bind or clean up.
+ * Nothing for an empty field, so it spreads safely. `video.exists(field)` narrows to one with a
+ * stream.
+ *
+ * @example
+ * <video {...video(blok.video)}></video>
+ * <video {...video(blok.background, { autoplay: true, loop: true, controls: false })}></video>
+ */
+export const video = Object.assign(attrs, { exists: has_stream })

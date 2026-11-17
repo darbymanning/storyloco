@@ -32,6 +32,7 @@
 		"packages/vite/dist",
 		"packages/vite/dist-editor",
 		"packages/vite/src/lib/currency.ts",
+		"packages/vite/src/lib/stream.ts",
 		"!packages/vite/dist/**/*.test.*",
 		"packages/input/types.ts",
 		"packages/time/types.ts",

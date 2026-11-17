@@ -242,28 +242,30 @@ asset, resized by Storyblok's image service. Spread it:
 
 ### Play Mux Video
 
-`stream`, from `storyloco/mux`, plays a Mux field's HLS stream in a plain `<video>`:
+`video`, from `storyloco/mux`, is to a Mux field what `image` is to an asset: spread it on a
+`<video>` and it plays.
 
 ```svelte
 <script lang="ts">
-	import { stream } from 'storyloco/mux'
-
-	let { blok } = $props()
-	let video: HTMLVideoElement | undefined = $state()
-
-	$effect(() => {
-		if (video && blok.video?.m3u8_url)
-			return stream(video, blok.video.m3u8_url, { autoplay: blok.video.autoplay })
-	})
+	import { video } from 'storyloco/mux'
 </script>
 
-<video bind:this={video} poster={blok.video.poster} preload="none" controls playsinline></video>
+<video {...video(blok.video)}></video>
+<video {...video(blok.background, { autoplay: true, loop: true, controls: false })}></video>
 ```
 
-hls.js is only downloaded when a video needs it: as the video nears the screen, or after the
-page has loaded for an `autoplay` background video. Nothing of the video itself is fetched until
-someone presses play, playback buffers 10 seconds ahead, and no rendition bigger than the
-element is downloaded.
+- The poster, and autoplay, muted, loop, controls and playsinline as the editor set them. The
+  second argument overrides any of them, or adds a `class` and the like.
+- An autoplaying video is muted, since a browser won't start one with sound.
+- hls.js is only downloaded when a video needs it: as the video nears the screen, or once the
+  page has loaded for an autoplaying one.
+- Nothing of the video itself is fetched until someone presses play, playback buffers 10 seconds
+  ahead, and no rendition bigger than the element is downloaded.
+- Nothing for an empty field, so a field left blank spreads as nothing. `video.exists(field)`
+  narrows to one with a stream.
+
+`stream(element, url, { autoplay })` is the part that plays, for a `<video>` you set up
+yourself; it returns its own clean-up.
 
 ### Read Content on the Server
 

@@ -617,5 +617,5 @@ export type VimeoVideo = {
 	has_audio: boolean
 }
 
-// plays a `Video` in a `<video>`; built with the site's side of the package, in `packages/vite`
-export { stream, type StreamOptions } from '../vite/dist/stream.js'
+// plays a `Video` in a `<video>`; the site's side of the package, in `packages/vite`, builds it
+export { video, stream, type StreamOptions, type Streamable } from '../vite/src/lib/stream.js'
