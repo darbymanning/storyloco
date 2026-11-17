@@ -13,6 +13,9 @@ const logger = new Logger(name)
  * - Exact keys: 'foo' or '/foo' -> direct lookup
  * - Glob keys with '*' like '/foo/* /bar' -> single-segment wildcards
  *
+ * A key written as a full URL ('https://old.example/foo', or '//old.example/foo') only matches requests
+ * to that host, and wins over a plain path. 'www.' is ignored on both sides.
+ *
  * How wildcards are handled (via path-to-regexp translation):
  * - Source: '*' becomes ':wN([^/]+)' (captures one path segment per '*')
  * - Target: '*' becomes ':wN' (substitutes the corresponding capture)
@@ -37,6 +40,23 @@ function match_key(path: string): string {
 	return normalize_path(pathname).replace(/(.)\/+$/, "$1") + query
 }
 
+/** A hostname as hosts are compared: lower case, no port, no `www.`. */
+function bare_host(host: string): string {
+	return host
+		.toLowerCase()
+		.replace(/:\d+$/, "")
+		.replace(/^www\./, "")
+}
+
+/** Split a key into the host it's limited to ('' for any host) and its path. */
+function split_key(key: string): [host: string, path: string] {
+	const m = /^(?:https?:)?\/\/([^/?]+)(.*)$/i.exec(key)
+	return m ? [bare_host(m[1]), m[2]] : ["", key]
+}
+
+/** A host-limited key in the exact map. A space can't appear in a request's path, so it can't collide. */
+const host_key = (host: string, path: string) => `${host} ${path}`
+
 /** Absolute URL check (e.g. https://..., http://..., //cdn...) */
 function is_absolute_url(value: string): boolean {
 	return /^https?:\/\//i.test(value) || value.startsWith("//")
@@ -59,30 +79,42 @@ type Rules = {
 	/** Exact redirect lookups, keyed by match_key. */
 	exact: Map<string, string>
 	/** Precompiled wildcard rules. */
-	wildcards: Array<{ matcher: ReturnType<typeof match>; builder: ReturnType<typeof compile> }>
+	wildcards: Array<{
+		host: string
+		matcher: ReturnType<typeof match>
+		builder: ReturnType<typeof compile>
+	}>
 }
 
 function build_rules(redirects: Array<Redirect>): Rules {
 	const rules: Rules = { exact: new Map(), wildcards: [] }
 	for (const [key, value] of redirects) {
-		if (key.includes("*")) {
+		const [host, path] = split_key(key)
+		if (path.includes("*")) {
 			try {
 				rules.wildcards.push({
-					matcher: match(to_src_pattern(match_key(key)), { decode: decodeURIComponent, end: true }),
+					host,
+					matcher: match(to_src_pattern(match_key(path)), {
+						decode: decodeURIComponent,
+						end: true,
+					}),
 					builder: compile(to_dst_pattern(value), { encode: (x) => x }),
 				})
 			} catch (err) {
 				logger.warn(`Skipping redirect ${key} -> ${value}: ${err}`)
 			}
 		} else {
-			const existing = rules.exact.get(match_key(key))
+			const exact_key = host ? host_key(host, match_key(path)) : match_key(path)
+			const existing = rules.exact.get(exact_key)
 			if (existing !== undefined && existing !== value)
 				logger.warn(
 					`${key} -> ${value} replaces ${existing}: keys match with or without a trailing slash`
 				)
-			rules.exact.set(match_key(key), value)
+			rules.exact.set(exact_key, value)
 		}
 	}
+	// A rule for this host is tried before one for any host
+	rules.wildcards.sort((a, b) => Number(!a.host) - Number(!b.host))
 	return rules
 }
 
@@ -138,11 +170,19 @@ async function resolve_redirect(url: URL): Promise<string | null> {
 		const source = match_key(url.pathname + url.search)
 		const source_plain = match_key(url.pathname)
 
-		// Prefer exact including query, then plain path
-		let target = exact.get(source) ?? exact.get(source_plain) ?? null
+		const host = bare_host(url.hostname)
+
+		// Prefer this host's rules, then exact including query, then plain path
+		let target =
+			exact.get(host_key(host, source)) ??
+			exact.get(host_key(host, source_plain)) ??
+			exact.get(source) ??
+			exact.get(source_plain) ??
+			null
 
 		if (!target) {
-			for (const { matcher, builder } of wildcards) {
+			for (const { host: only, matcher, builder } of wildcards) {
+				if (only && only !== host) continue
 				const m = matcher(source_plain)
 				if (!m) continue
 				// names are w1, w2, ... so we can pass matcher params directly to builder
