@@ -240,3 +240,23 @@ test("Storyloco's own field plugins are typed with no interface in the app, unde
 	expect(types).toContain("export interface StoryblokCustomPlugins {}")
 	expect(types).not.toContain("vite.config")
 })
+
+test("the app's plugin types are imported when its vite config exports them, not when it only mentions them", async () => {
+	const root = await mkdtemp(path.join(tmpdir(), "storyloco-plugins-"))
+	const generated = () => generate_types([], path.join(root, "types.ts"), root)
+	try {
+		await writeFile(path.join(root, "vite.config.ts"), "// StoryblokCustomPlugins isn't needed now")
+		expect(generated()).not.toContain("vite.config")
+		for (const exported of [
+			"export interface StoryblokCustomPlugins { mine: string }",
+			'export type { StorylocoPlugins as StoryblokCustomPlugins } from "somewhere"',
+		]) {
+			await writeFile(path.join(root, "vite.config.ts"), exported)
+			expect(generated()).toContain(
+				'import type { StoryblokCustomPlugins } from "./vite.config.js"'
+			)
+		}
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})

@@ -12,7 +12,12 @@ test("a Mux field's attributes, with the stream attached", () => {
 		autoplay: false,
 		class: "wide",
 	})
-	expect(Object.getOwnPropertySymbols(attrs)).toHaveLength(1)
+	// the same attachment each time, or Svelte would restart the stream whenever the spread ran again
+	const [key] = Object.getOwnPropertySymbols(attrs)
+	const again = video(field, { class: "narrow" }) as Record<symbol, unknown>
+	expect(again[key]).toBe((attrs as Record<symbol, unknown>)[key])
+	const other = video({ ...field, m3u8_url: "other.m3u8" }) as Record<symbol, unknown>
+	expect(other[key]).not.toBe(again[key])
 })
 
 test("an autoplaying video is muted, whichever side asked for it", () => {

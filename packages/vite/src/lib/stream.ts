@@ -38,8 +38,8 @@ export function stream(
 	let cancelled = false
 	let teardown: (() => void) | undefined
 
-	async function attach() {
-		// the full build, not `hls.js/light`: Mux sends sound as a separate audio track, which light can"t play
+	async function load() {
+		// the full build, not `hls.js/light`: Mux sends sound as a separate audio track, which light can't play
 		const { default: Hls } = await import("hls.js")
 		if (cancelled) return
 
@@ -61,14 +61,21 @@ export function stream(
 		else video.addEventListener("play", start, { once: true })
 	}
 
+	// hls.js didn't arrive (a dropped connection, a deploy since the page loaded): what the browser
+	// can do with the stream itself, rather than a video that does nothing
+	const attach = () =>
+		load().catch(() => {
+			if (!cancelled) video.src = url
+		})
+
 	if (autoplay) {
 		// after everything the page itself needs
 		if (document.readyState === "complete") attach()
 		else addEventListener("load", attach, { once: true })
 	} else {
 		const observer = new IntersectionObserver(
-			([entry]) => {
-				if (!entry.isIntersecting) return
+			(entries) => {
+				if (!entries.some((entry) => entry.isIntersecting)) return
 				observer.disconnect()
 				attach()
 			},
@@ -96,6 +103,18 @@ export interface Streamable {
 	controls?: boolean
 }
 
+/** One key and one player per stream, so a spread that runs again leaves a playing video alone */
+const key = createAttachmentKey()
+const players = new Map<string, (element: HTMLVideoElement) => () => void>()
+
+function player(url: string, autoplay: boolean) {
+	const id = `${autoplay}:${url}`
+	let found = players.get(id)
+	// ponytail: never emptied; one small closure per stream a server has rendered
+	if (!found) players.set(id, (found = (element) => stream(element, url, { autoplay })))
+	return found
+}
+
 const has_stream = <T extends Streamable>(video?: T | null): video is T & { m3u8_url: string } =>
 	!!video?.m3u8_url
 
@@ -118,8 +137,7 @@ function attrs(
 		preload: "none",
 		...attrs,
 		autoplay,
-		[createAttachmentKey()]: (element: HTMLVideoElement) =>
-			stream(element, video.m3u8_url, { autoplay }),
+		[key]: player(video.m3u8_url, autoplay),
 	}
 }
 
