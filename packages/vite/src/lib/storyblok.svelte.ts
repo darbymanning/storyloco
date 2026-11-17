@@ -77,6 +77,12 @@ export type ErrorBody = (status: 404 | 500, cause?: unknown) => App.Error
 const default_error: ErrorBody = (status) =>
 	({ status, message: status === 404 ? "Story not found" : "Internal server error" }) as App.Error
 
+/**
+ * How long a client reads at the cache version it has before asking Storyblok for the current one.
+ * A publish shows within this long, on every server; reads in between come from the CDN's cache.
+ */
+const RECHECK = 5_000
+
 /** Type alias for the storyblok api instance */
 type API = ReturnType<typeof useStoryblokApi>
 
@@ -135,8 +141,18 @@ export class StoryblokClient {
 	/** Every API method below goes through here, so callers never `await init()` first. */
 	async #api(): Promise<API> {
 		await this.init()
-		return useStoryblokApi()
+		const api = useStoryblokApi()
+		// the SDK pins every read to the first cache version it saw, so a warm server never saw a
+		// publish. Forgotten here rather than by a publish webhook, which reaches only one server
+		if (Date.now() - this.#checked > RECHECK) {
+			this.#checked = Date.now()
+			api.clearCacheVersion()
+		}
+		return api
 	}
+
+	/** When the cache version was last forgotten */
+	#checked = Date.now()
 
 	/** Fetch a single story or collection of stories */
 	get: API["get"] = async (...args) => (await this.#api()).get(...args)

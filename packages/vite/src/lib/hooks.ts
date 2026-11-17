@@ -1,7 +1,5 @@
-import { useStoryblokApi } from "@storyblok/svelte"
 import type { Handle } from "./kit.js"
 import type { RequestEvent } from "@sveltejs/kit"
-import { StoryblokClient } from "./storyblok.svelte.js"
 import { editor_version } from "./editor/version.js"
 import { site_token, staging } from "./settings.js"
 
@@ -146,12 +144,6 @@ const versioned =
 			(event.locals as { preview?: Preview }).preview = valid.startsWith(`${STAGING}:`)
 				? "staging"
 				: "signed"
-
-		// the SDK pins every read to the first cache version it saw, so a warm server never saw a publish
-		if (event.locals.version === "published" && StoryblokClient.current) {
-			await StoryblokClient.current.init()
-			useStoryblokApi()?.clearCacheVersion()
-		}
 
 		return await resolve(event)
 	}

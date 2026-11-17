@@ -147,3 +147,30 @@ describe("link_attrs", () => {
 		expect(link_attrs({ linktype: "url", url: "", target: null, rel: null })).toEqual({})
 	})
 })
+
+describe("cache version", () => {
+	test("kept between reads, and asked for again once it's five seconds old", async () => {
+		const asked: Array<string | null> = []
+		const client = new StoryblokClient({
+			token: "recheck",
+			api: {
+				fetch: (async (url: string) => {
+					asked.push(new URL(url).searchParams.get("cv"))
+					return Response.json({ story: {}, cv: 111 })
+				}) as unknown as typeof fetch,
+			},
+		})
+		const clock = Date.now
+		try {
+			await client.get("cdn/stories/a", { version: "published" })
+			await client.get("cdn/stories/b", { version: "published" })
+			const later = clock() + 6_000
+			Date.now = () => later
+			await client.get("cdn/stories/c", { version: "published" })
+		} finally {
+			Date.now = clock
+		}
+		expect(asked[1]).toBe("111")
+		expect(asked[2]).not.toBe("111")
+	})
+})

@@ -48,7 +48,8 @@
 			"import": "./packages/vite/dist/storyblok.svelte.js"
 		},
 		"./mux": {
-			"types": "./packages/mux/types.ts"
+			"types": "./packages/mux/types.ts",
+			"import": "./packages/vite/dist/stream.js"
 		},
 		"./heading": {
 			"types": "./packages/heading/types.ts"
@@ -198,6 +199,7 @@
 		"@tiptap/pm": "^3.32.0",
 		"@tiptap/y-tiptap": "^3.0.10",
 		"cross-spawn": "7.0.6",
+		"hls.js": "1.7.4",
 		"ora": "9.4.1",
 		"path-to-regexp": "9.0.0",
 		"y-protocols": "^1.0.7",

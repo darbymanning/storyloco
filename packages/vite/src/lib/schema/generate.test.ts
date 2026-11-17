@@ -217,3 +217,26 @@ test("stories a field picks are their uuids, or the stories once resolved; a lin
 	)
 	expect(types).toContain('"link"?: StoryblokLink')
 })
+
+test("Storyloco's own field plugins are typed with no interface in the app, under older names too", () => {
+	const types = generate_types(
+		[
+			{
+				name: "hero",
+				schema: {
+					heading: { type: "custom", field_type: "heading-field" },
+					video: { type: "custom", field_type: "uiloco-mux" },
+					other: { type: "custom", field_type: "someone-elses" },
+				},
+			},
+		],
+		"/nowhere/types.ts",
+		"/nowhere"
+	)
+	expect(types).toContain('PluginValue<"heading-field", import("storyloco/heading").Heading>')
+	expect(types).toContain('PluginValue<"uiloco-mux", import("storyloco/mux").Video>')
+	expect(types).toContain('PluginValue<"someone-elses">')
+	// nothing to import from a vite config that exports no types
+	expect(types).toContain("export interface StoryblokCustomPlugins {}")
+	expect(types).not.toContain("vite.config")
+})

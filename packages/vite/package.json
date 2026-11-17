@@ -31,6 +31,7 @@
 		}
 	},
 	"dependencies": {
+		"hls.js": "1.7.4",
 		"ora": "9.4.1",
 		"path-to-regexp": "9.0.0"
 	},
