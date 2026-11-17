@@ -616,3 +616,6 @@ export type VimeoVideo = {
 	is_playable: boolean
 	has_audio: boolean
 }
+
+// plays a `Video` in a `<video>`; the site's side of the package, in `packages/vite`, builds it
+export { video, stream, type StreamOptions, type Streamable } from '../vite/src/lib/stream.js'

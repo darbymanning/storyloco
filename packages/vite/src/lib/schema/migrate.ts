@@ -2,7 +2,7 @@ import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "nod
 import path from "node:path"
 import { default_entry } from "./entry.js"
 import { run_cli } from "./run.js"
-import { plugin_types } from "./plugins.js"
+import { known_plugins } from "./plugins.js"
 
 export const cli_version = "4.25.0"
 
@@ -45,24 +45,6 @@ export function storyloco_imports(source: string) {
 		(_match, start, from, quote, plugins) =>
 			`${start}${from}${quote}storyloco/schema${plugins ?? ""}${quote}`
 	)
-}
-
-/** Storyloco's plugins, and the names older spaces deployed some of them under. */
-const known_plugins: Record<string, string> = {
-	...plugin_types,
-	"loco-link-field": 'import("storyloco/link").Link',
-	"mux-video": 'import("storyloco/mux").Video',
-	"video-mux": 'import("storyloco/mux").Video',
-	"heading-field": 'import("storyloco/heading").Heading',
-	"mux-field": 'import("storyloco/mux").Video',
-	"loco-mux": 'import("storyloco/mux").Video',
-	"loco-link": 'import("storyloco/link").Link',
-	"link-field": 'import("storyloco/link").Link',
-	"loco-input": 'import("storyloco/input").Input',
-	"loco-time": "string",
-	"loco-currency": 'import("storyloco/currency").Currency',
-	"loco-asset": 'import("storyloco/asset").Asset',
-	"loco-dates": 'import("storyloco/dates").Dates',
 }
 
 export function infer_known_plugin(source: string) {

@@ -240,6 +240,33 @@ asset, resized by Storyblok's image service. Spread it:
   narrows to an asset with a file. SVGs pass through; an asset whose size isn't known is served
   as it is, filters only.
 
+### Play Mux Video
+
+`video`, from `storyloco/mux`, is to a Mux field what `image` is to an asset: spread it on a
+`<video>` and it plays.
+
+```svelte
+<script lang="ts">
+	import { video } from 'storyloco/mux'
+</script>
+
+<video {...video(blok.video)}></video>
+<video {...video(blok.background, { autoplay: true, loop: true, controls: false })}></video>
+```
+
+- The poster, and autoplay, muted, loop, controls and playsinline as the editor set them. The
+  second argument overrides any of them, or adds a `class` and the like.
+- An autoplaying video is muted, since a browser won't start one with sound.
+- hls.js is only downloaded when a video needs it: as the video nears the screen, or once the
+  page has loaded for an autoplaying one.
+- Nothing of the video itself is fetched until someone presses play, playback buffers 10 seconds
+  ahead, and no rendition bigger than the element is downloaded.
+- Nothing for an empty field, so a field left blank spreads as nothing. `video.exists(field)`
+  narrows to one with a stream.
+
+`stream(element, url, { autoplay })` is the part that plays, for a `<video>` you set up
+yourself; it returns its own clean-up.
+
 ### Read Content on the Server
 
 `storyloco/server` binds a client to the current request, so reads carry the version from
@@ -533,34 +560,18 @@ The plugin will create a file called `components.schema.ts` (auto-generated) in 
 
 **Custom Plugin Types:**
 
-You can define custom types for Storyblok field plugins by exporting an interface in your vite config:
+Storyloco's own field plugins are typed for you: a `mux` field is a `Video`, a `link` a `Link`,
+and so on, under the `uiloco-*` names and the older ones (`heading-field`, `loco-link-field`,
+`mux-field`, `loco-input`, `loco-time`, `loco-currency`, `loco-dates`, `loco-asset`,
+`seo-metatags`, `theme-field`). Only a field plugin of your own, or one you want typed
+differently, needs an entry, in an interface your vite config exports:
 
 ```typescript
 // vite.config.ts
 import { schema } from 'storyloco/vite'
 
 export interface StoryblokCustomPlugins {
-	'theme-field': string
-	'heading-field': import('storyloco/heading').Heading
-	'loco-link-field': import('storyloco/link').Link
-	'mux-field': import('storyloco/mux').Video
-	'loco-input': import('storyloco/input').Input
-	'seo-metatags': {
-		plugin: 'seo_metatags'
-		_uid: import('crypto').UUID
-		title?: string
-		og_image?: string
-		og_title?: string
-		description?: string
-		twitter_image?: string
-		twitter_title: string
-		og_description: string
-		twitter_description: string
-	}
-	'loco-time': string
-	'loco-currency': import('storyloco/currency').Currency
-	'loco-dates': import('storyloco/dates').Dates
-	'loco-asset': import('storyloco/asset').Asset
+	'my-colour-picker': { hex: string }
 }
 
 export default defineConfig({
