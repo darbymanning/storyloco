@@ -14,7 +14,8 @@ const logger = new Logger(name)
  * - Glob keys with '*' like '/foo/* /bar' -> single-segment wildcards
  *
  * A key written as a full URL ('https://old.example/foo', or '//old.example/foo') only matches requests
- * to that host, and wins over a plain path. 'www.' is ignored on both sides.
+ * to that host. 'www.' is ignored on both sides. Order: the host's exact keys, plain exact keys, the
+ * host's wildcards, plain wildcards.
  *
  * How wildcards are handled (via path-to-regexp translation):
  * - Source: '*' becomes ':wN([^/]+)' (captures one path segment per '*')
@@ -40,12 +41,11 @@ function match_key(path: string): string {
 	return normalize_path(pathname).replace(/(.)\/+$/, "$1") + query
 }
 
-/** A hostname as hosts are compared: lower case, no port, no `www.`. */
+/** A hostname as hosts are compared: as a request's `url.hostname` spells it, without `www.`. */
 function bare_host(host: string): string {
-	return host
-		.toLowerCase()
-		.replace(/:\d+$/, "")
-		.replace(/^www\./, "")
+	// A key's host can be typed any way; a request's is lower case, punycode and has no port
+	const hostname = URL.canParse(`http://${host}`) ? new URL(`http://${host}`).hostname : host
+	return hostname.replace(/^www\./, "")
 }
 
 /** Split a key into the host it's limited to ('' for any host) and its path. */
@@ -76,7 +76,7 @@ function to_dst_pattern(glob: string): string {
 }
 
 type Rules = {
-	/** Exact redirect lookups, keyed by match_key. */
+	/** Exact redirect lookups, keyed by match_key, or by host_key for a key limited to a host. */
 	exact: Map<string, string>
 	/** Precompiled wildcard rules. */
 	wildcards: Array<{
@@ -90,7 +90,9 @@ function build_rules(redirects: Array<Redirect>): Rules {
 	const rules: Rules = { exact: new Map(), wildcards: [] }
 	for (const [key, value] of redirects) {
 		const [host, path] = split_key(key)
-		if (path.includes("*")) {
+		if (host.includes("*")) {
+			logger.warn(`Skipping redirect ${key} -> ${value}: a host can't have a wildcard`)
+		} else if (path.includes("*")) {
 			try {
 				rules.wildcards.push({
 					host,
@@ -108,7 +110,7 @@ function build_rules(redirects: Array<Redirect>): Rules {
 			const existing = rules.exact.get(exact_key)
 			if (existing !== undefined && existing !== value)
 				logger.warn(
-					`${key} -> ${value} replaces ${existing}: keys match with or without a trailing slash`
+					`${key} -> ${value} replaces ${existing}: keys match with or without a trailing slash, and a host with or without www.`
 				)
 			rules.exact.set(exact_key, value)
 		}

@@ -14,6 +14,9 @@ let live: Array<{ name: string; value: string }> | "down" = [
 	{ name: "//www.old.example/contact-us/", value: "/old-contact" },
 	{ name: "https://old.example/blog/*", value: "/news/*" },
 	{ name: "/blog/*", value: "/articles/*" },
+	{ name: "/blog/pinned", value: "/pinned" },
+	{ name: "HTTPS://WWW.Bücher.example:443/", value: "/books" },
+	{ name: "https://*.old.example/sub", value: "/never" },
 ]
 const fetches = mock(async () =>
 	live === "down"
@@ -63,6 +66,12 @@ test("a key written as a full URL only matches its own host, and wins there over
 	expect(await visit("/blog/a", "https://old.example")).toBe("/news/a")
 	expect(await visit("/blog/a")).toBe("/articles/a")
 	expect(await visit("https://example.com//old.example/")).toBe("page")
+})
+
+test("a plain exact key comes before a host's wildcard, and a key's host is read as a request spells it", async () => {
+	expect(await visit("/blog/pinned", "https://old.example")).toBe("/pinned")
+	expect(await visit("/", "https://bücher.example")).toBe("/books")
+	expect(await visit("/sub", "https://a.old.example")).toBe("page")
 })
 
 test("the list is refreshed every minute, keeping the last good one", async () => {
