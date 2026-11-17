@@ -99,7 +99,10 @@ export interface Streamable {
 const has_stream = <T extends Streamable>(video?: T | null): video is T & { m3u8_url: string } =>
 	!!video?.m3u8_url
 
-function attrs(video?: Streamable | null, attrs: HTMLVideoAttributes = {}) {
+function attrs(
+	video?: Streamable | null,
+	attrs: HTMLVideoAttributes = {}
+): HTMLVideoAttributes | undefined {
 	// a field left blank: nothing to spread
 	if (!has_stream(video)) return undefined
 
@@ -117,7 +120,7 @@ function attrs(video?: Streamable | null, attrs: HTMLVideoAttributes = {}) {
 		autoplay,
 		[createAttachmentKey()]: (element: HTMLVideoElement) =>
 			stream(element, video.m3u8_url, { autoplay }),
-	} as const
+	}
 }
 
 /**
