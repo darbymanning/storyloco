@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { isHttpError } from "@sveltejs/kit"
-import { handle_error, href, link_attrs, story_path, StoryblokClient } from "./storyblok.svelte.js"
+import { handle_error, href, link_attrs, StoryblokClient } from "./storyblok.svelte.js"
 
 /** The HttpError `handle_error` throws, so its status and body can be checked */
 function thrown(fn: () => void) {
@@ -91,6 +91,8 @@ describe("href", () => {
 		expect(href(start, { trailing_slash: "always" })).toBe("/about/")
 		expect(href(page, { trailing_slash: "always" })).toBe("/about/team/#lead")
 		expect(link_attrs(page, { trailing_slash: "always" }).href).toBe("/about/team/#lead")
+		const root = { linktype: "story", cached_url: "home", story: { url: "/" } }
+		expect(href(root, { trailing_slash: "always" })).toBe("/")
 	})
 
 	test("only a story's path is touched", () => {
@@ -142,33 +144,6 @@ describe("href", () => {
 		expect(href({ linktype: "asset", url: "https://a.storyblok.com/f/1/doc.pdf" })).toBe(
 			"https://a.storyblok.com/f/1/doc.pdf"
 		)
-	})
-})
-
-describe("story_path", () => {
-	test("a story's path, from the story or its slug", () => {
-		expect(story_path({ full_slug: "resources/insights/grid" })).toBe("/resources/insights/grid")
-		expect(story_path("resources/insights/grid")).toBe("/resources/insights/grid")
-		expect(story_path("/contact")).toBe("/contact")
-	})
-
-	test("a folder's start page has no slash on the end", () => {
-		expect(story_path({ full_slug: "resources/" })).toBe("/resources")
-		expect(story_path("resources/insights/")).toBe("/resources/insights")
-	})
-
-	test("the root stays the root", () => {
-		expect(story_path("/")).toBe("/")
-		expect(story_path("")).toBe("/")
-		expect(story_path({})).toBe("/")
-		expect(story_path("/", { trailing_slash: "always" })).toBe("/")
-	})
-
-	test("ends as trailing_slash has it", () => {
-		expect(story_path("resources", { trailing_slash: "always" })).toBe("/resources/")
-		expect(story_path("resources/", { trailing_slash: "always" })).toBe("/resources/")
-		expect(story_path("resources/", { trailing_slash: "ignore" })).toBe("/resources/")
-		expect(story_path("resources", { trailing_slash: "ignore" })).toBe("/resources")
 	})
 })
 

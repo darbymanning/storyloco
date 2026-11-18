@@ -242,26 +242,24 @@ asset, resized by Storyblok's image service. Spread it:
 
 ### Link to Stories
 
-`href` resolves a link field to its address, `link_attrs` to the attributes of its `<a>`, and
-`story_path` gives a story's own path, for a link made from the story itself.
+`href` resolves a link field to its address, and `link_attrs` to the attributes of its `<a>`.
 
 ```svelte
 <script lang="ts">
-	import { href, link_attrs, story_path } from 'storyloco'
+	import { href, link_attrs } from 'storyloco'
 </script>
 
 <a {...link_attrs(blok.link)}>{blok.label}</a>
 <a href={href(blok.link)}>{blok.label}</a>
-<a href={story_path(story)}>{story.name}</a>
 ```
 
 - Story links are root-relative, with their anchor or the link plugin's suffix. A resolved
   `story.url` wins over `cached_url`, which goes stale when a story moves, so fetch with
   `resolve_links: "url"`.
 - A folder's start page has a slash on the end of its slug (`about/`). SvelteKit serves routes
-  without one by default and redirects the rest, so story paths lose it: `/about`. A site whose
-  routes set `trailingSlash` passes the same as `trailing_slash` to any of the three: `always`
-  ends every story path with a slash, `ignore` leaves it as Storyblok has it.
+  without one by default and redirects the rest, so story links lose it: `/about`. A site whose
+  routes set `trailingSlash` passes the same as `trailing_slash` to either: `always` ends every
+  story link's path with a slash, `ignore` leaves it as Storyblok has it.
 - Email links become `mailto:`; URL and asset links pass through as they are. A field that links
   nowhere has no `href`, so its `<a>` renders without one.
 
