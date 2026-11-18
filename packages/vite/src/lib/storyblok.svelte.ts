@@ -372,12 +372,44 @@ interface Link {
 }
 
 /**
- * Resolve a multilink to an href, or `undefined` when the field links nowhere (so an `<a>`
- * renders without one). Story links become root-relative with their anchor (`#section`);
- * email links become `mailto:`; URL and asset links pass through. Prefers `story.url` over
- * `cached_url`, which goes stale when a target moves, so pair with `resolve_links: "url"`.
+ * How a story's path ends, as SvelteKit's `trailingSlash` has the route serve it: `never` (its
+ * default, and ours) without a slash, `always` with one, `ignore` as Storyblok gives it.
  */
-export function href(link?: Link): string | undefined {
+export type TrailingSlash = "never" | "always" | "ignore"
+
+interface PathOptions {
+	/** Match the route's `trailingSlash`, so a link doesn't redirect. Default `never`. */
+	trailing_slash?: TrailingSlash
+}
+
+/**
+ * A story's root-relative path, from the story or its slug: `/${story.full_slug}` without the
+ * slash Storyblok ends a folder's start page with (`about/`), which the route would redirect
+ * away. The root stays `/`.
+ *
+ * @example
+ * ```svelte
+ * <a href={story_path(story)}>{story.name}</a>
+ * ```
+ */
+export function story_path(
+	story: string | { full_slug?: string | null },
+	{ trailing_slash = "never" }: PathOptions = {}
+): string {
+	const slug = (typeof story === "string" ? story : (story.full_slug ?? "")).replace(/^\/+/, "")
+	if (trailing_slash === "ignore") return `/${slug}`
+	const bare = slug.replace(/\/+$/, "")
+	return bare && trailing_slash === "always" ? `/${bare}/` : `/${bare}`
+}
+
+/**
+ * Resolve a multilink to an href, or `undefined` when the field links nowhere (so an `<a>`
+ * renders without one). Story links become root-relative with their anchor (`#section`), ending
+ * as `trailing_slash` has them (see `story_path`); email links become `mailto:`; URL and asset
+ * links pass through. Prefers `story.url` over `cached_url`, which goes stale when a target
+ * moves, so pair with `resolve_links: "url"`.
+ */
+export function href(link?: Link, options?: PathOptions): string | undefined {
 	if (!link) return undefined
 	if (link.linktype === "email") {
 		const email = link.email || link.url
@@ -388,7 +420,7 @@ export function href(link?: Link): string | undefined {
 	const path = link.story?.url || link.cached_url
 	const anchor = link.anchor ? `#${link.anchor.replace(/^#/, "")}` : ""
 	// a suffix belongs after a path: alone, it'd send the visitor back to the page they're on
-	return path ? `/${path.replace(/^\/+/, "")}${link.suffix ?? ""}${anchor}` : anchor || undefined
+	return path ? `${story_path(path, options)}${link.suffix ?? ""}${anchor}` : anchor || undefined
 }
 
 /**
@@ -397,12 +429,19 @@ export function href(link?: Link): string | undefined {
  * a new window is `noopener` unless its `rel` already cuts the opener off, since only `_blank`
  * gets that from the browser and the page it opens could otherwise navigate this one.
  */
-export function link_attrs(link?: Link): { href?: string; target?: string; rel?: string } {
+export function link_attrs(
+	link?: Link,
+	options?: PathOptions
+): { href?: string; target?: string; rel?: string } {
 	const target = link?.target || undefined
 	const rel = link?.rel || undefined
 	const opens = !!target && !["_self", "_parent", "_top"].includes(target)
 	const safe = /\bno(opener|referrer)\b/.test(rel ?? "")
-	return { href: href(link), target, rel: opens && !safe ? `noopener ${rel ?? ""}`.trim() : rel }
+	return {
+		href: href(link, options),
+		target,
+		rel: opens && !safe ? `noopener ${rel ?? ""}`.trim() : rel,
+	}
 }
 
 /**
