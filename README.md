@@ -257,9 +257,7 @@ asset, resized by Storyblok's image service. Spread it:
   `story.url` wins over `cached_url`, which goes stale when a story moves, so fetch with
   `resolve_links: "url"`.
 - A folder's start page has a slash on the end of its slug (`about/`). SvelteKit serves routes
-  without one by default and redirects the rest, so story links lose it: `/about`. A site whose
-  routes set `trailingSlash` passes the same as `trailing_slash` to either: `always` ends every
-  story link's path with a slash, `ignore` leaves it as Storyblok has it.
+  without one and redirects the rest, so story links lose it: `/about`.
 - Email links become `mailto:`; URL and asset links pass through as they are. A field that links
   nowhere has no `href`, so its `<a>` renders without one.
 

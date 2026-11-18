@@ -83,18 +83,6 @@ describe("href", () => {
 		expect(link_attrs({ linktype: "story", cached_url: "about/" })).toEqual({ href: "/about" })
 	})
 
-	test("a story link ends as trailing_slash has it", () => {
-		const start = { linktype: "story", cached_url: "about/" }
-		const page = { linktype: "story", cached_url: "about/team", anchor: "lead" }
-		expect(href(start, { trailing_slash: "ignore" })).toBe("/about/")
-		expect(href(page, { trailing_slash: "ignore" })).toBe("/about/team#lead")
-		expect(href(start, { trailing_slash: "always" })).toBe("/about/")
-		expect(href(page, { trailing_slash: "always" })).toBe("/about/team/#lead")
-		expect(link_attrs(page, { trailing_slash: "always" }).href).toBe("/about/team/#lead")
-		const root = { linktype: "story", cached_url: "home", story: { url: "/" } }
-		expect(href(root, { trailing_slash: "always" })).toBe("/")
-	})
-
 	test("only a story's path is touched", () => {
 		expect(href({ linktype: "url", url: "https://example.com/docs/" })).toBe(
 			"https://example.com/docs/"
