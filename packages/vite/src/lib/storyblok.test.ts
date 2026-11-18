@@ -70,7 +70,24 @@ describe("href", () => {
 	})
 
 	test("a resolved story's url wins over a stale cached_url", () => {
-		expect(href({ linktype: "story", cached_url: "old", story: { url: "new/" } })).toBe("/new/")
+		expect(href({ linktype: "story", cached_url: "old", story: { url: "new" } })).toBe("/new")
+	})
+
+	test("a folder's start page links without the slash its slug ends in", () => {
+		expect(href({ linktype: "story", cached_url: "about/" })).toBe("/about")
+		expect(href({ linktype: "story", cached_url: "old", story: { url: "about/" } })).toBe("/about")
+		expect(href({ linktype: "story", cached_url: "about/", anchor: "team" })).toBe("/about#team")
+		expect(href({ linktype: "story", cached_url: "about/", suffix: "?tab=team" })).toBe(
+			"/about?tab=team"
+		)
+		expect(link_attrs({ linktype: "story", cached_url: "about/" })).toEqual({ href: "/about" })
+	})
+
+	test("only a story's path is touched", () => {
+		expect(href({ linktype: "url", url: "https://example.com/docs/" })).toBe(
+			"https://example.com/docs/"
+		)
+		expect(href({ linktype: "url", url: "/about/" })).toBe("/about/")
 	})
 
 	test("a link plugin's story link keeps its suffix", () => {

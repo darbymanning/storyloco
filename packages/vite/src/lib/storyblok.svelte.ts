@@ -376,6 +376,9 @@ interface Link {
  * renders without one). Story links become root-relative with their anchor (`#section`);
  * email links become `mailto:`; URL and asset links pass through. Prefers `story.url` over
  * `cached_url`, which goes stale when a target moves, so pair with `resolve_links: "url"`.
+ *
+ * A story link's path loses the slash Storyblok ends a folder's start page with (`about/`),
+ * which SvelteKit would redirect away.
  */
 export function href(link?: Link): string | undefined {
 	if (!link) return undefined
@@ -388,7 +391,9 @@ export function href(link?: Link): string | undefined {
 	const path = link.story?.url || link.cached_url
 	const anchor = link.anchor ? `#${link.anchor.replace(/^#/, "")}` : ""
 	// a suffix belongs after a path: alone, it'd send the visitor back to the page they're on
-	return path ? `/${path.replace(/^\/+/, "")}${link.suffix ?? ""}${anchor}` : anchor || undefined
+	return path
+		? `/${path.replace(/^\/+|\/+$/g, "")}${link.suffix ?? ""}${anchor}`
+		: anchor || undefined
 }
 
 /**
