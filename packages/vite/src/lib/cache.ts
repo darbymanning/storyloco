@@ -3,7 +3,6 @@ import type { Handle } from "./kit.js"
 import { editor_version } from "./editor/version.js"
 import { UNCACHED, type Choice } from "./middleware.js"
 import { MOXY, env, setting } from "./settings.js"
-import { upright } from "./orient.js"
 import { RECHECK } from "./storyblok.svelte.js"
 
 /**
@@ -576,30 +575,20 @@ type Webhook = { action?: unknown; space_id?: unknown; story_id?: unknown; asset
  * Never throws: neither should cost the purge.
  */
 async function passed_on(event: Webhook, body: string, key: string) {
-	const moxy = (path: string, sent: string) =>
-		fetch(`${env("STORYLOCO_MOXY") ?? MOXY}${path}?key=${encodeURIComponent(key)}`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: sent,
-		})
+	// an upload goes to moxy as it came, where a photo tagged sideways is replaced by one turned
+	const path =
+		event?.action === "published" && event.story_id
+			? "/apps/redirects/webhook"
+			: event?.action === "created" && event.asset_id
+				? "/apps/redirects/asset"
+				: null
+	if (!path) return
 	try {
-		if (event?.action === "published" && event.story_id) {
-			const told = await moxy("/apps/redirects/webhook", body)
-			if (!told.ok) console.error(`storyloco: moxy didn't take the publish: ${told.status}`)
-		}
-		// both ids land in a request path at moxy
-		const { space_id, asset_id } = event ?? {}
-		if (event?.action === "created" && Number.isInteger(space_id) && Number.isInteger(asset_id)) {
-			const done = await upright(async (step, more) => {
-				const answer = await moxy(
-					"/apps/redirects/asset",
-					JSON.stringify({ space_id, asset_id, step, ...more })
-				)
-				if (!answer.ok) throw new Error(`moxy refused to ${step} the asset: ${answer.status}`)
-				return answer.json()
-			})
-			if (done.startsWith("turned")) console.log(`storyloco: asset ${asset_id} ${done}`)
-		}
+		const told = await fetch(
+			`${env("STORYLOCO_MOXY") ?? MOXY}${path}?key=${encodeURIComponent(key)}`,
+			{ method: "POST", headers: { "content-type": "application/json" }, body }
+		)
+		if (!told.ok) console.error(`storyloco: moxy didn't take the ${event.action}: ${told.status}`)
 	} catch (e) {
 		console.error("storyloco: passing the webhook on failed", e)
 	}
