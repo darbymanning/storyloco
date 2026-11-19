@@ -613,9 +613,8 @@ too. Add `&moxy=<key>` to its address, the key from the address of the webhook t
 made (`UI Loco Redirects`), and point that webhook here rather than adding another. A story's
 publish is then passed on for the Redirects tool to remember, and with asset events ticked, a
 JPEG uploaded with a sideways EXIF orientation, which Storyblok's image service shows turned, is
-replaced by one with its pixels the right way up. That takes no token on the site: moxy makes the
-Storyblok calls with the space's grant. The photo is re-encoded on the site, by Bun, so on another
-runtime it's left as it was.
+replaced by one with its pixels the right way up. That takes no token on the site and nothing of
+its runtime: moxy does it, with the space's grant.
 
 **A choice kept in a cookie.** A location, a currency: something pages are rendered for. One
 object says what it is, the middleware moves each value onto a copy of its own, and `choice` reads

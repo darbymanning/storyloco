@@ -661,12 +661,12 @@ describe("purge", () => {
 		expect(calls.length).toBe(1)
 	})
 
-	test("with moxy's key in the address, a publish is passed on to moxy and an upload asks it for the asset", async () => {
+	test("with moxy's key in the address, a publish and an upload are passed on to moxy as they came", async () => {
 		const asked: Array<{ url: string; body: unknown }> = []
 		const real = globalThis.fetch
 		globalThis.fetch = (async (url: string, init?: RequestInit) => {
 			asked.push({ url, body: JSON.parse(String(init?.body)) })
-			return new Response(JSON.stringify({ content_type: "image/png" }))
+			return new Response("{}")
 		}) as never
 		try {
 			const handle = purge({ invalidate: () => {}, secret: SECRET, settle: 0 })
@@ -689,11 +689,9 @@ describe("purge", () => {
 			})
 			expect(asked.map(({ url }) => url)).toEqual([
 				"https://moxy.uilo.co/apps/redirects/webhook?key=m%20k",
-				// Bun's decoder is there to ask with; the test's asset isn't a JPEG, so that's all
-				...(typeof Bun.Image === "function"
-					? ["https://moxy.uilo.co/apps/redirects/asset?key=m%20k"]
-					: []),
+				"https://moxy.uilo.co/apps/redirects/asset?key=m%20k",
 			])
+			expect(asked[1].body).toEqual(JSON.parse(uploaded))
 			expect(asked[0].body).toEqual(JSON.parse(published))
 
 			// a wrong site key passes nothing on
