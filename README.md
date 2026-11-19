@@ -604,11 +604,21 @@ For publishes made in Storyblok, add a webhook there for story, datasource, asse
 pipeline events, pointed at `https://<site>/__storyloco/purge`: no route to write. Set its secret
 as `STORYBLOK_WEBHOOK_SECRET` and requests are checked against it; on a Storyblok plan without
 webhook secrets, put it in the address instead, `/__storyloco/purge?key=<secret>`. On Vercel
-there's nothing to install; elsewhere, give `cache({ purge: { invalidate } })` a function that invalidates tags.
+there's nothing to install; elsewhere, give `cache({ purge: { invalidate } })` a function that
+invalidates tags.
 The purge waits a few seconds, as long as a warm server can go on reading the content version it
 last saw, so a page rendered the instant a publish lands isn't cached as the old one. On Vercel the
 webhook is answered at once and purged after, so a purge that fails shows in the site's log
 rather than Storyblok's.
+
+**One webhook for the space.** Storyblok plans count webhooks, so this one can stand in for moxy's
+too. Add `&moxy=<key>` to its address, the key from the address of the webhook the Redirects tool
+made (`UI Loco Redirects`), and point that webhook here rather than adding another. A story's
+publish is then passed on for the Redirects tool to remember, and with asset events ticked, a
+JPEG uploaded with a sideways EXIF orientation, which Storyblok's image service shows turned, is
+replaced by one with its pixels the right way up. That takes no token on the site: moxy makes the
+Storyblok calls with the space's grant. The photo is re-encoded on the site, by Bun, so on another
+runtime it's left as it was.
 
 **A choice kept in a cookie.** A location, a currency: something pages are rendered for. One
 object says what it is, the middleware moves each value onto a copy of its own, and `choice` reads
