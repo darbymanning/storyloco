@@ -556,38 +556,74 @@ window; later runs reuse it without one.
 
 A site that renders every page in its function pays for the function on every visit and every
 crawler, most of it spent waiting on Storyblok. The `cache` hook lets the CDN keep whatever is the
-same for every visitor, so the function runs when content changes instead:
+same for every visitor, so the function runs when content changes instead. Two files:
 
 ```ts
 // hooks.server.ts
-import { cache, version } from 'storyloco/hooks'
-import { editor } from 'storyloco/editor/server'
+import { site } from 'storyloco/hooks'
 
-export const handle = sequence(editor, version, cache, …)
+export const handle = sequence(site(), …your own hooks)
 ```
-
-It shares published pages, the `__data.json` a client-side navigation or a hovered link asks for,
-and the remote functions you name. It never shares an editor's or guest's response, a draft, a
-response that sets a cookie or came with an `Authorization` header, anything marked `uncached`,
-or anything in development. It also reads what a status code doesn't show: a load that threw
-answers a data request with a 200, the error inside it, and so does a remote function, and
-neither is kept.
-
-It goes after `editor` and `version`, which say who's asking, and it needs the middleware above:
-the CDN answers before any hook runs, so only the middleware keeps editors off the shared copies.
 
 ```ts
-cache({
-	// kept an hour, then served stale for up to a day while a fresh copy renders (the default)
-	policy: 'max-age=0, s-maxage=3600, stale-while-revalidate=86400',
-	// remote functions whose answer is the same for everyone; one not named is never cached
-	queries: ['get_products', 'get_shared'],
-	// share 404s too, if a load only ever raises one for a page that isn't there
-	not_found: true,
-	// the site's own say: not behind a password, say, or only in production
-	when: () => !env.BASIC_AUTH_PASS
-})
+// middleware.ts
+export { default } from 'storyloco/middleware'
+export const config = { matcher: '/((?!_app/(?!remote/)|.*\\.(?!json$)\\w+$).*)', runtime: 'nodejs' }
 ```
+
+`site()` is `redirects`, `editor`, `version` and `cache` in the order they need; use them
+separately, `sequence(editor, version, cache, …)`, to put something between them. The middleware
+is the other half: the CDN answers before any hook runs, so only it keeps editors and previews
+off the shared copies.
+
+**What's shared** is worked out for you: published pages, the `__data.json` a client-side
+navigation or a hovered link asks for, remote functions that read content through
+`storyloco/server`, and 404s (for a minute). **What isn't**: an editor's or guest's response, a
+draft, anything behind a password, a response that sets a cookie, and anything a load or query
+failed inside, including the failures a status code doesn't show (a load that threw answers a
+data request with a 200, and so does a remote function).
+
+Nor is a response whose rendering **read something only this visitor sent**: a cookie, their
+country, their address. The CDN can't tell visitors apart, so a page that looked is theirs. That
+makes a per-visitor page or query safe without anyone remembering to mark it.
+
+Every response says what was decided, and why, which is the first thing to look at when a page
+isn't being cached:
+
+```
+x-storyloco-cache: shared
+x-storyloco-cache: private; read cookie session
+x-storyloco-cache: private; a load that failed
+```
+
+**Publishing purges it.** A publish made through storyloco's editor purges the cache by itself.
+For publishes made in Storyblok, add a webhook there for story, datasource, asset, release and
+pipeline events, pointed at `https://<site>/__storyloco/purge`: no route to write. Set its secret
+as `STORYBLOK_WEBHOOK_SECRET` and requests are checked against it. On Vercel there's nothing to
+install; elsewhere, give `cache({ purge: { invalidate } })` a function that invalidates tags.
+The purge waits a few seconds, as long as a warm server can go on reading the content version it
+last saw, so a page rendered the instant a publish lands isn't cached as the old one.
+
+**A choice kept in a cookie.** A location, a currency: something pages are rendered for. One
+object says what it is, the middleware moves each value onto a copy of its own, and `choice` reads
+it back:
+
+```ts
+// src/lib/location.ts
+export const LOCATION = { cookie: 'location', values: ['all', 'woking', 'guildford'], shared: 'all' } as const
+
+// middleware.ts
+import { EDITORS, PREVIEW, chosen, middleware } from 'storyloco/middleware'
+import { LOCATION } from './src/lib/location'
+
+export default middleware([PREVIEW, EDITORS, chosen(LOCATION)])
+
+// hooks.server.ts, in a hook after `site()`
+event.locals.location = choice(event, { ...LOCATION, asked: event.url.searchParams.get('location') })
+```
+
+A visitor who hasn't chosen carries no cookie and shares one copy with everyone else; the cookie
+is only set when someone actually chooses, since a response that sets one isn't cached.
 
 **Answers that hide a failure.** A query that returns `null` when its provider is down has
 answered, as far as anyone can tell. Say so, or the gap is served to everyone until the copy
@@ -603,51 +639,22 @@ export const get_form = query(schema, async id => {
 })
 ```
 
-**A choice kept in a cookie.** A location, a currency: something pages are rendered for, which
-the CDN can't see. `chosen` in the middleware moves each value onto a copy of its own, and
-`choice` in a hook reads it back, takes the parameter off `event.url`, and only sets the cookie
-when a visitor actually chooses, since a response that sets one isn't cached:
+**Options**, none of them needed to start:
 
 ```ts
-// middleware.ts
-import { EDITORS, PREVIEW, chosen, middleware } from 'storyloco/middleware'
-
-export default middleware([PREVIEW, EDITORS, chosen('location', '_location', 'all')])
-
-// hooks.server.ts, in a hook inside `cache`
-event.locals.location = choice(event, {
-	cookie: 'location',
-	param: '_location',
-	values: ['all', 'woking', 'guildford'],
-	shared: 'all',
-	asked: event.url.searchParams.get('location')
+site({
+	cache: {
+		// kept an hour, then served stale for up to a day while a fresh copy renders (the default)
+		policy: 'max-age=0, s-maxage=3600, stale-while-revalidate=86400',
+		// remote functions to share that read something other than content, like a form's fields
+		queries: ['get_form'],
+		// off for a site that can't tell a missing page from a failed read
+		not_found: false,
+		// the site's own say
+		when: event => !event.url.pathname.startsWith('/account')
+	}
 })
 ```
-
-A visitor who hasn't chosen carries no cookie and shares one copy with everyone else.
-
-**Publishing.** Every shared response carries a cache tag, and `purge` is an endpoint for a
-Storyblok webhook that marks it stale, so a publish shows in seconds however long the policy keeps
-pages. On Vercel:
-
-```ts
-// src/routes/webhooks/purge/+server.ts
-import { invalidateByTag, waitUntil } from '@vercel/functions'
-import { purge } from 'storyloco/hooks'
-import { env } from '$env/dynamic/private'
-
-export const POST = purge({
-	invalidate: invalidateByTag,
-	defer: waitUntil,
-	secret: env.STORYBLOK_WEBHOOK_SECRET
-})
-```
-
-Add a webhook in Storyblok for story, datasource, asset, release and pipeline events, with the
-same secret (Storyblok signs each request with it; without one, keep the address unguessable).
-It waits a few seconds before purging, as long as a warm server can go on reading the content
-version it last saw, so a page rendered the instant a publish lands isn't cached as the old one.
-storyloco doesn't import `@vercel/functions`: any function that invalidates tags will do.
 
 ### Use Shared Components
 

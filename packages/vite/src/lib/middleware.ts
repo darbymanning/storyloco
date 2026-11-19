@@ -94,18 +94,27 @@ export const EDITORS: Key = { cookies: [EDITOR_COOKIE], param: UNCACHED }
  */
 export const PREVIEW: Key = { cookies: [/^storyblok_preview$/], param: "_storyblok" }
 
+/** A visitor's choice kept in a cookie, as `chosen` here and `choice` in `storyloco/hooks` both take it */
+export type Choice = {
+	/** The cookie the choice is kept in */
+	cookie: string
+	/** The parameter each value is moved onto; `_<cookie>` unless said */
+	param?: string
+	/** What a visitor who hasn't chosen gets, which stays on the copy everyone shares */
+	shared?: string
+}
+
 /**
  * A visitor's choice kept in a cookie, a location or a currency say, that pages are rendered
- * for: each value onto a cached copy of its own, `?<param>=<value>`. `shared` is the value a
- * visitor without the cookie gets, which stays on the copy everyone shares. The `choice` hook
- * helper (`storyloco/hooks`) reads the parameter on the other side.
+ * for: each value onto a cached copy of its own, `?_<cookie>=<value>`. The `choice` helper
+ * (`storyloco/hooks`) reads it on the other side, from the same object.
  *
  * @example
  * ```ts
- * export default middleware([PREVIEW, EDITORS, chosen("location", "_location", "all")])
+ * export default middleware([PREVIEW, EDITORS, chosen({ cookie: "location", shared: "all" })])
  * ```
  */
-export function chosen(cookie: string, param: string, shared?: string): Key {
+export function chosen({ cookie, param = `_${cookie}`, shared }: Choice): Key {
 	return {
 		cookies: [new RegExp(`^${cookie.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)],
 		param,

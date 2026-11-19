@@ -2,20 +2,29 @@ import type { Handle } from "./kit.js"
 import type { RequestEvent } from "@sveltejs/kit"
 import { editor_version } from "./editor/version.js"
 import { site_token, staging } from "./settings.js"
+import { sequence } from "@sveltejs/kit/hooks"
+import { cache, type CacheOptions } from "./cache.js"
+import { editor, type EditorOptions } from "./editor/server.js"
+import { handle_redirects } from "./redirects/handle.js"
 
 export { handle_redirects as redirects } from "./redirects/handle.js"
 export {
 	CHANGES,
+	EXPLAIN,
+	MISSING,
+	PURGE_PATH,
 	SHARED,
 	TAG,
 	cache,
 	choice,
 	purge,
+	purged,
 	remote_name,
 	shareable,
 	signed_by_storyblok,
 	take,
 	uncached,
+	verdict,
 	type CacheOptions,
 	type ChoiceOptions,
 	type PurgeOptions,
@@ -165,3 +174,42 @@ const versioned =
 	}
 
 const plain = versioned()
+
+export type SiteOptions = {
+	/** The `editor` hook's options; false for a site nobody edits in place */
+	editor?: EditorOptions | false
+	/** The `cache` hook's options; false to render every request */
+	cache?: CacheOptions | false
+	/** The `version` hook's options */
+	version?: Parameters<typeof versioned>[0]
+	/** The redirects hook, for a site with the `redirects()` Vite plugin; false without */
+	redirects?: boolean
+}
+
+/**
+ * Everything a storyloco site's server needs, in the order it needs it: redirects, in-place
+ * editing, the content version, and caching. The site's own hooks go after it.
+ *
+ * @example
+ * ```ts
+ * // hooks.server.ts
+ * import { site } from "storyloco/hooks"
+ *
+ * export const handle = sequence(site(), my_hook)
+ * ```
+ */
+export function site({
+	editor: editing,
+	cache: caching,
+	version: versioning,
+	redirects = true,
+}: SiteOptions = {}) {
+	const hooks = [
+		redirects && handle_redirects,
+		editing !== false && editor(editing),
+		versioned(versioning),
+		caching !== false && cache(caching),
+	].filter((hook) => !!hook)
+
+	return sequence(...(hooks as unknown as Parameters<typeof sequence>)) as unknown as Handle
+}

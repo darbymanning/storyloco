@@ -75,7 +75,7 @@ describe("middleware", () => {
 })
 
 describe("a choice kept in a cookie", () => {
-	const location = chosen("location", "_location", "all")
+	const location = chosen({ cookie: "location", shared: "all" })
 	const run = (cookie?: string, url?: string, keys = [PREVIEW, EDITORS, location]) => {
 		const response = middleware(keys)(request(cookie, url))
 		return response.headers.get("x-middleware-rewrite") ?? response.headers.get("x-middleware-next")
@@ -103,15 +103,15 @@ describe("a choice kept in a cookie", () => {
 
 	test("an editor's key comes first, and one that shares falls through to a later key", () => {
 		expect(run("location=woking; sl_editor=x")).toBe("https://example.com/about?_storyloco=1")
-		const currency = chosen("currency", "_currency")
+		const currency = chosen({ cookie: "currency" })
 		expect(run("location=all; currency=eur", undefined, [location, currency])).toBe(
 			"https://example.com/about?_currency=eur"
 		)
 	})
 
 	test("a cookie name is matched as it's written", () => {
-		expect(own_key(request("a.b=x"), chosen("a.b", "_k"))?.search).toBe("?_k=x")
-		expect(own_key(request("aXb=x"), chosen("a.b", "_k"))).toBeNull()
+		expect(own_key(request("a.b=x"), chosen({ cookie: "a.b", param: "_k" }))?.search).toBe("?_k=x")
+		expect(own_key(request("aXb=x"), chosen({ cookie: "a.b", param: "_k" }))).toBeNull()
 	})
 })
 
