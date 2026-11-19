@@ -2,7 +2,8 @@ import type { RequestEvent } from "@sveltejs/kit"
 import type { Handle } from "./kit.js"
 import { editor_version } from "./editor/version.js"
 import { UNCACHED, type Choice } from "./middleware.js"
-import { setting } from "./settings.js"
+import { MOXY, env, setting } from "./settings.js"
+import { upright } from "./orient.js"
 import { RECHECK } from "./storyblok.svelte.js"
 
 /**
@@ -567,6 +568,43 @@ function same(given: string, expected: string) {
 	return differs === 0
 }
 
+type Webhook = { action?: unknown; space_id?: unknown; story_id?: unknown; asset_id?: unknown }
+
+/**
+ * What moxy's own webhooks would have heard, so a space needs only the one: a publish, for the
+ * Redirects tool to remember where the story lives, and an upload, to turn a sideways photo.
+ * Never throws: neither should cost the purge.
+ */
+async function passed_on(event: Webhook, body: string, key: string) {
+	const moxy = (path: string, sent: string) =>
+		fetch(`${env("STORYLOCO_MOXY") ?? MOXY}${path}?key=${encodeURIComponent(key)}`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: sent,
+		})
+	try {
+		if (event?.action === "published" && event.story_id) {
+			const told = await moxy("/apps/redirects/webhook", body)
+			if (!told.ok) console.error(`storyloco: moxy didn't take the publish: ${told.status}`)
+		}
+		// both ids land in a request path at moxy
+		const { space_id, asset_id } = event ?? {}
+		if (event?.action === "created" && Number.isInteger(space_id) && Number.isInteger(asset_id)) {
+			const done = await upright(async (step, more) => {
+				const answer = await moxy(
+					"/apps/redirects/asset",
+					JSON.stringify({ space_id, asset_id, step, ...more })
+				)
+				if (!answer.ok) throw new Error(`moxy refused to ${step} the asset: ${answer.status}`)
+				return answer.json()
+			})
+			if (done.startsWith("turned")) console.log(`storyloco: asset ${asset_id} ${done}`)
+		}
+	} catch (e) {
+		console.error("storyloco: passing the webhook on failed", e)
+	}
+}
+
 /**
  * The endpoint a Storyblok webhook posts to, purging what the `cache` hook shared, so a publish
  * shows in seconds however long the CDN is told to keep pages. The `editor` and `cache` hooks
@@ -602,16 +640,25 @@ export function purge(given: PurgeOptions = {}) {
 		)
 			return reply({ message: "Neither the signature nor the key matches" }, 401)
 
-		let action: unknown
+		let event: Webhook
 		try {
-			action = (JSON.parse(body) as { action?: unknown }).action
+			event = JSON.parse(body) as Webhook
 		} catch {
 			return reply({ message: "Not a Storyblok webhook" }, 400)
 		}
+		const action = event?.action
+		const context = vercel()
+		const deferred = how.defer ?? context?.waitUntil?.bind(context)
+
+		// the one webhook does moxy's jobs too, when its address carries the space's moxy key
+		const moxy_key = new URL(request.url).searchParams.get("moxy")
+		const passing = moxy_key && passed_on(event, body, moxy_key)
+		if (passing && deferred) deferred(passing)
+		else if (passing) await passing
+
 		if (typeof action !== "string" || !actions.includes(action))
 			return reply({ purged: false, action: action ?? null })
 
-		const deferred = how.defer ?? vercel()?.waitUntil
 		const work = purged(how)
 		if (deferred) {
 			// already handed to `defer`; a host with no way to purge is said so now

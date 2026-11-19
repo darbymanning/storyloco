@@ -1,5 +1,8 @@
 import { StoryblokClient } from "./storyblok.svelte.js"
 
+/** Where sign-in, the editor's operations and a space's Storyblok grant live */
+export const MOXY = "https://moxy.uilo.co"
+
 export const env = (name: string) =>
 	(globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env[name]
 

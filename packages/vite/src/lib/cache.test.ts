@@ -661,6 +661,54 @@ describe("purge", () => {
 		expect(calls.length).toBe(1)
 	})
 
+	test("with moxy's key in the address, a publish is passed on to moxy and an upload asks it for the asset", async () => {
+		const asked: Array<{ url: string; body: unknown }> = []
+		const real = globalThis.fetch
+		globalThis.fetch = (async (url: string, init?: RequestInit) => {
+			asked.push({ url, body: JSON.parse(String(init?.body)) })
+			return new Response(JSON.stringify({ content_type: "image/png" }))
+		}) as never
+		try {
+			const handle = purge({ invalidate: () => {}, secret: SECRET, settle: 0 })
+			const to = (body: string, query: string) =>
+				({
+					request: new Request(`${SITE}/__storyloco/purge?key=${SECRET}${query}`, {
+						method: "POST",
+						body,
+					}),
+				}) as never
+			const uploaded = JSON.stringify({ action: "created", asset_id: 7, space_id: 1 })
+
+			expect((await handle(to(published, ""))).status).toBe(200)
+			expect(asked).toEqual([])
+
+			expect((await handle(to(published, "&moxy=m%20k"))).status).toBe(200)
+			expect(await (await handle(to(uploaded, "&moxy=m%20k"))).json()).toEqual({
+				purged: false,
+				action: "created",
+			})
+			expect(asked.map(({ url }) => url)).toEqual([
+				"https://moxy.uilo.co/apps/redirects/webhook?key=m%20k",
+				// Bun's decoder is there to ask with; the test's asset isn't a JPEG, so that's all
+				...(typeof Bun.Image === "function"
+					? ["https://moxy.uilo.co/apps/redirects/asset?key=m%20k"]
+					: []),
+			])
+			expect(asked[0].body).toEqual(JSON.parse(published))
+
+			// a wrong site key passes nothing on
+			const before = asked.length
+			const wrong = new Request(`${SITE}/__storyloco/purge?key=no&moxy=mk`, {
+				method: "POST",
+				body: published,
+			})
+			expect((await handle({ request: wrong } as never)).status).toBe(401)
+			expect(asked.length).toBe(before)
+		} finally {
+			globalThis.fetch = real
+		}
+	})
+
 	test("what doesn't change the site doesn't purge, nor does anything that isn't a webhook", async () => {
 		const calls: Array<unknown> = []
 		const handle = purge({ invalidate: (tags) => void calls.push(tags), settle: 0 })

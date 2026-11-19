@@ -1,6 +1,6 @@
 import { redirect, type RequestEvent } from "@sveltejs/kit"
 import type { Handle } from "../kit.js"
-import { env, setting, site_token, staging } from "../settings.js"
+import { MOXY, env, setting, site_token, staging } from "../settings.js"
 import { LIVE, editor_version } from "./version.js"
 import { UNCACHED } from "../middleware.js"
 import { purge, purged } from "../cache.js"
@@ -45,7 +45,6 @@ export { editor_version }
 /** Storyblok's webhook, answered under the editor's own prefix so a site needs no route for it */
 const webhook = purge()
 
-const MOXY = "https://moxy.uilo.co"
 const PREFIX = "/__storyloco"
 const COOKIE = "sl_editor"
 
