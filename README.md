@@ -388,12 +388,9 @@ export const handle = sequence(editor, version /* , ...the rest */)
 <EditBar />
 ```
 
-```typescript
-// app.d.ts
-interface Locals {
-	editor?: import('storyloco/editor/server').Editor
-}
-```
+`event.locals.editor`, and the `version` hook's `event.locals.version`, are typed by the import:
+there's nothing to add to `app.d.ts`. A site that declares them there already can leave them, as
+long as the types are the same ones.
 
 `/admin` and `/a` are the ways in by default. A site with a page there, or that wants another, sets its own
 with `editor({ entry })`: a path, taken only where the site has no page, or a `?param` that

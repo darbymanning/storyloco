@@ -36,11 +36,19 @@ export { editor_version }
  * import { editor } from "storyloco/editor/server"
  *
  * export const handle = sequence(editor, version, ...)
- *
- * // app.d.ts
- * interface Locals { editor?: import("storyloco/editor/server").Editor }
  * ```
  */
+
+// what the `editor` hook sets, typed for every site that imports it: nothing to add to app.d.ts
+declare global {
+	// eslint-disable-next-line @typescript-eslint/no-namespace -- how SvelteKit's `App.Locals` is added to
+	namespace App {
+		interface Locals {
+			editor?: Editor
+			guest?: Guest
+		}
+	}
+}
 
 /** Storyblok's webhook, answered under the editor's own prefix so a site needs no route for it */
 const webhook = purge()

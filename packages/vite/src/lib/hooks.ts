@@ -52,6 +52,17 @@ const STAGING = "staging"
  */
 export type Preview = "signed" | "staging"
 
+// what the `version` hook sets, typed for every site that imports it: nothing to add to app.d.ts
+declare global {
+	// eslint-disable-next-line @typescript-eslint/no-namespace -- how SvelteKit's `App.Locals` is added to
+	namespace App {
+		interface Locals {
+			version: import("./storyblok.svelte.js").Version
+			preview?: Preview
+		}
+	}
+}
+
 /** Development asked for what's live rather than its drafts */
 const DEV_PUBLISHED = "storyloco_published"
 
