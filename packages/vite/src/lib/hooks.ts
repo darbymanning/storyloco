@@ -111,10 +111,30 @@ interface VersionOptions {
 	token?: (event: RequestEvent) => string | undefined | Promise<string | undefined>
 }
 
+/**
+ * The query a preview is asked for by: the address's own, or for a remote function, the page's
+ * it was asked from. SvelteKit 2 makes that `event.url`; 3 leaves a query's as the function's
+ * own address, so the page's is read from the `referer`, where it's the same site's. What it
+ * carries is still checked against the token, as it is on the page.
+ */
+function asked_from(event: RequestEvent) {
+	const { searchParams } = event.url
+	if (!(event as { isRemoteRequest?: boolean }).isRemoteRequest) return searchParams
+	if (searchParams.has("_storyblok") || searchParams.has("_storyblok_tk[token]"))
+		return searchParams
+	try {
+		const from = new URL(event.request.headers.get("referer") ?? "")
+		if (from.origin === event.url.origin) return from.searchParams
+	} catch {
+		// no page to go by
+	}
+	return searchParams
+}
+
 const versioned =
 	({ token: token_of = () => site_token() }: VersionOptions = {}): Handle =>
 	async ({ event, resolve }) => {
-		const { searchParams: query } = event.url
+		const query = asked_from(event)
 		const kept = event.cookies.get(PREVIEW_COOKIE)
 		const tk = (key: string) => query.get(`_storyblok_tk[${key}]`)
 		const given = query.has("_storyblok_tk[token]")

@@ -139,6 +139,24 @@ describe("a remote function asked from a preview's page", () => {
 		expect(run("?_storyblok=456", undefined, "POST")).toBe("1")
 	})
 
+	test("SvelteKit 3 sends no header for a query, so the page it came from is read instead", () => {
+		const from = (referer: string, url = QUERY) => {
+			const response = handle(new Request(url, { headers: { referer } }))
+			return (
+				response.headers.get("x-middleware-rewrite") ?? response.headers.get("x-middleware-next")
+			)
+		}
+		expect(from("https://example.com/about?_storyblok=456&_storyblok_tk%5Btoken%5D=abc")).toBe(
+			`${QUERY}&_storyloco=1`
+		)
+		expect(from("https://example.com/about")).toBe("1")
+		expect(from("https://example.com/about?_storyblok=off")).toBe("1")
+		// another site's page says nothing about this one's previews
+		expect(from("https://elsewhere.test/about?_storyblok=456")).toBe("1")
+		// and a page isn't moved for where its visitor came from
+		expect(from("https://example.com/a?_storyblok=456", "https://example.com/about")).toBe("1")
+	})
+
 	test("a cookie's key still comes first", () => {
 		expect(run("?_storyblok=456", "storyblok_preview=1")).toBe(`${QUERY}&_storyblok=1`)
 	})

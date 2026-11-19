@@ -58,10 +58,14 @@ describe("shareable: a page", () => {
 		expect(await shareable(shown("/about", { locals: { version: "draft" } }), html())).toBe(false)
 		// a site that picks its own version, as the hook would
 		expect(await shareable(shown("/about?_storyblok=1"), html())).toBe(false)
-		// the `version` hook's word wins over the address
+		// the key previews are moved onto, and the one that ends a preview, are never kept: a
+		// visitor's published copy there would be what the CDN hands the next preview
+		expect(
+			await shareable(shown("/about?_storyblok=1", { locals: { version: "published" } }), html())
+		).toBe(false)
 		expect(
 			await shareable(shown("/about?_storyblok=off", { locals: { version: "published" } }), html())
-		).toBe(true)
+		).toBe(false)
 		expect(await shareable(shown("/about?_storyloco=1"), html())).toBe(false)
 	})
 
@@ -241,7 +245,7 @@ describe("cache", () => {
 	const run = async (
 		handle: ReturnType<typeof cache>,
 		event: Event = visit(),
-		respond: (event: Event) => Response = () => html()
+		respond: (event: Event) => Response | Promise<Response> = () => html()
 	) => (await handle({ event, resolve: () => respond(event) } as unknown as Input)).headers
 
 	test("shares a published page, tagged for a purge, and says so", async () => {
@@ -296,11 +300,91 @@ describe("cache", () => {
 		expect(await read((event) => event.request.headers.get("user-agent"))).toBe(
 			"private; read header user-agent"
 		)
+		expect(await read((event) => event.request.headers.has("cookie"))).toBe(
+			"private; read header cookie"
+		)
 		expect(await read((event) => event.getClientAddress())).toBe(
 			"private; read the visitor's address"
 		)
 		// what SvelteKit reads for itself says nothing of the visitor
 		expect(await read((event) => event.request.headers.get("accept"))).toBe("shared")
+	})
+
+	test("going through every header, or copying the request, counts as reading them", async () => {
+		const read = async (look: (event: Event) => unknown) =>
+			(await run(cache(), visit(), (event) => (look(event), html()))).get(EXPLAIN)
+
+		expect(await read((event) => Object.fromEntries(event.request.headers))).toBe(
+			"private; read every header"
+		)
+		expect(await read((event) => event.request.headers.forEach(() => {}))).toBe(
+			"private; read every header"
+		)
+		expect(await read((event) => event.request.clone())).toBe("private; read a copy of the request")
+		expect(await read((event) => event.request.headers.get("referer"))).toBe(
+			"private; read header referer"
+		)
+		// a request that carries a password is never shared, so reading it adds nothing
+		expect(await read((event) => event.request.headers.get("authorization"))).toBe("shared")
+	})
+
+	test("a request that can't be watched is never shared", async () => {
+		const event = visit()
+		Object.freeze(event.cookies)
+		expect((await run(cache(), event)).get(EXPLAIN)).toBe("private; couldn't watch the request")
+	})
+
+	test("the site's own fetch: SvelteKit passing the language on isn't the page reading it", async () => {
+		const page = async (
+			path: string,
+			after?: (event: Event) => unknown,
+			answer = new Response("{}")
+		) => {
+			const event = visit()
+			;(event as { fetch: unknown }).fetch = async () => {
+				// as SvelteKit's fetch does, for an address of the site's own
+				if (path.startsWith("/")) event.request.headers.get("accept-language")
+				return answer
+			}
+			return (
+				await run(cache(), event, async (event) => {
+					await event.fetch(path)
+					after?.(event)
+					return html()
+				})
+			).get(EXPLAIN)
+		}
+		// resolve is async here, which the hook awaits
+		expect(await page("/api/nav")).toBe("shared")
+		expect(await page("/api/nav", (event) => event.request.headers.get("accept-language"))).toBe(
+			"private; read header accept-language"
+		)
+		// another site's doesn't excuse a read
+		expect(
+			await page("https://elsewhere.test/x", (event) =>
+				event.request.headers.get("accept-language")
+			)
+		).toBe("private; read header accept-language")
+		// an endpoint that read the visitor's cookie says so, and the page is theirs too
+		const personal = new Response("{}", {
+			headers: { "x-storyloco-personal": "read cookie session" },
+		})
+		expect(await page("/api/me", undefined, personal)).toBe(
+			"private; fetched something that read cookie session"
+		)
+	})
+
+	test("an endpoint asked by the site's own fetch says what it read, for the page that asked", async () => {
+		const sub = visit("/api/me")
+		;(sub as { isSubRequest: boolean }).isSubRequest = true
+		const headers = await run(cache(), sub, (event) => {
+			event.cookies.get("session")
+			return Response.json({})
+		})
+		expect(headers.get("x-storyloco-personal")).toBe("read cookie session")
+		expect(
+			(await run(cache(), visit("/api/me"), () => Response.json({}))).get("x-storyloco-personal")
+		).toBeNull()
 	})
 
 	test("what hooks before it read isn't counted, and the reads still work", async () => {
@@ -620,6 +704,24 @@ describe("purge", () => {
 		await Promise.all([first, second])
 		expect(calls).toEqual([["a", "b"]])
 		expect(Date.now() - started).toBeGreaterThanOrEqual(40)
+	})
+
+	test("a long run of publishes isn't one purge pushed back for ever", async () => {
+		const calls: Array<number> = []
+		const started = Date.now()
+		const invalidate = () => void calls.push(Date.now() - started)
+		const all: Array<Promise<boolean>> = []
+		// one every 15ms for 150ms, each asking for 20ms of settling
+		for (let i = 0; i < 10; i++) {
+			all.push(purged({ invalidate, settle: 20 }))
+			await new Promise((done) => setTimeout(done, 15))
+		}
+		await Promise.all(all)
+		expect(calls.length).toBeGreaterThan(1)
+		// the first is out within its cap, not after the last publish
+		expect(calls[0]).toBeLessThan(120)
+		// and the last publish still has a purge after it has settled
+		expect(calls.at(-1)!).toBeGreaterThanOrEqual(150)
 	})
 
 	test("deferred, it answers at once and purges after", async () => {

@@ -125,13 +125,22 @@ export function chosen({ cookie, param = `_${cookie}`, shared }: Choice): Key {
 
 /**
  * Whether a remote function is being asked from a preview's page. Its own address doesn't carry
- * the page's `?_storyblok…`, which is how the visual editor asks for drafts: SvelteKit sends the
- * page's in this header instead. A browser that blocks third-party cookies keeps no preview
- * cookie inside the editor's frame, so nothing else tells such a request from a visitor's.
+ * the page's `?_storyblok…`, which is how the visual editor asks for drafts. SvelteKit 2 sends
+ * the page's in a header; 3 sends nothing for a query, so the browser's `referer` is read, which
+ * names the page in full for a request to its own site. A browser that blocks third-party
+ * cookies keeps no preview cookie inside the editor's frame, so nothing else tells such a
+ * request from a visitor's.
  */
 const from_preview = (request: Request) => {
-	const search = request.headers.get("x-sveltekit-search")
-	return !!search && /[?&]_storyblok(?!=off(&|$))/.test(search)
+	const asked = (search?: string | null) => !!search && /[?&]_storyblok(?!=off(&|$))/.test(search)
+	if (asked(request.headers.get("x-sveltekit-search"))) return true
+	if (!/\/remote\//.test(new URL(request.url).pathname)) return false
+	try {
+		const from = new URL(request.headers.get("referer") ?? "")
+		return from.origin === new URL(request.url).origin && asked(from.search)
+	} catch {
+		return false
+	}
 }
 
 /**

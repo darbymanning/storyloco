@@ -63,9 +63,15 @@ export function content_read(event: Pick<RequestEvent, "locals">) {
 	of(event).content = true
 }
 
-/** Request headers that say who's asking or where from: reading one makes the response theirs */
+/**
+ * Request headers that say who's asking or where from: reading one makes the response theirs.
+ * Not `authorization`: a request that carries one is never shared, so reading it says no more.
+ */
 const PERSONAL =
-	/^(cookie|authorization|user-agent|accept-language|x-forwarded-for|x-real-ip|x-vercel-ip-|cf-|sec-ch-)/i
+	/^(cookie|user-agent|accept-language|referer|forwarded|dnt|save-data|downlink|ect|rtt|dpr|width|viewport-width|device-memory|sec-gpc|sec-ch-|x-forwarded-for|x-real-ip|x-client-ip|true-client-ip|fastly-client-ip|fly-client-ip|x-vercel-(ip|forwarded-for|proxied-for|ja)|cf-|cloudfront-viewer-|x-nf-|x-appengine-|x-geo|x-country)/i
+
+/** Says, on a response to the site's own `fetch`, that rendering it read something of the visitor's */
+const PERSONAL_TOO = "x-storyloco-personal"
 
 /** Cookies as they were before `watch`, for `choice`, whose reads are accounted for */
 const unwatched = new WeakMap<object, RequestEvent["cookies"]["get"]>()
@@ -75,33 +81,86 @@ const unwatched = new WeakMap<object, RequestEvent["cookies"]["get"]>()
  * address, a header like their country. A CDN keys a response by its address alone, so a page
  * that looked at any of them is theirs, whatever it found. Hooks that run before `cache`
  * (`editor`, `version`) have read theirs already and aren't counted.
+ *
+ * What it can't see is left to `uncached`: `event.platform`, and headers or a request copied
+ * whole with `new Headers(…)` or `new Request(…)`, which runtimes do without asking the
+ * original. A request that can't be watched at all is never shared.
  */
 function watch(event: RequestEvent) {
 	const state = of(event)
 	const note = (what: string) => void (state.personal ??= `read ${what}`)
 	try {
 		const { cookies, request } = event
-		if (!unwatched.has(cookies)) {
-			const get = cookies.get.bind(cookies)
-			const all = cookies.getAll.bind(cookies)
-			unwatched.set(cookies, get)
-			cookies.get = (name, ...rest) => (note(`cookie ${name}`), get(name, ...rest))
-			cookies.getAll = (...rest) => (note("cookies"), all(...rest))
+		if (unwatched.has(cookies)) return state
 
-			const { headers } = request
-			const header = headers.get.bind(headers)
-			headers.get = (name) => {
-				if (PERSONAL.test(name)) note(`header ${name.toLowerCase()}`)
-				return header(name)
-			}
-			const address = event.getClientAddress.bind(event)
-			;(event as { getClientAddress: () => string }).getClientAddress = () => (
-				note("the visitor's address"),
-				address()
-			)
+		const get = cookies.get.bind(cookies)
+		const all = cookies.getAll.bind(cookies)
+		cookies.get = (name, ...rest) => (note(`cookie ${name}`), get(name, ...rest))
+		cookies.getAll = (...rest) => (note("cookies"), all(...rest))
+
+		const { headers } = request
+		// SvelteKit's own `fetch` passes the visitor's language on to an endpoint of the site's,
+		// reading it here once to do so: a read let through while such a fetch is under way. If
+		// the endpoint goes by it, its response says so, below
+		let passing = 0
+		const personal = (name: string) => {
+			if (!PERSONAL.test(name)) return
+			if (passing > 0 && /^accept-language$/i.test(name)) return void passing--
+			note(`header ${name.toLowerCase()}`)
 		}
+		const header = headers.get.bind(headers)
+		headers.get = (name) => (personal(name), header(name))
+		// asking whether one is there says as much as reading it
+		const has = headers.has.bind(headers)
+		headers.has = (name) => (personal(name), has(name))
+		// and so does going through them all, or taking a copy to read elsewhere
+		for (const method of ["entries", "keys", "values", "forEach", Symbol.iterator] as const) {
+			const every = (headers[method] as (...input: Array<unknown>) => unknown).bind(headers)
+			;(headers as unknown as Record<PropertyKey, unknown>)[method] = (
+				...input: Array<unknown>
+			) => (note("every header"), every(...input))
+		}
+		const clone = request.clone.bind(request)
+		request.clone = () => (note("a copy of the request"), clone())
+
+		const address = event.getClientAddress.bind(event)
+		;(event as { getClientAddress: () => string }).getClientAddress = () => (
+			note("the visitor's address"),
+			address()
+		)
+
+		// a page built from an endpoint of the site's own is the visitor's if the endpoint's answer was
+		const fetch = event.fetch
+		;(event as { fetch: unknown }).fetch = async (
+			input: Parameters<typeof fetch>[0],
+			init?: Parameters<typeof fetch>[1]
+		) => {
+			let own = false
+			try {
+				const to = new URL(input instanceof Request ? input.url : String(input), event.url)
+				own = to.origin === event.url.origin
+			} catch {
+				// not an address this could be the site's own
+			}
+			if (!own) return fetch(input, init)
+			passing++
+			const before = passing
+			try {
+				const response = await fetch(input, init)
+				const why = response.headers.get(PERSONAL_TOO)
+				if (why) state.personal ??= `fetched something that ${why}`
+				return response
+			} finally {
+				// not taken up, a file say: gone, so it can't excuse a read of the site's own later
+				if (passing >= before) passing--
+			}
+		}
+
+		// last, so nothing above is half done when it's set
+		unwatched.set(cookies, get)
 	} catch {
-		// a runtime whose request can't be wrapped: nothing is noted, and nothing breaks
+		// never shared rather than shared unwatched
+		state.personal ??= "couldn't watch the request"
 	}
 	return state
 }
@@ -167,7 +226,8 @@ export async function verdict(
 	const { request, url, locals } = event
 	if (request.method !== "GET" && request.method !== "HEAD") return no(`a ${request.method}`)
 	// a CDN won't keep these either; said here so the headers agree with it
-	if (request.headers.has("authorization")) return no("behind a password")
+	// asked of `Headers` itself: the hook's own look isn't a read `watch` should count
+	if (Headers.prototype.has.call(request.headers, "authorization")) return no("behind a password")
 	if (response.headers.has("set-cookie")) return no("sets a cookie")
 	const state = seen.get(locals)
 	if (state?.personal) return no(state.personal)
@@ -185,7 +245,12 @@ export async function verdict(
 		version ?? editor_version(event) ?? (url.searchParams.has("_storyblok") ? "draft" : "published")
 	if (shown !== "published") return no("a draft")
 	// moved off the cache by the middleware, for a reason this hook needn't know
-	if (new URL(request.url).searchParams.has(UNCACHED)) return no("moved off the cache")
+	const asked = new URL(request.url).searchParams
+	if (asked.has(UNCACHED)) return no("moved off the cache")
+	// the key the middleware moves every preview onto, and the one that ends it: a visitor's
+	// published page kept under either would be what the CDN hands the next preview, before
+	// the `version` hook could show a draft or take `?_storyblok=off`
+	if (asked.has("_storyblok")) return no("a preview's address")
 
 	if (event.isRemoteRequest) {
 		const name = remote_name(request)
@@ -251,6 +316,10 @@ function create({
 				// a response passed through from elsewhere has headers of its own
 			}
 		}
+
+		// asked by the site's own `fetch`, from a page: what it read of the visitor, the page read too
+		const mine = seen.get(event.locals)?.personal
+		if (mine && (event as { isSubRequest?: boolean }).isSubRequest) set(PERSONAL_TOO, mine)
 
 		if (dev) return (set(EXPLAIN, "private; development"), response)
 		// a page that set a policy of its own keeps it; data and remote functions only ever carry
@@ -418,7 +487,7 @@ const vercel = () =>
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
 
 /** The purge that's waiting, which a later one joins, pushing it back, rather than repeating */
-let waiting: { due: number; tags: Set<string>; done: Promise<void> } | undefined
+let waiting: { due: number; latest: number; tags: Set<string>; done: Promise<void> } | undefined
 
 /**
  * Purge what the `cache` hook shared, once warm servers have had time to see the change. Called
@@ -437,11 +506,22 @@ export function purged(
 
 	const due = Date.now() + settle
 	let entry = waiting
+	// joined only while that doesn't hold it long past its start: a run of publishes, a release
+	// say, would otherwise push one purge back until the request that owns it had ended
+	if (entry && due > entry.latest) entry = undefined
 	if (entry) {
 		entry.due = Math.max(entry.due, due)
 		for (const tag of tags) entry.tags.add(tag)
 	} else {
-		const mine = (entry = waiting = { due, tags: new Set(tags), done: Promise.resolve() })
+		const mine =
+			(entry =
+			waiting =
+				{
+					due,
+					latest: due + 3 * settle,
+					tags: new Set(tags),
+					done: Promise.resolve(),
+				})
 		mine.done = (async () => {
 			try {
 				// at least a turn, so `mine` is in place before anything joins or follows it
@@ -488,7 +568,9 @@ export async function signed_by_storyblok(body: string, signature: string | null
  * shows in seconds however long the CDN is told to keep pages. The `editor` and `cache` hooks
  * answer it at `/__storyloco/purge` already; this is for a route of the site's own.
  *
- * Storyblok doesn't retry a webhook, so a purge that fails answers 500 for its log to show.
+ * Storyblok doesn't retry a webhook. Where the purge is held for, one that fails answers 500
+ * for Storyblok's log to show; deferred, as on Vercel, it has answered 202 by then, and the
+ * failure is in the site's own log.
  *
  * @example
  * ```ts

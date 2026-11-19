@@ -585,7 +585,10 @@ data request with a 200, and so does a remote function).
 
 Nor is a response whose rendering **read something only this visitor sent**: a cookie, their
 country, their address. The CDN can't tell visitors apart, so a page that looked is theirs. That
-makes a per-visitor page or query safe without anyone remembering to mark it.
+makes a per-visitor page or query safe without anyone remembering to mark it, including a page
+built from one of the site's own endpoints that looked. Two things it can't see, which need
+`uncached()`: `event.platform`, and headers or a request copied whole (`new Headers(…)`,
+`new Request(…)`) and read from the copy.
 
 Every response says what was decided, and why, which is the first thing to look at when a page
 isn't being cached:
@@ -602,7 +605,9 @@ pipeline events, pointed at `https://<site>/__storyloco/purge`: no route to writ
 as `STORYBLOK_WEBHOOK_SECRET` and requests are checked against it. On Vercel there's nothing to
 install; elsewhere, give `cache({ purge: { invalidate } })` a function that invalidates tags.
 The purge waits a few seconds, as long as a warm server can go on reading the content version it
-last saw, so a page rendered the instant a publish lands isn't cached as the old one.
+last saw, so a page rendered the instant a publish lands isn't cached as the old one. On Vercel the
+webhook is answered at once and purged after, so a purge that fails shows in the site's log
+rather than Storyblok's.
 
 **A choice kept in a cookie.** A location, a currency: something pages are rendered for. One
 object says what it is, the middleware moves each value onto a copy of its own, and `choice` reads
