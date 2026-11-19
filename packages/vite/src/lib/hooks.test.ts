@@ -181,4 +181,24 @@ describe("version", () => {
 		expect(await as_editor(`${SITE}/about`)).toBe("draft")
 		expect(await as_editor(`${SITE}/about?_storyloco_live=1`)).toBe("published")
 	})
+
+	test("a remote function asked from a preview's page shows drafts, by the page it came from", async () => {
+		const asked = async (referer: string) => {
+			const jarred = jar()
+			const event = {
+				url: new URL(`${SITE}/_app/remote/1x2y/get_shared`),
+				request: new Request(`${SITE}/_app/remote/1x2y/get_shared`, { headers: { referer } }),
+				cookies: jarred,
+				locals: {} as { version?: string },
+				isRemoteRequest: true,
+			}
+			await version({ event, resolve: () => new Response("ok") } as unknown as Input)
+			return event.locals.version
+		}
+		expect(await asked(`${SITE}/about?${from_editor()}`)).toBe("draft")
+		expect(await asked(`${SITE}/about`)).toBe("published")
+		// a signature is still checked, and another site's page isn't gone by
+		expect(await asked(`${SITE}/about?${from_editor(now(), "wrong-token")}`)).toBe("published")
+		expect(await asked(`https://elsewhere.test/about?${from_editor()}`)).toBe("published")
+	})
 })

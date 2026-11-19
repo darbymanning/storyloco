@@ -2,6 +2,8 @@ import { redirect, type RequestEvent } from "@sveltejs/kit"
 import type { Handle } from "../kit.js"
 import { env, setting, site_token, staging } from "../settings.js"
 import { LIVE, editor_version } from "./version.js"
+import { UNCACHED } from "../middleware.js"
+import { purge, purged } from "../cache.js"
 import { allowed } from "./content.js"
 import {
 	ask_moxy,
@@ -39,6 +41,9 @@ export { editor_version }
  * interface Locals { editor?: import("storyloco/editor/server").Editor }
  * ```
  */
+
+/** Storyblok's webhook, answered under the editor's own prefix so a site needs no route for it */
+const webhook = purge()
 
 const MOXY = "https://moxy.uilo.co"
 const PREFIX = "/__storyloco"
@@ -259,6 +264,9 @@ async function route(
 		redirect(303, local(return_to))
 	}
 
+	// a Storyblok webhook, purging what the `cache` hook shared
+	if (path === "/purge" && request.method === "POST") return webhook(event)
+
 	// the service worker that shows comment notifications; push only reaches a worker on the site's own origin
 	if (path === "/sw.js")
 		return new Response(SERVICE_WORKER, {
@@ -308,12 +316,18 @@ async function route(
 			const body = await request.json()
 			const token = await site_token()
 			// done by moxy where it can, so a change to it doesn't wait on this site's next release
+			// visitors see a publish as soon as the cache lets them: purged from here, webhook or not
+			const published = () => body?.op === "publish" && void purged().catch((e) => console.error(e))
 			const moved = await editor.in_moxy(body, token)
-			if (moved) return moved
+			if (moved) {
+				if (moved.ok) published()
+				return moved
+			}
 			const run = () => operate(editor, body, { moxy, origin: url.origin, token })
-			return Response.json(
+			const result =
 				CHANGES.has(body?.op) && id(body.story) ? await editor.locked(body.story, run) : await run()
-			)
+			published()
+			return Response.json(result)
 		} catch (e) {
 			if (e instanceof EditorError)
 				return Response.json({ message: e.message }, { status: e.status })
@@ -412,7 +426,7 @@ const script = (value: {
 }) =>
 	`<script type="application/json" id="storyloco-editor">${JSON.stringify(value).replace(/</g, "\\u003c")}</script>`
 
-interface EditorOptions {
+export interface EditorOptions {
 	/** Another moxy; `STORYLOCO_MOXY` does the same without code */
 	moxy?: string
 	space?: string
@@ -437,6 +451,9 @@ function create({
 	const params = ways.filter((way) => way.startsWith("?")).map((way) => way.slice(1).split("=")[0])
 	const paths = ways.filter((way) => !way.startsWith("?")).map(trim)
 	return async ({ event, resolve }) => {
+		// the middleware's key is for the CDN: no page, link or `og:url` built from the address sees it
+		event.url.searchParams.delete(UNCACHED)
+
 		const broker = moxy ?? env("STORYLOCO_MOXY") ?? MOXY
 		const wanted = chosen ?? env("STORYLOCO_EDITOR") ?? RELEASES
 		const files = wanted === false || wanted === "local" ? null : wanted

@@ -1,5 +1,6 @@
 import { getRequestEvent } from "$app/server"
 import { error } from "@sveltejs/kit"
+import { content_read, uncached as keep_out } from "./cache.js"
 import type { ISbStoriesParams, ISbStoryParams } from "@storyblok/svelte"
 import type { ISbLink, ISbLinks, ISbLinksParams } from "storyblok-js-client"
 import {
@@ -11,13 +12,29 @@ import {
 	type Version,
 } from "./storyblok.svelte.js"
 
+/**
+ * Keep the current request's response out of shared caches, from anywhere on the server: a load,
+ * or a remote function that hid a failure behind an answer that shouldn't outlive it. Does
+ * nothing outside a request. See `uncached` in `storyloco/hooks`, which takes the event.
+ */
+export function uncached(why?: string) {
+	try {
+		keep_out(getRequestEvent(), why)
+	} catch {
+		// no request, so nothing to cache: a prerender, or a test
+	}
+}
+
 function is_not_found(err: unknown) {
 	return typeof err === "object" && err !== null && "status" in err && err.status === 404
 }
 
 /** The content version for the current request, as set by the `version` hook. */
 export function version(): Version {
-	return getRequestEvent().locals.version
+	const event = getRequestEvent()
+	// every read below asks, which is how the `cache` hook knows a remote function read content
+	content_read(event)
+	return event.locals.version
 }
 
 /**

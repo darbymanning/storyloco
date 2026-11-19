@@ -2,8 +2,33 @@ import type { Handle } from "./kit.js"
 import type { RequestEvent } from "@sveltejs/kit"
 import { editor_version } from "./editor/version.js"
 import { site_token, staging } from "./settings.js"
+import { sequence } from "@sveltejs/kit/hooks"
+import { cache, type CacheOptions } from "./cache.js"
+import { editor, type EditorOptions } from "./editor/server.js"
+import { handle_redirects } from "./redirects/handle.js"
 
 export { handle_redirects as redirects } from "./redirects/handle.js"
+export {
+	CHANGES,
+	EXPLAIN,
+	MISSING,
+	PURGE_PATH,
+	SHARED,
+	TAG,
+	cache,
+	choice,
+	purge,
+	purged,
+	remote_name,
+	shareable,
+	signed_by_storyblok,
+	take,
+	uncached,
+	verdict,
+	type CacheOptions,
+	type ChoiceOptions,
+	type PurgeOptions,
+} from "./cache.js"
 export { editor_version }
 
 /** Keeps a Storyblok preview going past its first page; kept in step with `middleware.ts` */
@@ -86,10 +111,30 @@ interface VersionOptions {
 	token?: (event: RequestEvent) => string | undefined | Promise<string | undefined>
 }
 
+/**
+ * The query a preview is asked for by: the address's own, or for a remote function, the page's
+ * it was asked from. SvelteKit 2 makes that `event.url`; 3 leaves a query's as the function's
+ * own address, so the page's is read from the `referer`, where it's the same site's. What it
+ * carries is still checked against the token, as it is on the page.
+ */
+function asked_from(event: RequestEvent) {
+	const { searchParams } = event.url
+	if (!(event as { isRemoteRequest?: boolean }).isRemoteRequest) return searchParams
+	if (searchParams.has("_storyblok") || searchParams.has("_storyblok_tk[token]"))
+		return searchParams
+	try {
+		const from = new URL(event.request.headers.get("referer") ?? "")
+		if (from.origin === event.url.origin) return from.searchParams
+	} catch {
+		// no page to go by
+	}
+	return searchParams
+}
+
 const versioned =
 	({ token: token_of = () => site_token() }: VersionOptions = {}): Handle =>
 	async ({ event, resolve }) => {
-		const { searchParams: query } = event.url
+		const query = asked_from(event)
 		const kept = event.cookies.get(PREVIEW_COOKIE)
 		const tk = (key: string) => query.get(`_storyblok_tk[${key}]`)
 		const given = query.has("_storyblok_tk[token]")
@@ -149,3 +194,42 @@ const versioned =
 	}
 
 const plain = versioned()
+
+export type StorylocoOptions = {
+	/** The `editor` hook's options; false for a site nobody edits in place */
+	editor?: EditorOptions | false
+	/** The `cache` hook's options; false to render every request */
+	cache?: CacheOptions | false
+	/** The `version` hook's options */
+	version?: Parameters<typeof versioned>[0]
+	/** The redirects hook, for a site with the `redirects()` Vite plugin; false without */
+	redirects?: boolean
+}
+
+/**
+ * Everything a storyloco site's server needs, in the order it needs it: redirects, in-place
+ * editing, the content version, and caching. The site's own hooks go after it.
+ *
+ * @example
+ * ```ts
+ * // hooks.server.ts
+ * import { storyloco } from "storyloco/hooks"
+ *
+ * export const handle = sequence(storyloco(), my_hook)
+ * ```
+ */
+export function storyloco({
+	editor: editing,
+	cache: caching,
+	version: versioning,
+	redirects = true,
+}: StorylocoOptions = {}) {
+	const hooks = [
+		redirects && handle_redirects,
+		editing !== false && editor(editing),
+		versioned(versioning),
+		caching !== false && cache(caching),
+	].filter((hook) => !!hook)
+
+	return sequence(...(hooks as unknown as Parameters<typeof sequence>)) as unknown as Handle
+}

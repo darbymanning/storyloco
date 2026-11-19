@@ -81,7 +81,7 @@ const default_error: ErrorBody = (status) =>
  * How long a client reads at the cache version it has before asking Storyblok for the current one.
  * A publish shows within this long, on every server; reads in between come from the CDN's cache.
  */
-const RECHECK = 5_000
+export const RECHECK = 5_000
 
 /** Type alias for the storyblok api instance */
 type API = ReturnType<typeof useStoryblokApi>
