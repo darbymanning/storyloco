@@ -13,10 +13,13 @@
  * ```ts
  * // middleware.ts
  * export { default } from "storyloco/middleware"
- * export const config = { matcher: "/((?!_app/|api/).*)", runtime: "nodejs" }
+ * export const config = { matcher: "/((?!_app/(?!remote/)|.*\\.(?!json$)\\w+$).*)", runtime: "nodejs" }
  * ```
  *
- * Vercel reads `config` from the file itself, so that stays the site's own.
+ * Vercel reads `config` from the file itself, so that stays the site's own. Middleware is a
+ * function call of its own on every request it matches, cached answer or not, so the matcher
+ * above keeps to what a cache key matters for: pages, their `__data.json` and remote functions,
+ * not built assets or anything else that ends in a file extension.
  */
 
 /** The editor's cookies: `sl_editor`, or `sl_editor_<space>`, and a guest's `sl_guest_<space>` */
@@ -25,16 +28,44 @@ export const EDITOR_COOKIE = /^sl_(editor|guest)(_\w+)?$/
 /** The parameter an editor's request moves onto; a response for it must never be cached */
 export const UNCACHED = "_storyloco"
 
-const names = (request: Request) =>
-	(request.headers.get("cookie") ?? "").split(";").map((cookie) => cookie.trim().split("=")[0])
+const pairs = (request: Request) =>
+	(request.headers.get("cookie") ?? "").split(";").map((cookie) => {
+		const [name, ...value] = cookie.trim().split("=")
+		return [name, value.join("=")] as const
+	})
+
+const names = (request: Request) => pairs(request).map(([name]) => name)
 
 /** Whether the request is from someone signed in to edit, or a guest of a shared draft */
 export const editing = (request: Request) => names(request).some((name) => EDITOR_COOKIE.test(name))
 
 /**
+ * Cookies, and the parameter a request carrying any of them moves onto: `?<param>=1`, or with
+ * `value`, `?<param>=<what it returns for the cookie's value>`, so each value has a cached copy
+ * of its own. A value it returns nothing for stays on the copy every visitor shares.
+ */
+export type Key = {
+	cookies: Array<RegExp>
+	param: string
+	value?: (value: string) => string | null | undefined | false
+}
+
+/** What a request's cookies put on `key`: "1", a `value` key's value, or nothing when it has none of them */
+function carried(request: Request, { cookies, value }: Pick<Key, "cookies" | "value">) {
+	for (const [name, held] of pairs(request)) {
+		if (!cookies.some((cookie) => cookie.test(name))) continue
+		if (!value) return "1"
+		const kept = value(held)
+		if (kept) return kept
+	}
+	return null
+}
+
+/**
  * The URL to serve the request from instead, or null to serve it as it is. A read with any of
  * `cookies`, the editor's by default, moves onto `?<param>=1`; one already there passes straight
- * through, as does every other.
+ * through, as does every other. A `value` key always carries the cookie's own value, whatever
+ * the address said: which copy a visitor gets isn't theirs to type.
  *
  * Only reads: nothing else is cached, and a SvelteKit form post moved onto its own key loses its
  * action (`?/name`) on the way, so it finds none. The `version` hook reads the cookie on a post
@@ -42,18 +73,16 @@ export const editing = (request: Request) => names(request).some((name) => EDITO
  */
 export function own_key(
 	request: Request,
-	{ cookies = [EDITOR_COOKIE], param = UNCACHED }: { cookies?: Array<RegExp>; param?: string } = {}
+	{ cookies = [EDITOR_COOKIE], param = UNCACHED, value }: Partial<Key> = {}
 ): URL | null {
 	if (request.method !== "GET" && request.method !== "HEAD") return null
-	if (!names(request).some((name) => cookies.some((cookie) => cookie.test(name)))) return null
+	const on = carried(request, { cookies, value })
+	if (!on) return null
 	const url = new URL(request.url)
-	if (url.searchParams.has(param)) return null
-	url.searchParams.set(param, "1")
+	if (value ? url.searchParams.get(param) === on : url.searchParams.has(param)) return null
+	url.searchParams.set(param, on)
 	return url
 }
-
-/** Cookies, and the parameter a request carrying any of them moves onto */
-export type Key = { cookies: Array<RegExp>; param: string }
 
 /** Someone signed in to edit, or a guest of a shared draft */
 export const EDITORS: Key = { cookies: [EDITOR_COOKIE], param: UNCACHED }
@@ -64,6 +93,37 @@ export const EDITORS: Key = { cookies: [EDITOR_COOKIE], param: UNCACHED }
  * is what lets `?_storyblok=off` reach the hook and end it.
  */
 export const PREVIEW: Key = { cookies: [/^storyblok_preview$/], param: "_storyblok" }
+
+/**
+ * A visitor's choice kept in a cookie, a location or a currency say, that pages are rendered
+ * for: each value onto a cached copy of its own, `?<param>=<value>`. `shared` is the value a
+ * visitor without the cookie gets, which stays on the copy everyone shares. The `choice` hook
+ * helper (`storyloco/hooks`) reads the parameter on the other side.
+ *
+ * @example
+ * ```ts
+ * export default middleware([PREVIEW, EDITORS, chosen("location", "_location", "all")])
+ * ```
+ */
+export function chosen(cookie: string, param: string, shared?: string): Key {
+	return {
+		cookies: [new RegExp(`^${cookie.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)],
+		param,
+		// short and plain, so a cookie can't be used to fill the cache with copies
+		value: (value) => /^[\w-]{1,64}$/.test(value) && value !== shared && value,
+	}
+}
+
+/**
+ * Whether a remote function is being asked from a preview's page. Its own address doesn't carry
+ * the page's `?_storyblok…`, which is how the visual editor asks for drafts: SvelteKit sends the
+ * page's in this header instead. A browser that blocks third-party cookies keeps no preview
+ * cookie inside the editor's frame, so nothing else tells such a request from a visitor's.
+ */
+const from_preview = (request: Request) => {
+	const search = request.headers.get("x-sveltekit-search")
+	return !!search && /[?&]_storyblok(?!=off(&|$))/.test(search)
+}
 
 /**
  * A whole middleware: the first of `keys` whose cookie a request carries moves it onto its
@@ -80,9 +140,12 @@ export const PREVIEW: Key = { cookies: [/^storyblok_preview$/], param: "_storybl
  */
 export function middleware(keys: Array<Key> = [PREVIEW, EDITORS]) {
 	return (request: Request) => {
-		const have = names(request)
-		const key = keys.find(({ cookies }) => have.some((name) => cookies.some((c) => c.test(name))))
-		const url = key && own_key(request, key)
+		const key = keys.find((key) => carried(request, key))
+		let url = key && own_key(request, key)
+		if (!key && from_preview(request) && (request.method === "GET" || request.method === "HEAD")) {
+			url = new URL(request.url)
+			url.searchParams.set(UNCACHED, "1")
+		}
 		return new Response(null, {
 			headers: url ? { "x-middleware-rewrite": String(url) } : { "x-middleware-next": "1" },
 		})

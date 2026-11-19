@@ -2,6 +2,7 @@ import { redirect, type RequestEvent } from "@sveltejs/kit"
 import type { Handle } from "../kit.js"
 import { env, setting, site_token, staging } from "../settings.js"
 import { LIVE, editor_version } from "./version.js"
+import { UNCACHED } from "../middleware.js"
 import { allowed } from "./content.js"
 import {
 	ask_moxy,
@@ -437,6 +438,9 @@ function create({
 	const params = ways.filter((way) => way.startsWith("?")).map((way) => way.slice(1).split("=")[0])
 	const paths = ways.filter((way) => !way.startsWith("?")).map(trim)
 	return async ({ event, resolve }) => {
+		// the middleware's key is for the CDN: no page, link or `og:url` built from the address sees it
+		event.url.searchParams.delete(UNCACHED)
+
 		const broker = moxy ?? env("STORYLOCO_MOXY") ?? MOXY
 		const wanted = chosen ?? env("STORYLOCO_EDITOR") ?? RELEASES
 		const files = wanted === false || wanted === "local" ? null : wanted

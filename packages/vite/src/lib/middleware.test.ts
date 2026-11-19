@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import handle, { EDITORS, PREVIEW, editing, middleware, own_key } from "./middleware.js"
+import handle, { EDITORS, PREVIEW, chosen, editing, middleware, own_key } from "./middleware.js"
 
 const request = (cookie?: string, url = "https://example.com/about") =>
 	new Request(url, { headers: cookie ? { cookie } : {} })
@@ -71,5 +71,75 @@ describe("middleware", () => {
 			run(both, "storyblok_preview=1; sl_editor=x", "https://example.com/about?_storyblok=off")
 		).toBe("1")
 		expect(run(both, "sl_editor=x")).toBe("https://example.com/about?_storyloco=1")
+	})
+})
+
+describe("a choice kept in a cookie", () => {
+	const location = chosen("location", "_location", "all")
+	const run = (cookie?: string, url?: string, keys = [PREVIEW, EDITORS, location]) => {
+		const response = middleware(keys)(request(cookie, url))
+		return response.headers.get("x-middleware-rewrite") ?? response.headers.get("x-middleware-next")
+	}
+
+	test("each value onto a copy of its own; the shared value and no cookie pass through", () => {
+		expect(run("a=1; location=woking; b=2")).toBe("https://example.com/about?_location=woking")
+		expect(run("location=all")).toBe("1")
+		expect(run("relocation=woking")).toBe("1")
+		expect(run()).toBe("1")
+	})
+
+	test("the cookie decides the copy, whatever the address says, and passes once it's there", () => {
+		expect(run("location=woking", "https://example.com/about?_location=guildford")).toBe(
+			"https://example.com/about?_location=woking"
+		)
+		expect(run("location=woking", "https://example.com/about?_location=woking")).toBe("1")
+	})
+
+	test("a value that isn't short and plain shares the visitor copy", () => {
+		expect(run("location=a%20b")).toBe("1")
+		expect(run(`location=${"x".repeat(65)}`)).toBe("1")
+		expect(run("location=")).toBe("1")
+	})
+
+	test("an editor's key comes first, and one that shares falls through to a later key", () => {
+		expect(run("location=woking; sl_editor=x")).toBe("https://example.com/about?_storyloco=1")
+		const currency = chosen("currency", "_currency")
+		expect(run("location=all; currency=eur", undefined, [location, currency])).toBe(
+			"https://example.com/about?_currency=eur"
+		)
+	})
+
+	test("a cookie name is matched as it's written", () => {
+		expect(own_key(request("a.b=x"), chosen("a.b", "_k"))?.search).toBe("?_k=x")
+		expect(own_key(request("aXb=x"), chosen("a.b", "_k"))).toBeNull()
+	})
+})
+
+describe("a remote function asked from a preview's page", () => {
+	const QUERY = "https://example.com/_app/remote/1x2y/get_shared?payload=abc"
+	const run = (search?: string, cookie?: string, method = "GET") => {
+		const headers: Record<string, string> = {}
+		if (search !== undefined) headers["x-sveltekit-search"] = search
+		if (cookie) headers.cookie = cookie
+		const response = handle(new Request(QUERY, { method, headers }))
+		return response.headers.get("x-middleware-rewrite") ?? response.headers.get("x-middleware-next")
+	}
+
+	test("moves off the cache with no cookie at all", () => {
+		expect(run("?_storyblok=456&_storyblok_tk%5Bspace_id%5D=1")).toBe(`${QUERY}&_storyloco=1`)
+		expect(run("?a=1&_storyblok")).toBe(`${QUERY}&_storyloco=1`)
+	})
+
+	test("a visitor's, a preview switched off, and a post pass through", () => {
+		expect(run("?page=2")).toBe("1")
+		expect(run("")).toBe("1")
+		expect(run()).toBe("1")
+		expect(run("?not_storyblok=1")).toBe("1")
+		expect(run("?_storyblok=off")).toBe("1")
+		expect(run("?_storyblok=456", undefined, "POST")).toBe("1")
+	})
+
+	test("a cookie's key still comes first", () => {
+		expect(run("?_storyblok=456", "storyblok_preview=1")).toBe(`${QUERY}&_storyblok=1`)
 	})
 })

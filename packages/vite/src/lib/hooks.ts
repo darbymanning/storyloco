@@ -4,6 +4,22 @@ import { editor_version } from "./editor/version.js"
 import { site_token, staging } from "./settings.js"
 
 export { handle_redirects as redirects } from "./redirects/handle.js"
+export {
+	CHANGES,
+	SHARED,
+	TAG,
+	cache,
+	choice,
+	purge,
+	remote_name,
+	shareable,
+	signed_by_storyblok,
+	take,
+	uncached,
+	type CacheOptions,
+	type ChoiceOptions,
+	type PurgeOptions,
+} from "./cache.js"
 export { editor_version }
 
 /** Keeps a Storyblok preview going past its first page; kept in step with `middleware.ts` */
