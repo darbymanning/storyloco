@@ -175,7 +175,7 @@ const versioned =
 
 const plain = versioned()
 
-export type SiteOptions = {
+export type StorylocoOptions = {
 	/** The `editor` hook's options; false for a site nobody edits in place */
 	editor?: EditorOptions | false
 	/** The `cache` hook's options; false to render every request */
@@ -193,17 +193,17 @@ export type SiteOptions = {
  * @example
  * ```ts
  * // hooks.server.ts
- * import { site } from "storyloco/hooks"
+ * import { storyloco } from "storyloco/hooks"
  *
- * export const handle = sequence(site(), my_hook)
+ * export const handle = sequence(storyloco(), my_hook)
  * ```
  */
-export function site({
+export function storyloco({
 	editor: editing,
 	cache: caching,
 	version: versioning,
 	redirects = true,
-}: SiteOptions = {}) {
+}: StorylocoOptions = {}) {
 	const hooks = [
 		redirects && handle_redirects,
 		editing !== false && editor(editing),

@@ -560,9 +560,9 @@ same for every visitor, so the function runs when content changes instead. Two f
 
 ```ts
 // hooks.server.ts
-import { site } from 'storyloco/hooks'
+import { storyloco } from 'storyloco/hooks'
 
-export const handle = sequence(site(), …your own hooks)
+export const handle = sequence(storyloco(), …your own hooks)
 ```
 
 ```ts
@@ -571,7 +571,7 @@ export { default } from 'storyloco/middleware'
 export const config = { matcher: '/((?!_app/(?!remote/)|.*\\.(?!json$)\\w+$).*)', runtime: 'nodejs' }
 ```
 
-`site()` is `redirects`, `editor`, `version` and `cache` in the order they need; use them
+`storyloco()` is `redirects`, `editor`, `version` and `cache` in the order they need; use them
 separately, `sequence(editor, version, cache, …)`, to put something between them. The middleware
 is the other half: the CDN answers before any hook runs, so only it keeps editors and previews
 off the shared copies.
@@ -618,7 +618,7 @@ import { LOCATION } from './src/lib/location'
 
 export default middleware([PREVIEW, EDITORS, chosen(LOCATION)])
 
-// hooks.server.ts, in a hook after `site()`
+// hooks.server.ts, in a hook after `storyloco()`
 event.locals.location = choice(event, { ...LOCATION, asked: event.url.searchParams.get('location') })
 ```
 
@@ -642,7 +642,7 @@ export const get_form = query(schema, async id => {
 **Options**, none of them needed to start:
 
 ```ts
-site({
+storyloco({
 	cache: {
 		// kept an hour, then served stale for up to a day while a fresh copy renders (the default)
 		policy: 'max-age=0, s-maxage=3600, stale-while-revalidate=86400',
