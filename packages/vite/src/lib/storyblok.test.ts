@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { isHttpError } from "@sveltejs/kit"
-import { handle_error, href, link_attrs, StoryblokClient } from "./storyblok.svelte.js"
+import { handle_error, href, link_attrs, richtext, StoryblokClient } from "./storyblok.svelte.js"
 
 /** The HttpError `handle_error` throws, so its status and body can be checked */
 function thrown(fn: () => void) {
@@ -189,5 +189,36 @@ describe("cache version", () => {
 		}
 		expect(asked[1]).toBe("111")
 		expect(asked[2]).not.toBe("111")
+	})
+})
+
+describe("richtext", () => {
+	const link = (attrs: object) =>
+		richtext({
+			type: "doc",
+			content: [
+				{
+					type: "paragraph",
+					content: [{ type: "text", text: "UK", marks: [{ type: "link", attrs }] }],
+				},
+			],
+		} as never)
+
+	test("a story link to a folder's start page loses its slash, and the resolved story", () => {
+		expect(
+			link({
+				href: "/terms/uk/",
+				linktype: "story",
+				anchor: "fees",
+				target: "_self",
+				story: { url: "terms/uk/" },
+			})
+		).toBe('<p><a target="_self" href="/terms/uk#fees">UK</a></p>')
+	})
+
+	test("any other link is left as it was written", () => {
+		expect(link({ href: "https://example.com/docs/", linktype: "url" })).toBe(
+			'<p><a href="https://example.com/docs/">UK</a></p>'
+		)
 	})
 })

@@ -1,7 +1,7 @@
 import {
 	storyblokInit,
 	apiPlugin,
-	renderRichText as richtext,
+	renderRichText,
 	useStoryblokBridge,
 	StoryblokComponent as Block,
 	storyblokEditable as editable,
@@ -410,6 +410,38 @@ export function link_attrs(link?: Link): { href?: string; target?: string; rel?:
 	return { href: href(link), target, rel: opens && !safe ? `noopener ${rel ?? ""}`.trim() : rel }
 }
 
+type RichNode = Parameters<typeof renderRichText>[0]
+type Loose = {
+	type?: string
+	attrs?: Record<string, unknown>
+	content?: Array<Loose>
+	marks?: Array<Loose>
+}
+
+// `resolve_links` hangs the whole `story` on a link mark, which Storyblok would write out as an attribute
+const story_links = (node: Loose): Loose => ({
+	...node,
+	...(node.content && { content: node.content.map(story_links) }),
+	...(node.marks && {
+		marks: node.marks.map((mark) => {
+			if (mark.type !== "link" || mark.attrs?.linktype !== "story") return mark
+			const { story, href: path, ...attrs } = mark.attrs as { story?: Link["story"]; href?: string }
+			return {
+				...mark,
+				attrs: { ...attrs, href: href({ linktype: "story", cached_url: path, story }) ?? "" },
+			}
+		}),
+	}),
+})
+
+/**
+ * Rich text as HTML, as Storyblok's `renderRichText` renders it, but for its story links: their
+ * path comes from `href()`, so a folder's start page (`about/`) links without its slash.
+ */
+export function richtext(doc: RichNode, options?: Parameters<typeof renderRichText>[1]) {
+	return renderRichText(story_links(doc as Loose) as RichNode, options)
+}
+
 /**
  * Turn a Storyblok error into a SvelteKit one, for `.catch(handle_error)`.
  *
@@ -492,7 +524,7 @@ export function attrs<T extends BlokFields>(blok: T & { _uid?: string; _editable
 // }
 
 /** Re-export commonly used Storyblok utilities */
-export { editable, Block, richtext }
+export { editable, Block }
 
 /** Storyblok image attributes: see `image.ts` */
 export { image, type Asset } from "./image.js"
