@@ -452,7 +452,8 @@ export type PurgeOptions = {
 	 */
 	invalidate?: (tags: Array<string>) => unknown
 	/**
-	 * The webhook's secret, as set in Storyblok, which signs each request.
+	 * The webhook's secret. Storyblok signs each request with it on plans that have webhook
+	 * secrets; on the others it goes in the webhook's address, as `?key=<secret>`.
 	 * `STORYBLOK_WEBHOOK_SECRET` by default. Without one anyone can ask for a purge, which costs
 	 * a re-render of each page, no more than asking for pages with made-up queries does
 	 */
@@ -555,9 +556,12 @@ export async function signed_by_storyblok(body: string, signature: string | null
 		["sign"]
 	)
 	const expected = hex(await crypto.subtle.sign("HMAC", key, encode.encode(body)))
-	const given = signature.trim().toLowerCase()
+	return same(signature.trim().toLowerCase(), expected)
+}
+
+/** Every character compared, so the time taken says nothing about where they differ */
+function same(given: string, expected: string) {
 	if (given.length !== expected.length) return false
-	// every character compared, so the time taken says nothing about where they differ
 	let differs = 0
 	for (let i = 0; i < expected.length; i++) differs |= expected.charCodeAt(i) ^ given.charCodeAt(i)
 	return differs === 0
@@ -591,8 +595,12 @@ export function purge(given: PurgeOptions = {}) {
 		const { secret, actions = CHANGES, ...how } = { ...site_purge, ...given }
 		const body = await request.text()
 		const key = secret ?? (await setting("STORYBLOK_WEBHOOK_SECRET").catch(() => undefined))
-		if (key && !(await signed_by_storyblok(body, request.headers.get("webhook-signature"), key)))
-			return reply({ message: "Signature doesn’t match" }, 401)
+		if (
+			key &&
+			!same(new URL(request.url).searchParams.get("key") ?? "", key) &&
+			!(await signed_by_storyblok(body, request.headers.get("webhook-signature"), key))
+		)
+			return reply({ message: "Neither the signature nor the key matches" }, 401)
 
 		let action: unknown
 		try {

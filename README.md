@@ -602,8 +602,9 @@ x-storyloco-cache: private; a load that failed
 **Publishing purges it.** A publish made through storyloco's editor purges the cache by itself.
 For publishes made in Storyblok, add a webhook there for story, datasource, asset, release and
 pipeline events, pointed at `https://<site>/__storyloco/purge`: no route to write. Set its secret
-as `STORYBLOK_WEBHOOK_SECRET` and requests are checked against it. On Vercel there's nothing to
-install; elsewhere, give `cache({ purge: { invalidate } })` a function that invalidates tags.
+as `STORYBLOK_WEBHOOK_SECRET` and requests are checked against it; on a Storyblok plan without
+webhook secrets, put it in the address instead, `/__storyloco/purge?key=<secret>`. On Vercel
+there's nothing to install; elsewhere, give `cache({ purge: { invalidate } })` a function that invalidates tags.
 The purge waits a few seconds, as long as a warm server can go on reading the content version it
 last saw, so a page rendered the instant a publish lands isn't cached as the old one. On Vercel the
 webhook is answered at once and purged after, so a purge that fails shows in the site's log

@@ -644,6 +644,23 @@ describe("purge", () => {
 		expect(calls).toEqual([])
 	})
 
+	test("the secret in the address stands in for a signature", async () => {
+		const calls: Array<unknown> = []
+		const handle = purge({ invalidate: (tags) => void calls.push(tags), secret: SECRET, settle: 0 })
+		const keyed = (key: string) =>
+			({
+				request: new Request(`${SITE}/__storyloco/purge?key=${key}`, {
+					method: "POST",
+					body: published,
+				}),
+			}) as never
+		expect((await handle(keyed("wrong"))).status).toBe(401)
+		expect((await handle(keyed(""))).status).toBe(401)
+		expect(calls).toEqual([])
+		expect((await handle(keyed(SECRET))).status).toBe(200)
+		expect(calls.length).toBe(1)
+	})
+
 	test("what doesn't change the site doesn't purge, nor does anything that isn't a webhook", async () => {
 		const calls: Array<unknown> = []
 		const handle = purge({ invalidate: (tags) => void calls.push(tags), settle: 0 })
