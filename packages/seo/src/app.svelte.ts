@@ -21,7 +21,8 @@ export class SEOManager {
 			enablePortalModal: true,
 			onUpdateState: (state) => {
 				this.plugin = state as Plugin
-				if (state.data?.content) this.content = state.data.content
+				// an emptied field arrives as '' or null, and is as much a new value as any other
+				if (state.type === 'loaded') this.content = state.data.content || {}
 			},
 		})
 	}
