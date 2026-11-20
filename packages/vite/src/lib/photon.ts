@@ -33,6 +33,31 @@ export function address_from_photon(place: Record<string, unknown>): FoundAddres
 	return { label: label.filter(Boolean).join(", "), address }
 }
 
+const API = "https://photon.komoot.io/api/?lang=en"
+
+let near: Promise<string> | undefined
+
+/**
+ * Parameters that lean results towards the country the browser's languages name (`en-GB` is the
+ * UK), which is where the editor usually works, wherever they happen to be today. Photon leans
+ * towards a point, so the country's own is looked up from it, once.
+ */
+function bias(): Promise<string> {
+	return (near ??= (async () => {
+		const region = navigator.languages.map((tag) => new Intl.Locale(tag).region).find(Boolean)
+		const country = region && new Intl.DisplayNames("en", { type: "region" }).of(region)
+		if (!country) return ""
+		const response = await fetch(
+			`${API}&limit=1&osm_tag=place:country&q=${encodeURIComponent(country)}`
+		)
+		const { features } = (await response.json()) as {
+			features: Array<{ geometry: { coordinates: [number, number] } }>
+		}
+		const [lon, lat] = features[0].geometry.coordinates
+		return `&lat=${lat}&lon=${lon}&zoom=5&location_bias_scale=0.5`
+	})().catch(() => ""))
+}
+
 /**
  * Addresses matching what's typed so far, from Photon (photon.komoot.io): OpenStreetMap data, no
  * key, fair use. Rejects when the service can't be reached.
@@ -41,7 +66,7 @@ export async function search_addresses(
 	query: string,
 	signal?: AbortSignal
 ): Promise<Array<FoundAddress>> {
-	const url = `https://photon.komoot.io/api/?limit=5&lang=en&q=${encodeURIComponent(query)}`
+	const url = `${API}&limit=5&q=${encodeURIComponent(query)}${await bias()}`
 	const response = await fetch(url, { signal })
 	if (!response.ok) throw new Error(`Photon answered ${response.status}`)
 	const { features = [] } = (await response.json()) as {

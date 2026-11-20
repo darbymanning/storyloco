@@ -26,7 +26,8 @@ as the head office. All of it is optional, and blank rows aren't saved.
 
 Each entity has an address search that fills its address fields. It asks
 [Photon](https://photon.komoot.io) (OpenStreetMap data, no key, fair use) as the editor types, so
-what they type there leaves Storyblok; the fields can always be filled in by hand.
+what they type there leaves Storyblok; the fields can always be filled in by hand. Results lean
+towards the country of the browser's language (`en-GB` is the UK), not where the editor is.
 
 ```ts
 import type { SEO } from 'storyloco/seo'
