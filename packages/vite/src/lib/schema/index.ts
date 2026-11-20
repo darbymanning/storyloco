@@ -148,12 +148,38 @@ export const currency = plugin("uiloco-currency")
 export const r2_asset = plugin("uiloco-asset")
 export const dates = plugin("uiloco-dates")
 export const time = plugin("uiloco-time")
-export const seo = plugin("uiloco-seo")
 export const hubspot_form = plugin("uiloco-hubspot-form")
 export const plans = plugin("uiloco-plans")
 export const churchsuite_categories = plugin("uiloco-churchsuite-categories")
 export const blok_select = plugin("uiloco-blok-select")
 export const theme = plugin("uiloco-theme")
+
+/** The extra sections an SEO field can show, each stored under its own key of the value. */
+export type SeoGroup = "organization"
+
+/**
+ * The SEO field. `include` adds sections to the plain one, by name: `organization` is the site's
+ * schema.org Organization, for the story that holds site-wide settings.
+ *
+ * @example
+ * seo()
+ * seo({ include: ["organization"] })
+ */
+export function seo<
+	const O extends Omit<Options<"custom">, "field_type"> & { include?: ReadonlyArray<SeoGroup> },
+>(options?: O) {
+	const { include = [], ...rest } = options ?? ({} as O)
+	const field = {
+		options: [] as Array<{ name: string; value: string }>,
+		...rest,
+		type: "custom",
+		field_type: "uiloco-seo",
+	}
+	// a field plugin's options are name and value strings, so the plugin reads the names comma-separated
+	if (include.length)
+		field.options = [...field.options, { name: "include", value: include.join(",") }]
+	return field as unknown as Omit<O, "include"> & { type: "custom"; field_type: "uiloco-seo" }
+}
 
 type Ref = BlockName | { name: BlockName } | BlockFolder | { tag: string }
 

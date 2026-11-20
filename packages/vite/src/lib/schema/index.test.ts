@@ -62,3 +62,27 @@ test("a plugin field always has an options array, which the field plugin needs t
 	const options = [{ name: "a", value: "b" }]
 	expect(link({ options }).options).toEqual(options)
 })
+
+test("seo() is the plain field, and include names its extra sections in an option the plugin reads", async () => {
+	const { seo } = await import("./index.js")
+	expect(seo()).toEqual({ options: [], type: "custom", field_type: "uiloco-seo" })
+	expect(seo({ include: [] })).toEqual(seo())
+
+	expect<object>(seo({ include: ["organization"] })).toEqual({
+		options: [{ name: "include", value: "organization" }],
+		type: "custom",
+		field_type: "uiloco-seo",
+	})
+
+	const r2 = [{ name: "R2_BUCKET", value: "assets" }]
+	expect<object>(seo({ options: r2, required: true, include: ["organization"] })).toEqual({
+		options: [...r2, { name: "include", value: "organization" }],
+		required: true,
+		type: "custom",
+		field_type: "uiloco-seo",
+	})
+	expect(seo({ options: r2 }).options).toEqual(r2)
+
+	// @ts-expect-error only known groups
+	seo({ include: ["faq"] })
+})

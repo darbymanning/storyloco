@@ -2,6 +2,7 @@
 	import { Input, Label, Textarea, Button, Switch } from 'shared'
 	import { SEOManager } from './app.svelte.js'
 	import { AssetManager } from '../../asset/src/app.svelte.js'
+	import Organization from './organization.svelte'
 
 	const seo = new SEOManager()
 
@@ -165,4 +166,8 @@
 			empty to use this page's own.
 		</small>
 	</div>
+
+	{#if seo.loaded && seo.include.includes('organization')}
+		<Organization {seo} />
+	{/if}
 </div>

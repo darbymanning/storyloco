@@ -11,7 +11,7 @@ A collection of slick Storyblok field plugins built with Svelte 5, TypeScript, a
 - **📝 Heading** - Simple heading editor with level selection (H1-H6)
 - **🎨 Theme** - Color theme selector with visual previews
 - **🔗 Link** - Link editor with support for internal, external, email, and asset links
-- **🔍 SEO** - SEO metadata editor with support for title, description, OG tags, Twitter cards, noindex, nofollow and a canonical URL
+- **🔍 SEO** - SEO metadata editor with support for title, description, OG tags, Twitter cards, noindex, nofollow and a canonical URL, plus an opt-in Organisation section for the site's schema.org entity
 - **🏗️ Plans** - Floor plan manager with drag-and-drop sorting for types, floors, dimensions, and rooms
 - **📝 Input** - Comprehensive form input field with support for all HTML input types, checkboxes, radio buttons, selects, and textareas
 - **⏰ Time** - Simple time input field with step control
@@ -60,6 +60,73 @@ import type { SEO } from 'storyloco/seo'
 // Or import everything
 import type { Video, Heading, Link, Input, Asset, SEO } from 'storyloco'
 ```
+
+### Describe the Organisation
+
+Every site has one schema.org Organization. The SEO field can hold it: on the story with the
+site-wide settings, include the group in the field's schema, and the field gains a collapsed
+Organisation section. Every other `seo()` field is unchanged.
+
+```typescript
+import { block, seo } from 'storyloco/schema'
+
+block('layout', { seo: seo({ include: ['organization'] }) })
+```
+
+The value gains one optional key, `organization`, with everything in it optional:
+
+```typescript
+import type { Organization } from 'storyloco/seo'
+
+const value: Organization = {
+	legal_name: 'EA Technology Limited',
+	founding_date: '1966-04-01',
+	description: 'Power engineering consultancy.',
+	disambiguating_description: 'UK power engineering firm, not the US IT firm EA Technologies.',
+	same_as: ['https://www.linkedin.com/company/ea-technology'],
+	brands: ['VisNet', 'Fundamentals'],
+	entities: [
+		{
+			name: 'EA Technology Limited',
+			street: 'Capenhurst Technology Park, Capenhurst',
+			locality: 'Chester',
+			postal_code: 'CH1 6ES',
+			country: 'GB',
+			head_office: true
+		},
+		{
+			name: 'EA Technology, LLC',
+			street: '400 Morris Avenue, Suite 240',
+			locality: 'Denville',
+			region: 'NJ',
+			postal_code: '07834',
+			country: 'US'
+		}
+	]
+}
+```
+
+`organization(value, { origin, logo?, name?, url? })` turns it into the entity for the page's
+JSON-LD:
+
+```typescript
+import { organization } from 'storyloco/seo'
+
+const entity = organization(layout.content.seo?.organization, {
+	origin: url.origin,
+	logo: `${url.origin}/logo.png`,
+	name: 'EA Technology',
+	url: `${url.origin}/`
+})
+```
+
+- Its `@id` is `${origin}/#organization`, for other entities to point at.
+- The head office's address is the organisation's `address`; every other entity is a
+  `subOrganization` with its `name`, `legalName` and own `PostalAddress`.
+- `brands` become `Brand` objects, and `same_as` keeps only full `http(s)` URLs.
+- Empty properties are left out, and it returns `undefined` when the group is absent or blank, so
+  it can be called on any SEO value. Spread anything else the site knows onto the result
+  (`contactPoint`, say).
 
 ### Write Currency Values
 
@@ -793,6 +860,8 @@ Storyloco's field plugins have helpers too, typed with their plugin's value with
 `custom` field on the plugin's `uiloco-*` name, so `video: mux({ required: true })` gives
 `blok.video` the `Video` type from `storyloco/mux`. `r2_asset` is the R2 asset plugin; `asset` is
 Storyblok's own asset field. A plugin you register in `fieldPlugins` keeps its own type.
+`seo({ include: ['organization'] })` adds the [Organisation section](#describe-the-organisation)
+to that field.
 
 ```svelte
 <!-- src/lib/bloks/hero.svelte -->
