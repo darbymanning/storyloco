@@ -33,6 +33,7 @@
 		"packages/vite/dist-editor",
 		"packages/vite/src/lib/currency.ts",
 		"packages/vite/src/lib/stream.ts",
+		"packages/vite/src/lib/seo.ts",
 		"!packages/vite/dist/**/*.test.*",
 		"packages/input/types.ts",
 		"packages/time/types.ts",
@@ -111,7 +112,8 @@
 			"svelte": "./packages/time/src/app.svelte.ts"
 		},
 		"./seo": {
-			"types": "./packages/seo/types.ts"
+			"types": "./packages/seo/types.ts",
+			"import": "./packages/vite/dist/seo.js"
 		},
 		"./hubspot_form": {
 			"types": "./packages/hubspot_form/types.ts",

@@ -9,6 +9,8 @@ export class SEOManager {
 	loaded = $derived(this.plugin?.type === 'loaded')
 	is_modal_open = $derived(this.loaded && this.plugin?.data?.isModalOpen)
 	has_r2 = $derived(!!this.plugin?.data?.options.R2_BUCKET)
+	/** The extra sections the field's schema asks for: `seo({ include: [...] })` */
+	include = $derived((this.plugin?.data?.options.include ?? '').split(','))
 
 	constructor() {
 		this.initialize_plugin()

@@ -1,3 +1,14 @@
+import type { Organization } from '../vite/src/lib/seo.js'
+
+export type {
+	Organization,
+	OrganizationEntity,
+	OrganizationEntityLd,
+	OrganizationOptions,
+	PostalAddress,
+} from '../vite/src/lib/seo.js'
+export { organization } from '../vite/src/lib/seo.js'
+
 export type SEO = Partial<{
 	title?: string
 	og_image?: string
@@ -13,4 +24,6 @@ export type SEO = Partial<{
 	nofollow: boolean
 	/** The address search engines should treat as this page's own, when it isn't the page's URL */
 	canonical: string
+	/** The site's organisation, on a field whose schema includes the group: `seo({ include: ['organization'] })` */
+	organization: Organization
 }>
