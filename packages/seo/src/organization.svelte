@@ -36,13 +36,16 @@
 	)
 
 	function save() {
-		const tidy = tidy_organization($state.snapshot(org))
+		const draft = $state.snapshot(org)
+		// a row still holding only its site's prefix has no profile in it yet
+		draft.same_as = draft.same_as.filter((url) => !SITES.some((site) => site.prefix === url.trim()))
+		const tidy = tidy_organization(draft)
 		if (tidy) seo.content.organization = tidy
 		else delete seo.content.organization
 		seo.update()
 	}
 
-	async function add<T>(rows: Array<T>, row: T, event: MouseEvent) {
+	async function add<T>(rows: Array<T>, row: T, event: Event) {
 		const list = (event.currentTarget as HTMLElement).closest('fieldset')
 		rows.push(row)
 		await tick()
@@ -64,26 +67,45 @@
 		save()
 	}
 
-	const HOSTS: Record<string, string> = {
-		'linkedin.com': 'LinkedIn',
-		'youtube.com': 'YouTube',
-		'wikidata.org': 'Wikidata',
-		'wikipedia.org': 'Wikipedia',
-		'crunchbase.com': 'Crunchbase',
-		'company-information.service.gov.uk': 'Companies House',
-		'opencorporates.com': 'OpenCorporates',
-		'x.com': 'X',
-		'twitter.com': 'X',
-		'facebook.com': 'Facebook',
-		'instagram.com': 'Instagram',
-		'github.com': 'GitHub',
-	}
+	// where an organisation usually has a page, and how that page's address starts
+	const SITES = [
+		{ label: 'LinkedIn', host: 'linkedin.com', prefix: 'https://www.linkedin.com/company/' },
+		{ label: 'YouTube', host: 'youtube.com', prefix: 'https://www.youtube.com/@' },
+		{ label: 'X', host: 'x.com', prefix: 'https://x.com/' },
+		{ label: 'Facebook', host: 'facebook.com', prefix: 'https://www.facebook.com/' },
+		{ label: 'Instagram', host: 'instagram.com', prefix: 'https://www.instagram.com/' },
+		{ label: 'GitHub', host: 'github.com', prefix: 'https://github.com/' },
+		{ label: 'Wikipedia', host: 'wikipedia.org', prefix: 'https://en.wikipedia.org/wiki/' },
+		{ label: 'Wikidata', host: 'wikidata.org', prefix: 'https://www.wikidata.org/wiki/' },
+		{
+			label: 'Crunchbase',
+			host: 'crunchbase.com',
+			prefix: 'https://www.crunchbase.com/organization/',
+		},
+		{
+			label: 'Companies House',
+			host: 'company-information.service.gov.uk',
+			prefix: 'https://find-and-update.company-information.service.gov.uk/company/',
+		},
+		{
+			label: 'OpenCorporates',
+			host: 'opencorporates.com',
+			prefix: 'https://opencorporates.com/companies/',
+		},
+	]
 
 	function profile_label(url: string) {
 		const host = URL.parse(url.trim())?.hostname
-		if (!host) return
-		for (const domain in HOSTS)
-			if (host === domain || host.endsWith(`.${domain}`)) return HOSTS[domain]
+		return SITES.find((site) => host === site.host || host?.endsWith(`.${site.host}`))?.label
+	}
+
+	async function add_profile(event: Event) {
+		const select = event.currentTarget as HTMLSelectElement
+		const prefix = SITES.find((site) => site.label === select.value)?.prefix ?? ''
+		select.value = ''
+		await add(org.same_as, prefix, event)
+		const input = document.activeElement as HTMLInputElement
+		input.setSelectionRange(prefix.length, prefix.length)
 	}
 
 	const small_button =
@@ -190,12 +212,18 @@
 					</button>
 				</div>
 			{/each}
-			{@render AddButton('Add profile', (event) => add(org.same_as, '', event))}
-			{#if !org.same_as.length}
-				<small class={hint}>
-					Its pages elsewhere: LinkedIn, YouTube, Wikidata, Crunchbase, Companies House…
-				</small>
-			{/if}
+			<select
+				class="h-9 cursor-pointer justify-self-start rounded-md bg-transparent px-2 text-sm font-medium text-teal-muted outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+				aria-label="Add a profile"
+				data-add
+				onchange={add_profile}
+			>
+				<option value="">+ Add profile…</option>
+				{#each SITES as site (site.label)}
+					<option>{site.label}</option>
+				{/each}
+				<option>Another link</option>
+			</select>
 		</fieldset>
 
 		<fieldset class="grid grid-cols-1 gap-2">
