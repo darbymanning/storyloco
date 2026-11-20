@@ -37,7 +37,7 @@
 	function pick(found: FoundAddress) {
 		onpick(found.address)
 		query = ''
-		results = []
+		search()
 		input?.focus()
 	}
 

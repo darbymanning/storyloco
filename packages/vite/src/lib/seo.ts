@@ -108,9 +108,18 @@ export function tidy_organization(value?: Organization | null): Organization | u
 	return Object.keys(tidy).length ? tidy : undefined
 }
 
+/** A URL, or nothing when it isn't one. `URL.parse` does this, but not on Node 20 or Safari 17. */
+export function parse_url(url: string): URL | undefined {
+	try {
+		return new URL(url)
+	} catch {
+		return undefined
+	}
+}
+
 /** Whether a profile link is a full `http(s)` URL, which is all `sameAs` may hold. */
 export function is_profile_url(url: string): boolean {
-	return /^https?:$/.test(URL.parse(url)?.protocol ?? "")
+	return /^https?:$/.test(parse_url(url)?.protocol ?? "")
 }
 
 function postal_address(entity: OrganizationEntity): PostalAddress | undefined {

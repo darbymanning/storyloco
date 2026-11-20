@@ -160,6 +160,15 @@ describe("organization", () => {
 		)
 		expect(entity?.sameAs).toEqual(["https://www.youtube.com/@eatechnology", "http://example.com"])
 		expect(organization({ same_as: ["not a url"] }, { origin })?.sameAs).toBeUndefined()
+
+		// Node 20 and Safari 17 have no URL.parse
+		const parse = URL.parse
+		// @ts-expect-error taking it away
+		URL.parse = undefined
+		expect(organization({ same_as: ["https://example.com"] }, { origin })?.sameAs).toEqual([
+			"https://example.com",
+		])
+		URL.parse = parse
 	})
 
 	test("with no head office, every entity is a sub-organisation and there is no address", () => {

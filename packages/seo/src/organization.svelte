@@ -4,6 +4,7 @@
 	import { ChevronRightIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
 	import {
 		is_profile_url,
+		parse_url,
 		tidy_organization,
 		type OrganizationEntity,
 	} from '../../vite/src/lib/seo.js'
@@ -49,8 +50,9 @@
 		const list = (event.currentTarget as HTMLElement).closest('fieldset')
 		rows.push(row)
 		await tick()
-		const inputs = list?.querySelectorAll<HTMLInputElement>('[data-first]')
-		inputs?.[inputs.length - 1]?.focus()
+		const input = [...(list?.querySelectorAll<HTMLInputElement>('[data-first]') ?? [])].at(-1)
+		input?.focus()
+		return input
 	}
 
 	function remove(rows: Array<unknown>, index: number, event: MouseEvent) {
@@ -95,7 +97,8 @@
 	]
 
 	function profile_label(url: string) {
-		const host = URL.parse(url.trim())?.hostname
+		// X's old address still works, and plenty of profiles still use it
+		const host = parse_url(url.trim())?.hostname.replace(/(^|\.)twitter\.com$/, '$1x.com')
 		return SITES.find((site) => host === site.host || host?.endsWith(`.${site.host}`))?.label
 	}
 
@@ -103,15 +106,13 @@
 		const select = event.currentTarget as HTMLSelectElement
 		const prefix = SITES.find((site) => site.label === select.value)?.prefix ?? ''
 		select.value = ''
-		await add(org.same_as, prefix, event)
-		const input = document.activeElement as HTMLInputElement
-		input.setSelectionRange(prefix.length, prefix.length)
+		const input = await add(org.same_as, prefix, event)
+		input?.setSelectionRange(prefix.length, prefix.length)
 	}
 
 	const small_button =
 		'size-6 shrink-0 rounded-md flex items-center justify-center transition-colors outline-none text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50 hover:bg-destructive/10 hover:text-destructive'
-	const small_label = 'text-xs text-muted-foreground'
-	const hint = 'text-muted-foreground text-xs'
+	const hint = 'text-xs text-muted-foreground'
 </script>
 
 {#snippet AddButton(label: string, onclick: (event: MouseEvent) => void)}
@@ -260,7 +261,7 @@
 					aria-label={entity.name?.trim() || `Legal entity ${index + 1}`}
 				>
 					<div class="flex h-6 items-center gap-1">
-						<Label for="{id}_name" class={small_label}>Registered name</Label>
+						<Label for="{id}_name" class={hint}>Registered name</Label>
 						<button
 							class="{small_button} ml-auto -mr-1"
 							aria-label="Remove {entity.name?.trim() || `legal entity ${index + 1}`}"
@@ -282,12 +283,12 @@
 						/>
 					</div>
 
-					<Label for="{id}_street" class={small_label}>Street address</Label>
+					<Label for="{id}_street" class={hint}>Street address</Label>
 					<Input id="{id}_street" autocomplete="off" bind:value={entity.street} oninput={save} />
 
 					<div class="mt-1 grid grid-cols-1 gap-2 @min-[16rem]:grid-cols-2">
 						<div class="grid gap-1.5">
-							<Label for="{id}_locality" class={small_label}>Town or city</Label>
+							<Label for="{id}_locality" class={hint}>Town or city</Label>
 							<Input
 								id="{id}_locality"
 								autocomplete="off"
@@ -296,7 +297,7 @@
 							/>
 						</div>
 						<div class="grid gap-1.5">
-							<Label for="{id}_region" class={small_label}>State or region</Label>
+							<Label for="{id}_region" class={hint}>State or region</Label>
 							<Input
 								id="{id}_region"
 								autocomplete="off"
@@ -305,7 +306,7 @@
 							/>
 						</div>
 						<div class="grid gap-1.5">
-							<Label for="{id}_postal_code" class={small_label}>Postcode</Label>
+							<Label for="{id}_postal_code" class={hint}>Postcode</Label>
 							<Input
 								id="{id}_postal_code"
 								autocomplete="off"
@@ -314,7 +315,7 @@
 							/>
 						</div>
 						<div class="grid gap-1.5">
-							<Label for="{id}_country" class={small_label}>Country code</Label>
+							<Label for="{id}_country" class={hint}>Country code</Label>
 							<Input
 								id="{id}_country"
 								autocomplete="off"

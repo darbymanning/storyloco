@@ -47,8 +47,10 @@ function bias(): Promise<string> {
 		const region = navigator.languages.map((tag) => new Intl.Locale(tag).region).find(Boolean)
 		const country = region && new Intl.DisplayNames("en", { type: "region" }).of(region)
 		if (!country) return ""
+		// every search waits on this, so it gets two seconds and then they go without
 		const response = await fetch(
-			`${API}&limit=1&osm_tag=place:country&q=${encodeURIComponent(country)}`
+			`${API}&limit=1&osm_tag=place:country&q=${encodeURIComponent(country)}`,
+			{ signal: AbortSignal.timeout(2000) }
 		)
 		const { features } = (await response.json()) as {
 			features: Array<{ geometry: { coordinates: [number, number] } }>
