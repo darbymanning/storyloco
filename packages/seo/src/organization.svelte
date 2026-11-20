@@ -129,7 +129,14 @@
 
 		<div class="grid gap-2">
 			<Label for="org_founding_date">Founded</Label>
-			<Input id="org_founding_date" type="date" bind:value={org.founding_date} oninput={save} />
+			<Input
+				id="org_founding_date"
+				type="date"
+				max={new Date().toLocaleDateString('en-CA')}
+				class="invalid:border-destructive"
+				bind:value={org.founding_date}
+				oninput={save}
+			/>
 		</div>
 
 		<div class="grid gap-2">
