@@ -13,17 +13,45 @@
 
 	let { seo }: { seo: SEOManager } = $props()
 
+	// only the working copy has ids: a card keeps its own state when one above it is removed
+	type Entity = OrganizationEntity & { id: number }
+	let next_id = 0
+
 	// a working copy: the saved value has its blank rows taken out, and a row just added is blank
-	const org = $state({
-		legal_name: '',
-		founding_date: '',
-		description: '',
-		disambiguating_description: '',
-		same_as: [] as Array<string>,
-		brands: [] as Array<string>,
-		entities: [] as Array<OrganizationEntity>,
-		// svelte-ignore state_referenced_locally
-		...$state.snapshot(seo.content.organization),
+	function working_copy() {
+		const saved = $state.snapshot(seo.content.organization)
+		return {
+			legal_name: '',
+			founding_date: '',
+			description: '',
+			disambiguating_description: '',
+			same_as: [] as Array<string>,
+			brands: [] as Array<string>,
+			...saved,
+			entities: (saved?.entities ?? []).map((entity): Entity => ({ ...entity, id: next_id++ })),
+		}
+	}
+
+	const org = $state(working_copy())
+
+	const json = () => JSON.stringify(seo.content.organization) ?? ''
+	// what the field holds as far as this copy knows, and the saves Storyblok has yet to send back
+	let known = json()
+	const sent: Array<string> = []
+
+	// Storyblok sends every save back, later, and by then there may be a newer one: only a value
+	// that isn't one of ours came from outside, and replaces the working copy
+	$effect(() => {
+		const incoming = json()
+		if (incoming === known) return
+		const echo = sent.indexOf(incoming)
+		if (echo >= 0) {
+			sent.splice(0, echo + 1)
+			return
+		}
+		known = incoming
+		sent.length = 0
+		Object.assign(org, working_copy())
 	})
 
 	const summary = $derived(
@@ -43,6 +71,9 @@
 		const tidy = tidy_organization(draft)
 		if (tidy) seo.content.organization = tidy
 		else delete seo.content.organization
+		known = json()
+		sent.push(known)
+		if (sent.length > 20) sent.shift()
 		seo.update()
 	}
 
@@ -63,7 +94,7 @@
 		list?.querySelector<HTMLButtonElement>('[data-add]')?.focus()
 	}
 
-	function set_head_office(entity: OrganizationEntity, on: boolean) {
+	function set_head_office(entity: Entity, on: boolean) {
 		for (const other of org.entities) other.head_office = false
 		entity.head_office = on
 		save()
@@ -253,8 +284,8 @@
 
 		<fieldset class="grid grid-cols-1 gap-2">
 			<legend class="mb-2 text-sm leading-none font-medium">Legal entities</legend>
-			{#each org.entities as entity, index (index)}
-				{@const id = `org_entity_${index}`}
+			{#each org.entities as entity, index (entity.id)}
+				{@const id = `org_entity_${entity.id}`}
 				<div
 					class="@container grid grid-cols-1 gap-1.5 rounded-md border border-input p-3"
 					role="group"
@@ -338,7 +369,7 @@
 				</div>
 			{/each}
 			{@render AddButton('Add legal entity', (event) =>
-				add(org.entities, { head_office: !org.entities.length }, event)
+				add(org.entities, { id: next_id++, head_office: !org.entities.length }, event)
 			)}
 			{#if !org.entities.length}
 				<small class={hint}>
