@@ -8,6 +8,7 @@
 		type OrganizationEntity,
 	} from '../../vite/src/lib/seo.js'
 	import type { SEOManager } from './app.svelte.js'
+	import AddressSearch from './address_search.svelte'
 
 	let { seo }: { seo: SEOManager } = $props()
 
@@ -236,7 +237,17 @@
 					</div>
 					<Input id="{id}_name" data-first bind:value={entity.name} oninput={save} />
 
-					<Label for="{id}_street" class="mt-1 {small_label}">Street address</Label>
+					<div class="mt-2">
+						<AddressSearch
+							label="Search for the address of {entity.name?.trim() || `legal entity ${index + 1}`}"
+							onpick={(address) => {
+								Object.assign(entity, address)
+								save()
+							}}
+						/>
+					</div>
+
+					<Label for="{id}_street" class={small_label}>Street address</Label>
 					<Input id="{id}_street" autocomplete="off" bind:value={entity.street} oninput={save} />
 
 					<div class="mt-1 grid grid-cols-1 gap-2 @min-[16rem]:grid-cols-2">

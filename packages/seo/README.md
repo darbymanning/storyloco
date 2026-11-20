@@ -24,6 +24,10 @@ collapsed Organisation section: legal name, founding date, description, a "not t
 with" sentence, profile links, brands, and legal entities with their addresses, one of them marked
 as the head office. All of it is optional, and blank rows aren't saved.
 
+Each entity has an address search that fills its address fields. It asks
+[Photon](https://photon.komoot.io) (OpenStreetMap data, no key, fair use) as the editor types, so
+what they type there leaves Storyblok; the fields can always be filled in by hand.
+
 ```ts
 import type { SEO } from 'storyloco/seo'
 
