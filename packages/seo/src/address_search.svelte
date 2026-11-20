@@ -15,16 +15,21 @@
 	function search() {
 		clearTimeout(timer)
 		controller?.abort()
-		results = []
 		status = 'idle'
-		if (query.trim().length < 3) return
+		// the last results stay up while the next ones load, so the list doesn't blink on every key
+		if (query.trim().length < 3) {
+			results = []
+			return
+		}
 		timer = setTimeout(async () => {
 			controller = new AbortController()
 			try {
 				results = await search_addresses(query.trim(), controller.signal)
 				if (!results.length) status = 'empty'
 			} catch (error) {
-				if ((error as Error).name !== 'AbortError') status = 'failed'
+				if ((error as Error).name === 'AbortError') return
+				results = []
+				status = 'failed'
 			}
 		}, 300)
 	}
